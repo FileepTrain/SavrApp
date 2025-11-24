@@ -1,0 +1,16 @@
+# Node modules
+node_modules/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+
+# Firebase service account
+firebaseAdminConfig.json
+
+# Environment variables
+.env
+
+# Build outputs
+dist/
+build/
