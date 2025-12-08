@@ -1,12 +1,12 @@
-import { View, Text, ScrollView, Image } from "react-native";
-import React, { useState } from "react";
 import { images } from "@/constants";
+import React, { useState } from "react";
+import { Image, ScrollView, Text, View } from "react-native";
 // Components
-import { router } from "expo-router";
-import { ThemedSafeView } from "@/components/themed-safe-view";
-import Input from "@/components/ui/input";
-import Button from "@/components/ui/button";
 import ContinueWithGoogle from "@/components/continue-with-google";
+import { ThemedSafeView } from "@/components/themed-safe-view";
+import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
+import { router } from "expo-router";
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -44,7 +44,9 @@ const LoginPage = () => {
           <Text className="text-right text-foreground text-sm">
             Forgot Password?
           </Text>
-          <Button size="lg">Sign In</Button>
+          <Button size="lg" onPress={() => router.replace("/")}>
+            Sign In
+          </Button>
         </View>
         <View className="items-center justify-center my-10">
           <View className="border-t border-muted-foreground opacity-30 w-full my-4" />

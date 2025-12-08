@@ -1,10 +1,8 @@
+import { HapticTab } from "@/components/haptic-tab";
+import { useThemePalette } from "@/components/theme-provider";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Tabs } from "expo-router";
 import React from "react";
-// Context
-import { useThemePalette } from "@/components/theme-provider";
-// Components
-import { HapticTab } from "@/components/haptic-tab";
-import { IconSymbol } from "@/components/ui/icon-symbol";
 
 export default function TabLayout() {
   const theme = useThemePalette();
@@ -30,6 +28,7 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="calendar"
         options={{
@@ -39,6 +38,7 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="grocery-list"
         options={{
@@ -48,6 +48,7 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="account"
         options={{
