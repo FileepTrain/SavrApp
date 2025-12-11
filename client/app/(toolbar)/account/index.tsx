@@ -1,12 +1,27 @@
-// app/account.tsx
 import { AccountMenuItem } from "@/components/account/account-menu-item";
 import { AccountProfileCard } from "@/components/account/account-profile-card";
 import { ThemedSafeView } from "@/components/themed-safe-view";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
 export default function AccountPage() {
+  const [username, setUsername] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadUserData = async () => {
+      const storedName = await AsyncStorage.getItem("username");
+      const storedEmail = await AsyncStorage.getItem("email");
+
+      setUsername(storedName || "Unknown User");
+      setEmail(storedEmail || "Unknown Email");
+    };
+
+    loadUserData();
+  }, []);
+
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8]">
       {/* Title */}
@@ -18,8 +33,8 @@ export default function AccountPage() {
 
       {/* Profile */}
       <AccountProfileCard
-        name="John Doe"
-        email="john.doe@email.com"
+        name={username ?? "Loading..."}
+        email={email ?? "Loading..."}
       />
 
       {/* Menu */}
