@@ -28,8 +28,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider className="flex-1">
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(toolbar)" />
-        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="index" />
       </Stack>
       <StatusBar style={colorScheme === "dark" ? "light" : "auto"} />
     </ThemeProvider>
