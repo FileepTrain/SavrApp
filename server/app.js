@@ -119,12 +119,24 @@ app.post("/register", async (req, res) => {
       displayName: username, // store username here too
     });
 
-    // 3) Store username → uid mapping (minimal Firestore)
-    await usernameDocRef.set({
-      uid: userRecord.uid,
-      email: email,
+    const uid = userRecord.uid;
+
+    const batch = db.batch();
+
+    // 3) Store in users → holds all info
+    batch.set(db.collection("users").doc(uid), {
+      email,
+      username,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    // 4) Store username → uid mapping (minimal Firestore)
+    batch.set(usernameDocRef, {
+      uid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
 
     // Thomas put the code to your 
     // User document creation stuff here
@@ -207,7 +219,7 @@ app.put("/update-account", async (req, res) => {
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = decoded.uid;
 
-    // 2. Update only allowed fields
+    // 2. Update only allowed fields    (ONLY UPDATES FIREBASE AUTH)
     const updateData = {};
     if (email) updateData.email = email;
     if (password) updateData.password = password;
@@ -215,6 +227,26 @@ app.put("/update-account", async (req, res) => {
 
     // 3. Update the Firebase Auth user
     const updatedUser = await admin.auth().updateUser(uid, updateData);
+
+    // 4. Update Firestore DB
+    const firestoreUpdate = {};
+    if (email) firestoreUpdate.email = email;
+    if (username) firestoreUpdate.username = username;
+
+    if (Object.keys(firestoreUpdate).length > 0){ //only updates if anything changed, brought by the great GPT
+      await admin
+      .firestore()
+      .collection("users")
+      .doc(uid)
+      .set(
+        {
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          email,
+          username,
+        },
+        {merge:true}
+      );
+    }
 
     res.json({
       success: true,
@@ -246,7 +278,10 @@ app.delete("/delete-account", async (req, res) => {
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = decoded.uid;
 
-    // 2. Delete the authenticated user
+    // 2. Delete firestore db data
+    await admin.firestore().collection("users").doc(uid).delete();
+
+    // 3. Delete the authenticated user
     await admin.auth().deleteUser(uid);
 
     res.json({

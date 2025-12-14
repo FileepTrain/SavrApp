@@ -10,6 +10,38 @@ export default function SettingsPage() {
       {/* Title */}
       <Text className="text-[24px] font-bold mb-6 text-black">Settings</Text>
 
+      {/* Edit Profile Setting Item */}
+      <Pressable
+        onPress={() => router.push("/account/edit-profile")}
+        className="w-full h-[77px] bg-white rounded-[12px] flex-row items-center justify-between px-4 mb-6
+                   shadow-sm"
+        style={{
+          shadowColor: "#000",
+          shadowOpacity: 0.1,
+          shadowOffset: { width: 0, height: 1 },
+          shadowRadius: 3,
+          elevation: 3,
+        }}
+      >
+        {/*icon + text box*/}
+        <View className="flex-row items-center gap-4">
+          {/*Text container*/}
+          <View className="flex-col">
+            <Text className="text-[16px] font-medium leading-6 tracking-[0.5px] text-black">
+              Edit Profile
+            </Text>
+            <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
+              Name, email, and more
+            </Text>
+          </View>
+        </View>
+
+        {/* Right: chevron icon substitute */}
+        <View className="w-5 h-5 items-center justify-center">
+          <View className="w-3 h-3 border-r-[1.7px] border-b-[1.7px] border-[#666666] rotate-[-45deg]" />
+        </View>
+      </Pressable>
+
       {/* Change Password Setting Item */}
       <Pressable
         onPress={() => router.push("/account/change-password")}
