@@ -2,25 +2,28 @@ import { AccountMenuItem } from "@/components/account/account-menu-item";
 import { AccountProfileCard } from "@/components/account/account-profile-card";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Text, View } from "react-native";
 
 export default function AccountPage() {
   const [username, setUsername] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadUserData = async () => {
-      const storedName = await AsyncStorage.getItem("username");
-      const storedEmail = await AsyncStorage.getItem("email");
+  const loadUserData = useCallback(async () => {
+    const storedName = await AsyncStorage.getItem("username");
+    const storedEmail = await AsyncStorage.getItem("email");
 
-      setUsername(storedName || "Unknown User");
-      setEmail(storedEmail || "Unknown Email");
-    };
-
-    loadUserData();
+    setUsername(storedName || "Unknown User");
+    setEmail(storedEmail || "Unknown Email");
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData();
+    }, [loadUserData])
+  );
 
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8]">
