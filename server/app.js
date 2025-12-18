@@ -218,17 +218,44 @@ app.put("/update-account", async (req, res) => {
     // 1. Verify token → get UID of the user making the request
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = decoded.uid;
+    
+    // 2. Get current user data
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
 
-    // 2. Update only allowed fields    (ONLY UPDATES FIREBASE AUTH)
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User data not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+    const currentUsername = userDoc.data().username;
+    // 3. If username is changed, then enesure availability
+    if (username && username !== currentUsername) {
+      const usernameDoc = await db
+        .collection("usernames")
+        .doc(username)
+        .get();
+
+      if (usernameDoc.exists) {
+        return res.status(400).json({
+          error: "Username is already taken",
+          code: "USERNAME_TAKEN",
+        });
+      }
+    }
+
+    // 4. Update only allowed fields    (ONLY UPDATES FIREBASE AUTH)
     const updateData = {};
     if (email) updateData.email = email;
     if (password) updateData.password = password;
     if (username) updateData.displayName = username;
 
-    // 3. Update the Firebase Auth user
+    // 5. Update the Firebase Auth user
     const updatedUser = await admin.auth().updateUser(uid, updateData);
 
-    // 4. Update Firestore DB
+    // 6. Update Firestore DB
     const firestoreUpdate = {};
     if (email) firestoreUpdate.email = email;
     if (username) firestoreUpdate.username = username;
@@ -247,7 +274,19 @@ app.put("/update-account", async (req, res) => {
         {merge:true}
       );
     }
+    // 7. Update usernames in doc only if username was changed
+    if (username && username !== currentUsername) {
+      const batch = db.batch();
 
+      batch.delete(db.collection("usernames").doc(currentUsername));
+      batch.set(db.collection("usernames").doc(username), {
+        uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+    }
+    
     res.json({
       success: true,
       uid: updatedUser.uid,
@@ -277,11 +316,31 @@ app.delete("/delete-account", async (req, res) => {
     // 1. Verify token to identify the user
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = decoded.uid;
+    
+    // 2. Get user's firestore document
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
 
-    // 2. Delete firestore db data
-    await admin.firestore().collection("users").doc(uid).delete();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User data not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+    const { username } = userDoc.data();
+    const batch = db.batch();
 
-    // 3. Delete the authenticated user
+    // 3. Delete user Firestore document
+    batch.delete(userDocRef);
+
+    // 4. Delete username mapping
+    if (username) {
+      batch.delete(db.collection("usernames").doc(username));
+    }
+    await batch.commit();
+
+    // 5. Delete the authenticated user
     await admin.auth().deleteUser(uid);
 
     res.json({
