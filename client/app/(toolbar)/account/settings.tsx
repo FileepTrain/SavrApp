@@ -2,7 +2,8 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { router } from "expo-router";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Image, Pressable, Text, View } from "react-native";
+import profileIcon from "../../../assets/images/ProfileIcon.png";
 
 export default function SettingsPage() {
   return (
@@ -25,6 +26,10 @@ export default function SettingsPage() {
       >
         {/*icon + text box*/}
         <View className="flex-row items-center gap-4">
+          {/*Icon*/}
+          <Image source={profileIcon} style={{width:32, height:32}} resizeMode="contain"/>
+
+
           {/*Text container*/}
           <View className="flex-col">
             <Text className="text-[16px] font-medium leading-6 tracking-[0.5px] text-black">
