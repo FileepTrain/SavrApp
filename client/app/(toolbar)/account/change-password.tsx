@@ -40,8 +40,7 @@ export default function ChangePasswordPage() {
         return;
       }
 
-      // 🔥 Call your existing /update-account backend
-      const res = await fetch(`${SERVER_URL}/update-account`, {
+      const res = await fetch(`${SERVER_URL}/api/auth/update-account`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -67,23 +66,9 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <ThemedSafeView className="flex-1 bg-[#F5E7E8]">
-      {/* Top bar with back + title */}
-      <View className="mt-4 px-4 flex-row items-center">
-        <Pressable
-          onPress={() => router.back()}
-          className="w-10 h-10 rounded-[10px] items-center justify-center"
-        >
-          {/* Simple back chevron */}
-          <View className="w-3 h-3 border-l-2 border-b-2 border-black rotate-45" />
-        </Pressable>
-        <Text className="ml-4 text-[20px] font-bold text-black">
-          Change Password
-        </Text>
-      </View>
-
+    <ThemedSafeView className="flex-1 bg-[#F5E7E8] pt-safe-or-20">
       {/* Form container */}
-      <View className="mt-10 px-4 gap-6">
+      <View className="px-4 gap-6">
         {/* Current password (for UX only) */}
         <View className="gap-2">
           <Text className="text-[14px] text-[#1E1E1E]">Current Password</Text>

@@ -1,4 +1,4 @@
-import RecipeHorizontalCard from "@/components/recipe-horizontal-card";
+import { RecipeCard } from "@/components/recipe-card";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -29,7 +29,7 @@ export default function HomeScreen() {
         data={dummyData}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
-          <RecipeHorizontalCard
+          <RecipeCard
             id={item.id.toString()}
             title={item.title}
             calories={item.calories}
@@ -47,11 +47,11 @@ export default function HomeScreen() {
         // 👇 this replaces the stuff that was above ScrollView
         ListHeaderComponent={
           <View className="flex-row justify-center items-center gap-2 mb-4">
-            <Button variant="muted" iconName="filter-alt" className="w-14 h-14" />
+            <Button variant="muted" icon={{ name: "filter-outline", color: "--color-icon" }} className="w-14 h-14" />
             <Input
               className="flex-1"
               placeholder="Search for a Recipe"
-              iconName="search"
+              iconName="magnify"
               inputClassName="h-14"
               touchableIcon
               onPressIcon={handleSearch}

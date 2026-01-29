@@ -1,26 +1,34 @@
-// components/pantry/add-pantry-pop-up.tsx
+// components/add-ingredient-modal.tsx
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import Input from "@/components/ui/input";
 import React, { useEffect, useState } from "react";
 import {
-    Modal,
-    Pressable,
-    Text,
-    TouchableWithoutFeedback,
-    View,
+  Modal,
+  Pressable,
+  Text,
+  TouchableWithoutFeedback,
+  View,
 } from "react-native";
+import { Ingredient, validateIngredient } from "@/types/ingredient";
+import { Alert } from "react-native";
 
-type AddPantryItemModalProps = {
+type AddIngredientModalProps = {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (item: { name: string; quantity: string; unit: string }) => void;
+  onSubmit: (item: Ingredient) => void;
+  title?: string;
+  nameLabel?: string;
+  namePlaceholder?: string;
 };
 
-export function AddPantryItemModal({
+export function AddIngredientModal({
   visible,
   onClose,
   onSubmit,
-}: AddPantryItemModalProps) {
+  title = "Add Ingredient",
+  nameLabel = "Item Name",
+  namePlaceholder = "e.g., Chicken Breast",
+}: AddIngredientModalProps) {
   const [itemName, setItemName] = useState("");
   const [quantity, setQuantity] = useState("");
   const [unit, setUnit] = useState("");
@@ -35,7 +43,13 @@ export function AddPantryItemModal({
   }, [visible]);
 
   const handleAddItem = () => {
-    onSubmit({ name: itemName, quantity, unit });
+    // Validate inputs
+    const ingredient = validateIngredient({ name: itemName, quantity: Number(quantity), unit: unit.toLowerCase() });
+    if (!ingredient.success) {
+      Alert.alert("Validation Error", ingredient.errors.join("\n"));
+      return;
+    }
+    onSubmit(ingredient.data);
     onClose();
   };
 
@@ -63,7 +77,7 @@ export function AddPantryItemModal({
               {/* Red header */}
               <View className="w-full h-[62px] bg-[#EB2D2D] flex-row items-center justify-between px-6">
                 <Text className="text-white text-[20px] font-bold tracking-[0.5px]">
-                  Add Pantry Item
+                  {title}
                 </Text>
 
                 <Pressable onPress={handleCancel}>
@@ -76,10 +90,10 @@ export function AddPantryItemModal({
                 {/* Item Name */}
                 <View className="gap-2">
                   <Text className="text-[14px] text-[#666666] font-medium">
-                    Item Name
+                    {nameLabel}
                   </Text>
                   <Input
-                    placeholder="e.g., Milk"
+                    placeholder={namePlaceholder}
                     value={itemName}
                     onChangeText={setItemName}
                     className="w-full"
@@ -94,13 +108,13 @@ export function AddPantryItemModal({
                       Quantity
                     </Text>
                     <Input
-                        placeholder="1"
-                        value={quantity}
-                        onChangeText={setQuantity}
-                        inputType="number-pad"
-                        className="w-full"
-                        inputClassName="h-[52px]"
-                        />
+                      placeholder="1"
+                      value={quantity}
+                      onChangeText={setQuantity}
+                      inputType="number-pad"
+                      className="w-full"
+                      inputClassName="h-[52px]"
+                    />
                   </View>
 
                   <View className="flex-1 gap-2">

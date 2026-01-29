@@ -25,7 +25,7 @@ const SignUpPage = () => {
     if (!name) return;
 
     try {
-      const res = await fetch(`${SERVER_URL}/check-username`, {
+      const res = await fetch(`${SERVER_URL}/api/auth/check-username`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: name }),
@@ -48,7 +48,7 @@ const SignUpPage = () => {
       setLoading(true);
 
       // Check username availability
-      const resCheck = await fetch(`${SERVER_URL}/check-username`, {
+      const resCheck = await fetch(`${SERVER_URL}/api/auth/check-username`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username }),
@@ -61,7 +61,7 @@ const SignUpPage = () => {
       }
 
       // Register user
-      const res = await fetch(`${SERVER_URL}/register`, {
+      const res = await fetch(`${SERVER_URL}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, email, password }),
@@ -74,7 +74,7 @@ const SignUpPage = () => {
       }
 
       // Option 1: auto-login right after register
-      const loginRes = await fetch(`${SERVER_URL}/login`, {
+      const loginRes = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

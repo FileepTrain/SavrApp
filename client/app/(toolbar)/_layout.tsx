@@ -44,7 +44,7 @@ export default function TabLayout() {
         options={{
           title: "Grocery List",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="shopping-bag" color={color} />
+            <IconSymbol size={28} name="shopping-outline" color={color} />
           ),
         }}
       />
@@ -54,7 +54,7 @@ export default function TabLayout() {
         options={{
           title: "Account",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="person-outline" color={color} />
+            <IconSymbol size={28} name="account-outline" color={color} />
           ),
         }}
       />

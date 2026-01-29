@@ -45,28 +45,28 @@ export default function AccountPage() {
         <AccountMenuItem
           title="My Pantry"
           subtitle="Manage your ingredients"
-          iconName="kitchen"
+          iconName="food-apple-outline"
           onPress={() => router.push("/account/pantry")}
         />
 
         <AccountMenuItem
           title="Favorited Recipes"
           subtitle="Recipes you've saved"
-          iconName="favorite-border"
+          iconName="heart-outline"
           onPress={() => router.push("/account/favorites")}
         />
 
         <AccountMenuItem
           title="Personal Recipes"
           subtitle="Your own creations"
-          iconName="edit"
+          iconName="book-open-outline"
           onPress={() => router.push("/account/personal-recipes")}
         />
 
         <AccountMenuItem
           title="Settings"
           subtitle="Preferences and more"
-          iconName="settings"
+          iconName="cog-outline"
           isLast
           onPress={() => router.push("/account/settings")}
         />

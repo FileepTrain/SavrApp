@@ -5,7 +5,7 @@ export default function RecipeLayout() {
     <Stack>
       <Stack.Screen
         name="[recipeId]"
-        options={{ headerShown: true, title: "Recipe Details" }}
+        options={{ headerShown: false, title: "Recipe Details" }}
       />
       <Stack.Screen
         name="nutrition"

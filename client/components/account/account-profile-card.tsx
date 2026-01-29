@@ -12,7 +12,7 @@ export function AccountProfileCard({ name, email }: Props) {
   return (
     <View className="mt-6 mx-4 flex-row items-center bg-[#F2F2F2] rounded-xl px-4 py-4 shadow-sm">
       <View className="w-[60px] h-[60px] rounded-full bg-[#FFB0B2] items-center justify-center">
-        <IconSymbol name="person-outline" size={32} color="#FFFFFF" />
+        <IconSymbol name="account-outline" size={32} color="#FFFFFF" />
       </View>
 
       <View className="ml-4">

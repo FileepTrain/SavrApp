@@ -10,6 +10,7 @@ import React, { useState } from "react";
 import { TouchableOpacity } from "react-native";
 import { IconSymbol, type MaterialIconName } from "@/components/ui/icon-symbol";
 import { useThemePalette } from "@/components/theme-provider";
+import { twMerge } from "tailwind-merge";
 
 /**
  * Input component enables the user to input any form of text
@@ -67,9 +68,12 @@ const Input = React.forwardRef<TextInput, InputProps>(
         <View className="relative justify-center">
           <TextInput
             ref={ref}
-            className={`rounded-full px-5 text-foreground bg-muted-background ${
-              error ? "border border-red-primary box-border" : ""
-            } ${inputType === "password" || iconName ? "pr-16" : ""} ${inputClassName ?? ""}`}
+            className={twMerge(
+              "rounded-full px-5 text-foreground bg-muted-background",
+              error && "border border-red-primary box-border",
+              (inputType === "password" || iconName) && "pr-16",
+              inputClassName
+            )}
             placeholder={placeholder}
             placeholderTextColor="#9BA1A6"
             keyboardType={
@@ -88,7 +92,7 @@ const Input = React.forwardRef<TextInput, InputProps>(
             >
               <IconSymbol
                 size={20}
-                name={isPasswordVisible ? "visibility" : "visibility-off"}
+                name={isPasswordVisible ? "eye-outline" : "eye-off-outline"}
                 color={theme["--color-icon"]}
               />
             </TouchableOpacity>

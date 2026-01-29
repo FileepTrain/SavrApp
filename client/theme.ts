@@ -9,7 +9,7 @@ const lightPalette = {
   "--color-icon": "#687076",
   "--color-muted-background": "#f2f2f2",
   "--color-muted-foreground": "#49454f",
-  "--color-red-primary": "#ff0000",
+  "--color-red-primary": "#eb2d2d",
   "--color-red-secondary": "#ffb1b2",
 };
 

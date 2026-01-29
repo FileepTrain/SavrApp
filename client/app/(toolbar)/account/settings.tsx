@@ -7,10 +7,7 @@ import profileIcon from "../../../assets/images/ProfileIcon.png";
 
 export default function SettingsPage() {
   return (
-    <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-6">
-      {/* Title */}
-      <Text className="text-[24px] font-bold mb-6 text-black">Settings</Text>
-
+    <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-safe-or-20">
       {/* Edit Profile Setting Item */}
       <Pressable
         onPress={() => router.push("/account/edit-profile")}
@@ -27,7 +24,7 @@ export default function SettingsPage() {
         {/*icon + text box*/}
         <View className="flex-row items-center gap-4">
           {/*Icon*/}
-          <Image source={profileIcon} style={{width:32, height:32}} resizeMode="contain"/>
+          <Image source={profileIcon} style={{ width: 32, height: 32 }} resizeMode="contain" />
 
 
           {/*Text container*/}

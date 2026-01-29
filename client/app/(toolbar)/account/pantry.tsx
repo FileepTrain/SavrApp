@@ -1,49 +1,34 @@
-import { AddPantryItemModal } from "@/components/add-pantry-pop-up";
+import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import React, { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import Button from "@/components/ui/button";
+import { Ingredient } from "@/types/ingredient";
 
 export default function PantryPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
 
-  const handleSubmitNewItem = (item: {
-    name: string;
-    quantity: string;
-    unit: string;
-  }) => {
+  const handleSubmitNewItem = (item: Ingredient) => {
     console.log("New pantry item:", item);
     // TODO: Add this item to your pantry state or send to backend
   };
 
   return (
-    <ThemedSafeView className="flex-1">
-      {/* Title */}
-      <Text className="text-[24px] font-bold mb-6">My Pantry</Text>
-
+    <ThemedSafeView className="flex-1 pt-safe-or-20">
       {/* Add Item card */}
-      <Pressable
-        onPress={() => setIsAddOpen(true)}
-        className="absolute left-[16px] top-[120px] w-[362px] h-[81.67px] bg-white rounded-[10px]"
-        style={{
-          shadowColor: "#000",
-          shadowOpacity: 0.1,
-          shadowRadius: 3,
-          shadowOffset: { width: 0, height: 1 },
-          elevation: 3,
-        }}
-      >
-        <View className="flex-1 items-center justify-center">
-          <Text className="text-[16px] font-medium">Add Pantry Item</Text>
-        </View>
-      </Pressable>
+      <Button variant="primary" icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-red-primary" }} className="h-24 rounded-xl shadow-lg" textClassName="text-xl font-bold text-red-primary" onPress={() => setIsAddOpen(true)}>
+        Add Pantry Item
+      </Button>
 
       {/* Later: pantry items list goes here */}
 
       {/* Modal component */}
-      <AddPantryItemModal
+      <AddIngredientModal
         visible={isAddOpen}
         onClose={() => setIsAddOpen(false)}
         onSubmit={handleSubmitNewItem}
+        title="Add Pantry Item"
+        nameLabel="Item Name"
+        namePlaceholder="e.g., Milk"
       />
     </ThemedSafeView>
   );

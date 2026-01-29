@@ -26,7 +26,7 @@ const LoginPage = () => {
     try {
       setLoading(true);
 
-      const res = await fetch(`${SERVER_URL}/login`, {
+      const res = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
