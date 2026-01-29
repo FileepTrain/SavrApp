@@ -1,11 +1,14 @@
 import express from "express";
 import admin from "firebase-admin";
 import serviceAccount from "./firebaseAdminConfig.json" with { type: "json" };
+import "dotenv/config";
 
 // Import routes
 import authRoutes from "./routes/authRoutes.js";
 import recipeRoutes from "./routes/recipeRoutes.js";
 import ingredientRoutes from "./routes/ingredientRoutes.js";
+import externalRecipeRoutes from "./routes/externalRecipeRoutes.js";
+
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -22,6 +25,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/ingredients", ingredientRoutes);
+app.use("/api/external-recipes", externalRecipeRoutes);
 
 app.get("/", (req, res) => {
   res.send("Hello World!");

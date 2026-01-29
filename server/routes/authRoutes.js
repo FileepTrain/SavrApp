@@ -1,4 +1,5 @@
 import express from "express";
+import { verifyToken } from "../middleware/auth.js";
 import {
   checkUsername,
   register,
@@ -19,9 +20,9 @@ router.post("/register", register);
 router.post("/login", login);
 
 // PUT /api/auth/update-account - Update user account
-router.put("/update-account", updateAccount);
+router.put("/update-account", verifyToken, updateAccount);
 
 // DELETE /api/auth/delete-account - Delete user account
-router.delete("/delete-account", deleteAccount);
+router.delete("/delete-account", verifyToken, deleteAccount);
 
 export default router;

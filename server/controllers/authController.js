@@ -17,15 +17,10 @@ export const checkUsername = async (req, res) => {
 
   try {
     const usernameDoc = await db.collection("usernames").doc(username).get();
-
-    if (usernameDoc.exists) {
-      return res.json({ available: false });
-    } else {
-      return res.json({ available: true });
-    }
+    return res.json({ available: !usernameDoc.exists });
   } catch (error) {
     console.error("Error checking username:", error);
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message || "Internal server error",
       code: error.code || "UNKNOWN_ERROR",
     });
@@ -47,6 +42,8 @@ export const register = async (req, res) => {
     });
   }
 
+  let uid = null;
+
   try {
     // 1) Check if username is already taken
     const usernameDocRef = db.collection("usernames").doc(username);
@@ -63,21 +60,22 @@ export const register = async (req, res) => {
     const userRecord = await admin.auth().createUser({
       email,
       password,
-      displayName: username, // store username here too
+      displayName: username,
     });
 
-    const uid = userRecord.uid;
+    uid = userRecord.uid;
 
     const batch = db.batch();
 
-    // 3) Store in users → holds all info
+    // 3) Store in users
     batch.set(db.collection("users").doc(uid), {
       email,
       username,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // 4) Store username → uid mapping (minimal Firestore)
+    // 4) Store username -> uid mapping
     batch.set(usernameDocRef, {
       uid,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -85,20 +83,23 @@ export const register = async (req, res) => {
 
     await batch.commit();
 
-    // Thomas put the code to your
-    // User document creation stuff here
-    //
-    //
-    //
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      uid: userRecord.uid,
+      uid,
       message: "User created successfully",
     });
   } catch (error) {
+    // Optional rollback if auth user was created but Firestore failed
+    if (uid) {
+      try {
+        await admin.auth().deleteUser(uid);
+      } catch (rollbackErr) {
+        console.error("Rollback failed (deleteUser):", rollbackErr);
+      }
+    }
+
     console.error("Error creating user:", error);
-    res.status(400).json({
+    return res.status(400).json({
       error: error.message,
       code: error.code || "UNKNOWN_ERROR",
     });
@@ -122,29 +123,25 @@ export const login = async (req, res) => {
   try {
     const firebaseResponse = await axios.post(
       `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
-      {
-        email,
-        password,
-        returnSecureToken: true,
-      }
+      { email, password, returnSecureToken: true }
     );
 
     const { idToken, refreshToken, localId, displayName } = firebaseResponse.data;
 
-    res.json({
+    return res.json({
       success: true,
       uid: localId,
       idToken,
       refreshToken,
       email,
-      username: displayName, // now matches your displayName=username
+      username: displayName,
       message: "Login successful",
     });
   } catch (error) {
     console.error("Error logging in:", error.response?.data || error.message);
     const fbError = error.response?.data?.error?.message || "LOGIN_FAILED";
 
-    res.status(400).json({
+    return res.status(400).json({
       error: fbError,
       code: fbError,
     });
@@ -154,24 +151,26 @@ export const login = async (req, res) => {
 /**
  * Update user account
  * PUT /api/auth/update-account
+ * Protected by verifyToken middleware (Authorization header)
  */
 export const updateAccount = async (req, res) => {
-  const { idToken, email, password, username } = req.body;
+  // uid comes from middleware now
+  const uid = req.user?.uid;
 
-  if (!idToken) {
-    return res.status(400).json({
-      error: "idToken is required",
-      code: "MISSING_FIELDS",
+  // allowed changes
+  const { email, password, username } = req.body;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
     });
   }
 
   try {
-    // 1. Verify token → get UID of the user making the request
-    const decoded = await admin.auth().verifyIdToken(idToken);
-    const uid = decoded.uid;
-
-    // 2. Get current user data
     const db = admin.firestore();
+
+    // Load current user doc
     const userDocRef = db.collection("users").doc(uid);
     const userDoc = await userDocRef.get();
 
@@ -181,14 +180,12 @@ export const updateAccount = async (req, res) => {
         code: "USER_NOT_FOUND",
       });
     }
-    const currentUsername = userDoc.data().username;
-    // 3. If username is changed, then enesure availability
-    if (username && username !== currentUsername) {
-      const usernameDoc = await db
-        .collection("usernames")
-        .doc(username)
-        .get();
 
+    const currentUsername = userDoc.data().username;
+
+    // If username changing, ensure availability
+    if (username && username !== currentUsername) {
+      const usernameDoc = await db.collection("usernames").doc(username).get();
       if (usernameDoc.exists) {
         return res.status(400).json({
           error: "Username is already taken",
@@ -197,35 +194,28 @@ export const updateAccount = async (req, res) => {
       }
     }
 
-    // 4. Update only allowed fields    (ONLY UPDATES FIREBASE AUTH)
+    // Update Firebase Auth
     const updateData = {};
     if (email) updateData.email = email;
     if (password) updateData.password = password;
     if (username) updateData.displayName = username;
 
-    // 5. Update the Firebase Auth user
-    const updatedUser = await admin.auth().updateUser(uid, updateData);
+    // Only call updateUser if there is something to update
+    if (Object.keys(updateData).length > 0) {
+      await admin.auth().updateUser(uid, updateData);
+    }
 
-    // 6. Update Firestore DB
+    // Update Firestore user doc (DO NOT overwrite createdAt)
     const firestoreUpdate = {};
     if (email) firestoreUpdate.email = email;
     if (username) firestoreUpdate.username = username;
 
-    if (Object.keys(firestoreUpdate).length > 0){ //only updates if anything changed, brought by the great GPT
-      await admin
-      .firestore()
-      .collection("users")
-      .doc(uid)
-      .set(
-        {
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          email,
-          username,
-        },
-        {merge:true}
-      );
+    if (Object.keys(firestoreUpdate).length > 0) {
+      firestoreUpdate.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+      await userDocRef.set(firestoreUpdate, { merge: true });
     }
-    // 7. Update usernames in doc only if username was changed
+
+    // Update usernames mapping if username changed
     if (username && username !== currentUsername) {
       const batch = db.batch();
 
@@ -238,14 +228,14 @@ export const updateAccount = async (req, res) => {
       await batch.commit();
     }
 
-    res.json({
+    return res.json({
       success: true,
-      uid: updatedUser.uid,
+      uid,
       message: "Account updated successfully",
     });
   } catch (error) {
     console.error("Error updating account:", error);
-    res.status(400).json({
+    return res.status(400).json({
       error: error.message,
       code: error.code || "UPDATE_FAILED",
     });
@@ -255,24 +245,21 @@ export const updateAccount = async (req, res) => {
 /**
  * Delete user account
  * DELETE /api/auth/delete-account
+ * Protected by verifyToken middleware (Authorization header)
  */
 export const deleteAccount = async (req, res) => {
-  const { idToken } = req.body;
+  const uid = req.user?.uid;
 
-  if (!idToken) {
-    return res.status(400).json({
-      error: "idToken is required",
-      code: "MISSING_FIELDS",
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
     });
   }
 
   try {
-    // 1. Verify token to identify the user
-    const decoded = await admin.auth().verifyIdToken(idToken);
-    const uid = decoded.uid;
-
-    // 2. Get user's firestore document
     const db = admin.firestore();
+
     const userDocRef = db.collection("users").doc(uid);
     const userDoc = await userDocRef.get();
 
@@ -282,28 +269,27 @@ export const deleteAccount = async (req, res) => {
         code: "USER_NOT_FOUND",
       });
     }
-    const { username } = userDoc.data();
-    const batch = db.batch();
 
-    // 3. Delete user Firestore document
+    const { username } = userDoc.data();
+
+    const batch = db.batch();
     batch.delete(userDocRef);
 
-    // 4. Delete username mapping
     if (username) {
       batch.delete(db.collection("usernames").doc(username));
     }
+
     await batch.commit();
 
-    // 5. Delete the authenticated user
     await admin.auth().deleteUser(uid);
 
-    res.json({
+    return res.json({
       success: true,
       message: "Account deleted successfully",
     });
   } catch (error) {
     console.error("Error deleting account:", error);
-    res.status(400).json({
+    return res.status(400).json({
       error: error.message,
       code: error.code || "DELETE_FAILED",
     });
