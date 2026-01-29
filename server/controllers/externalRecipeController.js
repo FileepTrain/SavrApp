@@ -18,7 +18,6 @@ export const searchExternalRecipes = async (req, res) => {
     url.searchParams.set("addRecipeInformation", "false");
     url.searchParams.set("instructionsRequired", "true");
 
-    console.log("Has Spoon key?", !!process.env.SPOONACULAR_API_KEY);
     const resp = await fetch(url, {
       headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
     });

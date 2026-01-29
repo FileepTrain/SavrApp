@@ -2,21 +2,21 @@ import { RecipeCard } from "@/components/recipe-card";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
+import { router } from "expo-router";
 import { useState } from "react";
 import { FlatList, View } from "react-native";
 
 export default function HomeScreen() {
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const handleSearch = () => {
-    console.log(
-      "Query:",
-      searchQuery || "no input",
-      "\tTODO: Implement search functionality"
-    );
+    const q = searchQuery.trim();
+    if (!q) return;
+
+    router.push(`/(toolbar)/home/search?q=${encodeURIComponent(q)}`);
   };
 
-  const dummyData = Array.from({ length: 10 }).map((_, index) => ({
+  const dummyHomeFeed = Array.from({ length: 10 }).map((_, index) => ({
     id: index,
     title: `Recipe ${index + 1}`,
     calories: 100,
@@ -26,7 +26,7 @@ export default function HomeScreen() {
   return (
     <ThemedSafeView className="flex-1">
       <FlatList
-        data={dummyData}
+        data={dummyHomeFeed}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
           <RecipeCard
@@ -39,15 +39,19 @@ export default function HomeScreen() {
         numColumns={2}
         columnWrapperStyle={{ gap: 16, justifyContent: "center" }}
         contentContainerStyle={{
-          paddingHorizontal: 24, // matches px-6 from ThemedSafeView
+          paddingHorizontal: 24,
           paddingTop: 24,
           paddingBottom: 24,
           rowGap: 16,
         }}
-        // 👇 this replaces the stuff that was above ScrollView
         ListHeaderComponent={
           <View className="flex-row justify-center items-center gap-2 mb-4">
-            <Button variant="muted" icon={{ name: "filter-outline", color: "--color-icon" }} className="w-14 h-14" />
+            <Button
+              variant="muted"
+              icon={{ name: "filter-outline", color: "--color-icon" }}
+              className="w-14 h-14"
+              onPress={() => console.log("TODO: filters")}
+            />
             <Input
               className="flex-1"
               placeholder="Search for a Recipe"
@@ -57,6 +61,8 @@ export default function HomeScreen() {
               onPressIcon={handleSearch}
               value={searchQuery}
               onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
             />
           </View>
         }
