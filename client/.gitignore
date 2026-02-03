@@ -41,4 +41,4 @@ app-example
 
 # generated native folders
 /ios
-/android
+#Location app logic is in /android

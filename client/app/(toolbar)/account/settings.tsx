@@ -1,11 +1,38 @@
 // app/account/settings.tsx (or wherever this file lives)
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { router } from "expo-router";
-import React from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import React, {useEffect, useState} from "react";
+import { Image, Pressable, Text, View, Switch } from "react-native";
 import profileIcon from "../../../assets/images/ProfileIcon.png";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+
+async function saveLocationEnabled(enabled: boolean) {
+  await AsyncStorage.setItem("LOCATION_ENABLED", enabled ? "true" : "false");
+}
+
+async function getLocationEnabled() {
+  const value = await AsyncStorage.getItem("LOCATION_ENABLED");
+  return value === "true";
+}
 
 export default function SettingsPage() {
+  const [locationEnabled, setLocationEnabled] = useState(false);
+
+  useEffect(() => {
+    const loadSetting = async () => {
+      const value = await AsyncStorage.getItem("LOCATION_ENABLED");
+      setLocationEnabled(value === "true");
+    };
+
+    loadSetting();
+  }, []);
+
+  const toggleSwitch = async (value: boolean) => {
+    setLocationEnabled(value);
+    await saveLocationEnabled(value);
+  };
+
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-safe-or-20">
       {/* Edit Profile Setting Item */}
@@ -81,6 +108,43 @@ export default function SettingsPage() {
           <View className="w-3 h-3 border-r-[1.7px] border-b-[1.7px] border-[#666666] rotate-[-45deg]" />
         </View>
       </Pressable>
+
+      {/* Location Button*/}
+      <View className="w-full h-[77px] bg-white rounded-[12px] flex-row items-center justify-between px-4 mb-6
+                   shadow-sm"
+        style={{
+          shadowColor: "#000",
+          shadowOpacity: 0.1,
+          shadowOffset: { width: 0, height: 1 },
+          shadowRadius: 3,
+          elevation: 3,
+        }}
+      >
+        {/*icon + text box*/}
+        <View className="flex-row items-center gap-4">
+          {/*Icon*/}
+          <View className="w-10 h-10 bg-gray-200 rounded-[12]" />
+
+          {/*Text container*/}
+          <View className="flex-col">
+            <Text className="text-[16px] font-medium leading-6 tracking-[0.5px] text-black">
+              Share Your Location
+            </Text>
+            <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
+              Sharing is {locationEnabled ? "enabled": "disabled"}
+            </Text>
+          </View>
+        </View>
+
+        <Switch
+          style={{transform: [{ scaleX: 1.3}, {scaleY: 1.3}] }}
+          trackColor={{ false: "#9c989e", true: "#2adb47" }}
+          thumbColor= "#ffffff"
+          value={locationEnabled}
+          onValueChange={toggleSwitch}
+        />
+      </View>
+
 
       {/* Logout Button */}
       <Pressable
