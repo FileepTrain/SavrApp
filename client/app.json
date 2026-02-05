@@ -30,6 +30,18 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Savr to access your location.",
+          "locationAlwaysPermission": "Allow Savr to access your location.",
+          "locationWhenInUsePermission": "Allow Savr to access your location to find nearby stores.",
+         "locationAccuracy": "high",
+          "locationTimeout": 10000,
+          "locationFallbackMessage": "Please enable location services to continue.",
+          "locationFallbackToSettings": true
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
