@@ -8,6 +8,7 @@ import authRoutes from "./routes/authRoutes.js";
 import recipeRoutes from "./routes/recipeRoutes.js";
 import ingredientRoutes from "./routes/ingredientRoutes.js";
 import externalRecipeRoutes from "./routes/externalRecipeRoutes.js";
+import krogerRoutes from "./routes/krogerRoutes.js";
 
 
 admin.initializeApp({
@@ -26,6 +27,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/ingredients", ingredientRoutes);
 app.use("/api/external-recipes", externalRecipeRoutes);
+app.use("/api/kroger", krogerRoutes);
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
