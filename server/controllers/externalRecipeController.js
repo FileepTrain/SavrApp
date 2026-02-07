@@ -14,9 +14,31 @@ export const searchExternalRecipes = async (req, res) => {
       });
     }
 
+    const EXTERNAL_SOURCE = "spoonacular";
+
+    // 1) Search cached recipes in Firestore first
+    const cached = await ExternalRecipeModel.searchCachedByTitle(
+      EXTERNAL_SOURCE,
+      q,
+      number
+    );
+
+    // If cached fills the page, return without hitting Spoonacular
+    if (cached.length >= number) {
+      return res.json({
+        success: true,
+        results: cached,
+        totalResults: cached.length, // local-only count here
+        _meta: { cachedCount: cached.length, externalCount: 0, offset },
+      });
+    }
+
+    // 2) Need more -> query Spoonacular for remaining slots
+    const remaining = number - cached.length;
+
     const url = new URL("https://api.spoonacular.com/recipes/complexSearch");
     url.searchParams.set("query", q);
-    url.searchParams.set("number", String(number));
+    url.searchParams.set("number", String(remaining));
     url.searchParams.set("offset", String(offset));
     url.searchParams.set("addRecipeInformation", "false");
     url.searchParams.set("instructionsRequired", "true");
@@ -39,7 +61,25 @@ export const searchExternalRecipes = async (req, res) => {
       });
     }
 
-    return res.json({ success: true, ...data });
+    // 3) Merge cached + external results (avoid duplicates)
+    const cachedIds = new Set(cached.map((r) => r.id));
+
+    const externalResults = Array.isArray(data?.results)
+      ? data.results
+          .filter((r) => !cachedIds.has(r.id))
+          .map((r) => ({ ...r, _cached: false }))
+      : [];
+
+    return res.json({
+      success: true,
+      results: [...cached, ...externalResults],
+      totalResults: data?.totalResults ?? 0, // Spoonacular total
+      _meta: {
+        cachedCount: cached.length,
+        externalCount: externalResults.length,
+        offset,
+      },
+    });
   } catch (error) {
     console.error("Error searching Spoonacular:", error);
     return res.status(500).json({
@@ -65,7 +105,10 @@ export const getExternalRecipeDetails = async (req, res) => {
     const EXTERNAL_SOURCE = "spoonacular";
 
     // 1) Try Firestore first
-    const existing = await ExternalRecipeModel.findByExternal(EXTERNAL_SOURCE, id);
+    const existing = await ExternalRecipeModel.findByExternal(
+      EXTERNAL_SOURCE,
+      id
+    );
     if (existing) {
       const recipeFromDb = { ...existing };
       if (!includeNutrition) delete recipeFromDb.nutrition;
@@ -74,7 +117,9 @@ export const getExternalRecipeDetails = async (req, res) => {
 
     // 2) Not in DB -> fetch from Spoonacular
     const url = new URL(
-      `https://api.spoonacular.com/recipes/${encodeURIComponent(id)}/information`
+      `https://api.spoonacular.com/recipes/${encodeURIComponent(
+        id
+      )}/information`
     );
     url.searchParams.set("includeNutrition", includeNutrition ? "true" : "false");
 
@@ -96,7 +141,6 @@ export const getExternalRecipeDetails = async (req, res) => {
     }
 
     // Simplify to the Spoonacular-shaped object we want to store and return.
-    // This matches what your frontend expects from the earlier code.
     const simplified = {
       id: data.id,
       title: data.title,
@@ -122,9 +166,12 @@ export const getExternalRecipeDetails = async (req, res) => {
 
     // 3) Persist to Firestore (upsert)
     try {
-      await ExternalRecipeModel.upsertFromExternal(EXTERNAL_SOURCE, id, simplified);
+      await ExternalRecipeModel.upsertFromExternal(
+        EXTERNAL_SOURCE,
+        id,
+        simplified
+      );
     } catch (insertErr) {
-      // Log but don't block returning the recipe to the client
       console.error("Failed to persist external recipe:", insertErr);
     }
 
