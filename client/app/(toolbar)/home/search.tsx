@@ -52,7 +52,6 @@ export default function HomeSearchScreen() {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
-    // choose correct spinner
     if (append) setLoadingMore(true);
     else setLoading(true);
 
@@ -79,7 +78,6 @@ export default function HomeSearchScreen() {
 
       setResults((prev) => (append ? [...prev, ...page] : page));
 
-      // if fewer than PAGE_SIZE returned, no more pages
       setHasMore(page.length === PAGE_SIZE);
       setOffset(nextOffset + PAGE_SIZE);
     } catch (e: any) {
@@ -93,11 +91,9 @@ export default function HomeSearchScreen() {
     }
   };
 
-  // run a fresh search whenever URL query changes
   useEffect(() => {
     if (!queryParam) return;
 
-    // reset pagination state
     setResults([]);
     setOffset(0);
     setHasMore(true);
@@ -109,8 +105,6 @@ export default function HomeSearchScreen() {
   const handleSubmitSearch = () => {
     const q = searchQuery.trim();
     if (!q) return;
-
-    // Update params WITHOUT pushing a new screen
     router.setParams({ q });
   };
 
@@ -123,7 +117,10 @@ export default function HomeSearchScreen() {
   };
 
   const renderItem = ({ item }: { item: SearchResult }) => (
-    <TouchableOpacity className="bg-white rounded-xl flex-row mb-3 overflow-hidden">
+    <TouchableOpacity
+      onPress={() => router.push(`/recipe/${item.id}`)}
+      className="bg-white rounded-xl flex-row mb-3 overflow-hidden"
+    >
       {!!item.image && (
         <Image source={{ uri: item.image }} style={{ width: 113, height: 82 }} />
       )}
@@ -139,24 +136,21 @@ export default function HomeSearchScreen() {
 
   return (
     <ThemedSafeView className="flex-1">
-      {/* Use FlatList header so input sits the same as Home and scroll feels natural */}
       <FlatList
         data={results}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderItem}
-        showsVerticalScrollIndicator={false} // ✅ removes right-side scroll bar
-        onEndReached={handleLoadMore} // ✅ infinite scroll
+        showsVerticalScrollIndicator={false}
+        onEndReached={handleLoadMore}
         onEndReachedThreshold={0.6}
         ListHeaderComponent={
           <View className="px-6 pt-24 pb-2">
-            {/* ✅ Filter + Search row (matches Home layout) */}
             <View className="flex-row justify-center items-center gap-2 mb-3">
               <Button
                 variant="muted"
                 icon={{ name: "filter-outline", color: "--color-icon" }}
                 className="w-14 h-14"
                 onPress={() => {
-                  // later: router.push("/(toolbar)/home/filters")
                   console.log("TODO: filters");
                 }}
               />
