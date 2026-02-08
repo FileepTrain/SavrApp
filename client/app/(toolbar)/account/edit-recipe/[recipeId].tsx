@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { Text, View, TouchableOpacity, Alert, Image, ScrollView } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -9,12 +9,14 @@ import { validateRecipe } from "@/types/recipe";
 import { Ingredient } from "@/types/ingredient";
 import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { IngredientsList } from "@/components/recipe/ingredients-list";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ActivityIndicator } from "react-native";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
-export default function CreateRecipePage() {
+export default function EditRecipePage() {
+  const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
   const [recipeImage, setRecipeImage] = useState<string | null>(null);
   const [recipeTitle, setRecipeTitle] = useState<string>("");
   const [recipeSummary, setRecipeSummary] = useState<string>("");
@@ -23,8 +25,67 @@ export default function CreateRecipePage() {
   const [recipeInstructions, setRecipeInstructions] = useState<string>("");
   const [recipeServings, setRecipeServings] = useState<string>("");
   const [recipeIngredients, setRecipeIngredients] = useState<Ingredient[]>([]);
+  const [recipeDiets, setRecipeDiets] = useState<string[]>([]);
+  const [recipeDishTypes, setRecipeDishTypes] = useState<string[]>([]);
   const [isIngredientModalVisible, setIsIngredientModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+
+  useEffect(() => {
+    const fetchRecipe = async () => {
+      if (!recipeId) return;
+
+      try {
+        setFetching(true);
+        const idToken = await AsyncStorage.getItem("idToken");
+        const response = await fetch(`${SERVER_URL}/api/recipes/${recipeId}`, {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          method: "GET",
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to fetch recipe");
+        }
+
+        const recipe = data.recipe;
+        setRecipeTitle(recipe.title ?? "");
+        setRecipeSummary(recipe.summary ?? "");
+        setRecipeImage(recipe.image ?? null);
+        setRecipePrepTime(String(recipe.prepTime ?? ""));
+        setRecipeCookTime(String(recipe.cookTime ?? ""));
+        setRecipeServings(String(recipe.servings ?? ""));
+        setRecipeInstructions(recipe.instructions || "");
+
+        if (Array.isArray(recipe.ingredients)) {
+          setRecipeIngredients(
+            recipe.ingredients.map((ing: { name: string; quantity: number; unit: string }) => ({
+              name: ing.name,
+              quantity: ing.quantity,
+              unit: ing.unit,
+            }))
+          );
+        } else {
+          setRecipeIngredients([]);
+        }
+        setRecipeDiets(Array.isArray(recipe.diets) ? recipe.diets : []);
+        setRecipeDishTypes(
+          Array.isArray(recipe.dishTypes) ? recipe.dishTypes : []
+        );
+      } catch (err: any) {
+        Alert.alert("Error", err.message, [
+          { text: "OK", onPress: () => router.back() },
+        ]);
+      } finally {
+        setFetching(false);
+      }
+    };
+
+    fetchRecipe();
+  }, [recipeId]);
 
   const handleAddIngredient = (ingredient: Ingredient) => {
     setRecipeIngredients((prev) => [...prev, ingredient]);
@@ -34,7 +95,7 @@ export default function CreateRecipePage() {
     setRecipeIngredients((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleCreateRecipe = async () => {
+  const handleSaveRecipe = async () => {
     const recipe = validateRecipe({
       title: recipeTitle,
       summary: recipeSummary,
@@ -44,9 +105,8 @@ export default function CreateRecipePage() {
       servings: Number(recipeServings),
       ingredients: recipeIngredients,
       instructions: recipeInstructions,
-      diets: [],
-      dishTypes: [],
-      nutrition: null,
+      diets: recipeDiets,
+      dishTypes: recipeDishTypes,
     });
 
     if (!recipe.success) {
@@ -59,14 +119,14 @@ export default function CreateRecipePage() {
 
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) {
-        Alert.alert("Session expired", "Please log in again to create a recipe.", [
+        Alert.alert("Session expired", "Please log in again to save changes.", [
           { text: "OK", onPress: () => router.replace("/login") },
         ]);
         return;
       }
 
-      const res = await fetch(`${SERVER_URL}/api/recipes`, {
-        method: "POST",
+      const res = await fetch(`${SERVER_URL}/api/recipes/${recipeId}`, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
@@ -75,7 +135,7 @@ export default function CreateRecipePage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create recipe");
+        throw new Error(data.error || "Failed to update recipe");
       }
       router.push("/account/personal-recipes");
     } catch (err: any) {
@@ -89,23 +149,32 @@ export default function CreateRecipePage() {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permissionResult.granted) {
-      Alert.alert('Permission required', 'Permission to access the media library is required.');
+      Alert.alert(
+        "Permission required",
+        "Permission to access the media library is required."
+      );
       return;
     }
 
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images", "videos"],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
     });
 
-    console.log(result);
-
     if (!result.canceled) {
       setRecipeImage(result.assets[0].uri);
     }
   };
+
+  if (fetching) {
+    return (
+      <ThemedSafeView className="flex-1 items-center justify-center pt-safe-or-20">
+        <ActivityIndicator size="large" color="red" />
+      </ThemedSafeView>
+    );
+  }
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
@@ -114,17 +183,29 @@ export default function CreateRecipePage() {
           {/* Recipe Photo */}
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
             <Text className="text-lg text-foreground font-bold">Recipe Photo</Text>
-            <TouchableOpacity className="bg-muted-background h-36 items-center justify-center rounded-xl gap-2" onPress={pickImage}>
-              {recipeImage ? <Image source={{ uri: recipeImage }}
-                className="w-full h-full"
-                resizeMode="contain" /> : (
+            <TouchableOpacity
+              className="bg-muted-background h-36 items-center justify-center rounded-xl gap-2"
+              onPress={pickImage}
+            >
+              {recipeImage ? (
+                <Image
+                  source={{ uri: recipeImage }}
+                  className="w-full h-full"
+                  resizeMode="contain"
+                />
+              ) : (
                 <>
-                  <IconSymbol name="camera-outline" size={32} color="--color-icon" />
+                  <IconSymbol
+                    name="camera-outline"
+                    size={32}
+                    color="--color-icon"
+                  />
                   <Text className="text-icon text-lg font-medium">Add Photo</Text>
                 </>
               )}
             </TouchableOpacity>
           </View>
+
           {/* Recipe Title */}
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
             <Text className="text-lg text-foreground font-bold">Recipe Name</Text>
@@ -135,9 +216,12 @@ export default function CreateRecipePage() {
               onChangeText={setRecipeTitle}
             />
           </View>
+
           {/* Recipe Description */}
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Recipe Description</Text>
+            <Text className="text-lg text-foreground font-bold">
+              Recipe Description
+            </Text>
             <Input
               multiline
               maxLength={100}
@@ -152,7 +236,9 @@ export default function CreateRecipePage() {
           <View className="flex-row gap-4">
             {/* Recipe Prep Time */}
             <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">Prep Time (minutes)</Text>
+              <Text className="text-lg text-foreground font-bold">
+                Prep Time (minutes)
+              </Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
@@ -163,7 +249,9 @@ export default function CreateRecipePage() {
             </View>
             {/* Recipe Cook Time */}
             <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">Cook Time (minutes)</Text>
+              <Text className="text-lg text-foreground font-bold">
+                Cook Time (minutes)
+              </Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
@@ -173,8 +261,11 @@ export default function CreateRecipePage() {
               />
             </View>
           </View>
+
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Total Servings</Text>
+            <Text className="text-lg text-foreground font-bold">
+              Total Servings
+            </Text>
             <Input
               inputClassName="bg-background border border-muted-background rounded-lg"
               placeholder="e.g., 4"
@@ -183,12 +274,18 @@ export default function CreateRecipePage() {
               onChangeText={(text) => setRecipeServings(text)}
             />
           </View>
+
           {/* Recipe Ingredients */}
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
             <Text className="text-lg text-foreground font-bold">Ingredients</Text>
             <Button
               variant="primary"
-              icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-icon" }}
+              icon={{
+                name: "plus-circle-outline",
+                position: "left",
+                size: 20,
+                color: "--color-icon",
+              }}
               className="bg-muted-background rounded-xl"
               textClassName="text-lg font-medium text-icon"
               onPress={() => setIsIngredientModalVisible(true)}
@@ -196,7 +293,10 @@ export default function CreateRecipePage() {
               Add Ingredient
             </Button>
             {recipeIngredients.length > 0 && (
-              <IngredientsList list={recipeIngredients} onRemove={handleRemoveIngredient} />
+              <IngredientsList
+                list={recipeIngredients}
+                onRemove={handleRemoveIngredient}
+              />
             )}
           </View>
 
@@ -209,9 +309,12 @@ export default function CreateRecipePage() {
             nameLabel="Ingredient Name"
             namePlaceholder="e.g., Chicken Breast"
           />
+
           {/* Recipe Instructions */}
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Instructions</Text>
+            <Text className="text-lg text-foreground font-bold">
+              Instructions
+            </Text>
             <Input
               multiline
               textAlignVertical="top"
@@ -221,11 +324,18 @@ export default function CreateRecipePage() {
               onChangeText={setRecipeInstructions}
             />
           </View>
-          <Button variant="default" className="h-16 rounded-xl" textClassName="text-lg font-medium text-primary" onPress={handleCreateRecipe} disabled={loading}>
-            Create Recipe
+
+          <Button
+            variant="default"
+            className="h-16 rounded-xl"
+            textClassName="text-lg font-medium text-primary"
+            onPress={handleSaveRecipe}
+            disabled={loading}
+          >
+            Save Recipe
           </Button>
         </View>
-      </ScrollView >
-    </ThemedSafeView >
+      </ScrollView>
+    </ThemedSafeView>
   );
 }

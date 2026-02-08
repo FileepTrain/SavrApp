@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { RecipeCard } from "@/components/recipe-card";
 
 type SearchResult = {
   id: number;
@@ -117,21 +118,24 @@ export default function HomeSearchScreen() {
   };
 
   const renderItem = ({ item }: { item: SearchResult }) => (
-    <TouchableOpacity
-      onPress={() => router.push(`/recipe/${item.id}`)}
-      className="bg-white rounded-xl flex-row mb-3 overflow-hidden"
-    >
-      {!!item.image && (
-        <Image source={{ uri: item.image }} style={{ width: 113, height: 82 }} />
-      )}
-      <View className="flex-1 px-3 py-2">
-        <Text className="font-bold text-red-600" numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text className="mt-1">Calories: —</Text>
-        <Text className="mt-1">Rating: —</Text>
-      </View>
-    </TouchableOpacity>
+    <View className="mb-3">
+      <RecipeCard id={item.id.toString()} variant="horizontal" title={item.title} image={item.image} />
+    </View>
+    // <TouchableOpacity
+    //   onPress={() => router.push(`/recipe/${item.id}`)}
+    //   className="bg-white rounded-xl flex-row mb-3 overflow-hidden"
+    // >
+    //   {!!item.image && (
+    //     <Image source={{ uri: item.image }} style={{ width: 113, height: 82 }} />
+    //   )}
+    //   <View className="flex-1 px-3 py-2">
+    //     <Text className="font-bold text-red-600" numberOfLines={2}>
+    //       {item.title}
+    //     </Text>
+    //     <Text className="mt-1">Calories: —</Text>
+    //     <Text className="mt-1">Rating: —</Text>
+    //   </View>
+    // </TouchableOpacity>
   );
 
   return (
@@ -144,7 +148,7 @@ export default function HomeSearchScreen() {
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.6}
         ListHeaderComponent={
-          <View className="px-6 pt-24 pb-2">
+          <View className="pt-16 pb-2">
             <View className="flex-row justify-center items-center gap-2 mb-3">
               <Button
                 variant="muted"

@@ -48,6 +48,10 @@ export default function AccountStackLayout() {
         name="create-recipe"
         options={{ title: "Create New Recipe" }}
       />
+      <Stack.Screen
+        name="edit-recipe/[recipeId]"
+        options={{ title: "Edit Recipe" }}
+      />
       {/* Settings */}
       <Stack.Screen
         name="settings"

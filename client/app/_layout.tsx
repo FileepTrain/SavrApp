@@ -3,6 +3,7 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { StatusBar } from "expo-status-bar";
@@ -26,11 +27,13 @@ export default function RootLayout() {
   if (!fontsLoaded && !error) return null;
 
   return (
-    <ThemeProvider className="flex-1">
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-      </Stack>
-      <StatusBar style={colorScheme === "dark" ? "light" : "auto"} />
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider className="flex-1">
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+        </Stack>
+        <StatusBar style={colorScheme === "dark" ? "light" : "auto"} />
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -9,9 +9,9 @@ const IngredientSchema = z.object({
 });
 
 const RecipeSchema = z.object({
-  name: z.string().min(1, "Recipe name is required"),
-  description: z.string().optional().default(""),
-  imageUri: z.string().nullable().optional(),
+  title: z.string().min(1, "Recipe title is required"),
+  summary: z.string().optional().default(""),
+  image: z.string().nullable().optional(),
   prepTime: z.number().min(0, "Prep time must not be negative"),
   cookTime: z.number().min(0, "Cook time must not be negative"),
   servings: z.number().min(1, "Total servings must be at least 1"),
@@ -83,11 +83,10 @@ export const createRecipe = async (req, res) => {
       userId: uid, // User that created the recipe
       ...recipeFields,
       ingredients: ingredientIds, // Array of ingredient IDs
-      // Initialize default values for price, nutrition, and reviews
-      price: -1,
-      nutrition: {},
-      reviews: [],
-      rating: -1,
+      // Initialize default values
+      diets: [],
+      dishTypes: [],
+      nutrition: null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -235,6 +234,109 @@ export const getRecipeById = async (req, res) => {
     res.status(500).json({
       error: error.message || "Internal server error",
       code: error.code || "FETCH_RECIPE_FAILED",
+    });
+  }
+};
+
+/**
+ * Update an existing recipe
+ * PUT /api/recipes/:id
+ */
+export const updateRecipe = async (req, res) => {
+  const db = admin.firestore();
+  const { uid } = req.user;
+  const { id } = req.params;
+
+  try {
+    const docRef = db.collection("recipes").doc(id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({
+        error: "Recipe not found",
+        code: "RECIPE_NOT_FOUND",
+      });
+    }
+
+    // Check ownership
+    if (doc.data().userId !== uid) {
+      return res.status(403).json({
+        error: "You don't have permission to update this recipe",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Validate request body
+    const validationResult = RecipeSchema.safeParse(req.body);
+
+    if (!validationResult.success) {
+      const errors = validationResult.error?.issues?.map(
+        (issue) => issue.message,
+      ) ?? ["Validation failed"];
+      return res.status(400).json({
+        error: errors,
+        code: "VALIDATION_ERROR",
+        details: errors,
+      });
+    }
+
+    const recipeData = validationResult.data;
+    const { ingredients: ingredientsList, ...recipeFields } = recipeData;
+
+    // Delete old ingredient documents
+    const oldIngredientIds = doc.data().ingredients || [];
+    if (oldIngredientIds.length > 0) {
+      const batch = db.batch();
+      for (const ingredientId of oldIngredientIds) {
+        batch.delete(db.collection("ingredients").doc(ingredientId));
+      }
+      await batch.commit();
+    }
+
+    // Create new ingredient documents
+    const ingredientIds = [];
+    const batch = db.batch();
+
+    for (const raw of ingredientsList) {
+      const parsed = IngredientSchema.safeParse(raw);
+      if (!parsed.success) {
+        const errors = parsed.error?.issues?.map((issue) => issue.message) ?? [
+          "Invalid ingredient",
+        ];
+        return res.status(400).json({
+          error: errors,
+          code: "VALIDATION_ERROR",
+        });
+      }
+      const ingredientRef = db.collection("ingredients").doc();
+      batch.set(ingredientRef, {
+        name: parsed.data.name,
+        quantity: parsed.data.quantity,
+        unit: parsed.data.unit,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      ingredientIds.push(ingredientRef.id);
+    }
+
+    await batch.commit();
+
+    // Update the recipe document
+    await docRef.update({
+      ...recipeFields,
+      ingredients: ingredientIds,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.json({
+      success: true,
+      message: "Recipe updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating recipe:", error);
+    res.status(500).json({
+      error: error.message || "Internal server error",
+      code: error.code || "UPDATE_RECIPE_FAILED",
     });
   }
 };

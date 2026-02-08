@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ingredient } from "@/types/ingredient";
 
 // Your backend base (Android emulator -> host machine)
 const SERVER_URL = "http://10.0.2.2:3000";
@@ -37,9 +38,29 @@ type ExternalRecipe = {
   extendedIngredients?: ExternalIngredient[];
 };
 
+/** Display shape used by the UI (normalized from both personal and external) */
+type DisplayRecipe = {
+  title: string;
+  image?: string | null;
+  readyInMinutes?: number;
+  prepTime?: number;
+  cookTime?: number;
+  servings?: number;
+  summary?: string;
+  instructions?: string;
+  calories?: number;
+  rating?: number;
+  reviewsLength?: number;
+};
+
 function stripHtml(html?: string) {
   if (!html) return "";
   return html.replace(/<[^>]*>/g, "").trim();
+}
+
+/* Personal recipes use Firestore IDs (alphanumeric); external use Spoonacular IDs (numeric only) */
+function isPersonalRecipeId(id: string): boolean {
+  return !/^\d+$/.test(id);
 }
 
 export default function RecipeDetailsPage() {
@@ -47,8 +68,8 @@ export default function RecipeDetailsPage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
 
   const [loading, setLoading] = useState(true);
-  const [recipe, setRecipe] = useState<ExternalRecipe | null>(null);
-  const [ingredients, setIngredients] = useState<ExternalIngredient[]>([]);
+  const [recipe, setRecipe] = useState<DisplayRecipe | null>(null);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [isIngredientsOpen, setIsIngredientsOpen] = useState(true);
   const insets = useSafeAreaInsets();
 
@@ -58,24 +79,67 @@ export default function RecipeDetailsPage() {
 
       setLoading(true);
       try {
-        const response = await fetch(
-          `${SERVER_URL}/api/external-recipes/${recipeId}/details`,
-          { method: "GET" }
-        );
+        if (isPersonalRecipeId(recipeId)) {
+          // Personal recipe: GET /api/recipes/:id
+          const response = await fetch(
+            `${SERVER_URL}/api/recipes/${recipeId}`,
+            { method: "GET" }
+          );
+          const data = await response.json();
 
-        const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data?.error || "Failed to fetch recipe");
+          }
 
-        if (!response.ok) {
-          throw new Error(data?.error || "Failed to fetch external recipe");
-        }
-
-        const r: ExternalRecipe = data.recipe;
-        setRecipe(r);
-
-        if (Array.isArray(r.extendedIngredients)) {
-          setIngredients(r.extendedIngredients);
+          const r = data.recipe;
+          setRecipe({
+            title: r.title,
+            summary: r.summary,
+            image: r.image,
+            prepTime: r.prepTime,
+            cookTime: r.cookTime,
+            readyInMinutes: (r.prepTime ?? 0) + (r.cookTime ?? 0),
+            servings: r.servings,
+            instructions: r.instructions,
+            calories: r.calories,
+            rating: r.rating,
+            reviewsLength: r.reviews?.length ?? 0,
+          });
+          setIngredients(
+            (r.ingredients ?? []).map((ing: Ingredient) => ({
+              name: ing.name,
+              quantity: ing.quantity,
+              unit: ing.unit,
+            }))
+          );
         } else {
-          setIngredients([]);
+          // External recipe: GET /api/external-recipes/:id/details
+          const response = await fetch(
+            `${SERVER_URL}/api/external-recipes/${recipeId}/details`,
+            { method: "GET" }
+          );
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data?.error || "Failed to fetch external recipe");
+          }
+
+          const r: ExternalRecipe = data.recipe;
+          setRecipe({
+            title: r.title,
+            image: r.image,
+            readyInMinutes: r.readyInMinutes,
+            servings: r.servings,
+            summary: r.summary ?? undefined,
+            instructions: r.instructions ?? undefined,
+          });
+          setIngredients(
+            (r.extendedIngredients ?? []).map((ing) => ({
+              name: ing.name,
+              quantity: Number((ing.amount ?? 1).toFixed(2)),
+              unit: ing.unit ?? "serving",
+            }))
+          );
         }
       } catch (error) {
         console.error("Error fetching recipe:", error);
@@ -148,14 +212,13 @@ export default function RecipeDetailsPage() {
               </Text>
 
               <View className="flex-row items-center justify-center gap-4">
-                {/* Spoonacular details endpoint doesn't include rating by default */}
-                <RecipeRating rating={0} reviewsLength={0} />
-
-                {/* Calories not included unless you fetch nutrition */}
+                <RecipeRating
+                  rating={recipe?.rating ?? 0}
+                  reviewsLength={recipe?.reviewsLength ?? 0}
+                />
                 <Text className="text-muted-foreground text-sm font-medium">
-                  Calories: —
+                  Calories: {recipe?.calories != null ? recipe.calories : "—"}
                 </Text>
-
                 <Text className="text-muted-foreground text-sm font-medium">
                   Avg. $—
                 </Text>
@@ -163,17 +226,23 @@ export default function RecipeDetailsPage() {
             </View>
 
             <View className="bg-background rounded-xl shadow h-20 w-full items-center justify-evenly flex-row">
-              {/* Prep time (we only have readyInMinutes) */}
               <View className="justify-center items-center">
                 <Text className="text-foreground font-bold">
-                  {recipe?.readyInMinutes ?? 0} min
+                  {recipe?.prepTime != null
+                    ? `${recipe.prepTime} min`
+                    : recipe?.readyInMinutes != null
+                      ? `${recipe.readyInMinutes} min`
+                      : "—"}
                 </Text>
-                <Text className="text-muted-foreground text-sm">Total</Text>
+                <Text className="text-muted-foreground text-sm">
+                  {recipe?.prepTime != null ? "Prep" : "Total"}
+                </Text>
               </View>
 
-              {/* Cook time placeholder */}
               <View className="justify-center items-center">
-                <Text className="text-foreground font-bold">—</Text>
+                <Text className="text-foreground font-bold">
+                  {recipe?.cookTime != null ? `${recipe.cookTime} min` : "—"}
+                </Text>
                 <Text className="text-muted-foreground text-sm">Cook</Text>
               </View>
 
@@ -188,7 +257,7 @@ export default function RecipeDetailsPage() {
 
             {/* Description */}
             <Text className="font-medium text-sm">
-              {stripHtml(recipe?.summary) || "No description available"}
+              {stripHtml(recipe?.summary ?? "") || "No description available"}
             </Text>
 
             {/* BUTTON ROW: Nutrition | Reviews | Share */}
@@ -239,34 +308,30 @@ export default function RecipeDetailsPage() {
             {/* TOGGLE BUTTONS: ingredients / instructions */}
             <View className="flex-row justify-around items-center bg-background rounded-xl h-10 p-1 shadow">
               <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${
-                  isIngredientsOpen
-                    ? "bg-red-primary text-background"
-                    : "bg-background text-foreground"
-                }`}
+                className={`w-1/2 py-1 rounded-lg ${isIngredientsOpen
+                  ? "bg-red-primary text-background"
+                  : "bg-background text-foreground"
+                  }`}
                 onPress={() => setIsIngredientsOpen(true)}
               >
                 <Text
-                  className={`text-center ${
-                    isIngredientsOpen ? "text-background" : "text-foreground"
-                  }`}
+                  className={`text-center ${isIngredientsOpen ? "text-background" : "text-foreground"
+                    }`}
                 >
                   Ingredients
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${
-                  !isIngredientsOpen
-                    ? "bg-red-primary"
-                    : "bg-background text-background"
-                }`}
+                className={`w-1/2 py-1 rounded-lg ${!isIngredientsOpen
+                  ? "bg-red-primary"
+                  : "bg-background text-background"
+                  }`}
                 onPress={() => setIsIngredientsOpen(false)}
               >
                 <Text
-                  className={`text-center ${
-                    !isIngredientsOpen ? "text-background" : "text-foreground"
-                  }`}
+                  className={`text-center ${!isIngredientsOpen ? "text-background" : "text-foreground"
+                    }`}
                 >
                   Instructions
                 </Text>
@@ -278,8 +343,7 @@ export default function RecipeDetailsPage() {
               {isIngredientsOpen ? (
                 <View className="bg-white rounded-xl p-4 shadow gap-2">
                   {ingredients.length > 0 ? (
-                    // IngredientsList expects your own shape; but it usually works if it renders `.original`
-                    <IngredientsList list={ingredients as any} />
+                    <IngredientsList list={ingredients} />
                   ) : (
                     <Text className="text-foreground font-medium">
                       No ingredients available

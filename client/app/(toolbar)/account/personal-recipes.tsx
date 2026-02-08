@@ -2,15 +2,14 @@ import { useState, useEffect } from "react";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { router } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Recipe } from "@/types/recipe";
-import { RecipeCard } from "@/components/recipe-card";
+import { SwipeableRecipeCard } from "@/components/swipeable-recipe-card";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
 export default function PersonalRecipesPage() {
-  const [personalRecipes, setPersonalRecipes] = useState<Recipe[]>([]);
+  const [personalRecipes, setPersonalRecipes] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -26,7 +25,6 @@ export default function PersonalRecipesPage() {
           method: "GET",
         });
         const data = await response.json();
-        console.log("Personal Recipes:", data.recipes.map((r) => ({ id: r.id, name: r.name })));
         setPersonalRecipes(data.recipes);
         if (!response.ok) {
           throw new Error(data.error || "Failed to fetch recipes");
@@ -54,15 +52,18 @@ export default function PersonalRecipesPage() {
           <FlatList
             // List of Personal Recipes
             data={personalRecipes}
-            renderItem={({ item }: { item: Recipe }) => (
-              <RecipeCard
-                variant="horizontal"
-                id={item.id}
-                title={item.name}
-                calories={item.calories || 0}
-                rating={item.rating || 0}
-                reviewsLength={item.reviews?.length || 0}
-              />
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }: { item: any }) => (
+              <View className="mb-3">
+                <SwipeableRecipeCard
+                  id={item.id}
+                  title={item.title}
+                  calories={item.calories || 0}
+                  rating={item.rating || 0}
+                  reviewsLength={item.reviews?.length || 0}
+                  image={item.image}
+                />
+              </View>
             )}
           />
         }

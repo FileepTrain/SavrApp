@@ -12,6 +12,7 @@ interface RecipeCardProps {
   rating?: number;
   reviewsLength?: number;
   variant?: CardVariant;
+  image?: string | null;
 }
 
 export const RecipeCard = ({
@@ -22,6 +23,7 @@ export const RecipeCard = ({
   calories = 0,
   rating = 0,
   reviewsLength = 0,
+  image,
   variant = "default",
 }: RecipeCardProps) => {
   // Square variant
@@ -29,11 +31,19 @@ export const RecipeCard = ({
     return (
       <Link href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}>
         <View className="bg-white rounded-2xl overflow-hidden flex-col w-48 h-56 drop-shadow-xl">
-          <Image
-            source={require("@/assets/images/SAVR-logo.png")}
-            className="w-full h-28"
-            resizeMode="contain"
-          />
+          {image ? (
+            <Image
+              source={{ uri: image }}
+              className="w-full h-28"
+              resizeMode="cover"
+            />
+          ) : (
+            <Image
+              source={require("@/assets/images/SAVR-logo.png")}
+              className="w-full h-28"
+              resizeMode="contain"
+            />
+          )}
           <View className="p-4 gap-2">
             <Text
               className="text-red-primary font-medium text-base"
@@ -55,11 +65,19 @@ export const RecipeCard = ({
   return (
     <Link href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}>
       <View className="bg-white flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
-        <Image
-          source={require("@/assets/images/SAVR-logo.png")}
-          className="h-full w-32 rounded-xl"
-          resizeMode="contain"
-        />
+        {image ? (
+          <Image
+            source={{ uri: image }}
+            className="h-full w-32 rounded-xl rounded-r-none"
+            resizeMode="cover"
+          />
+        ) : (
+          <Image
+            source={require("@/assets/images/SAVR-logo.png")}
+            className="h-full w-32 rounded-xl rounded-r-none"
+            resizeMode="contain"
+          />
+        )}
         <View className="flex-1 justify-center">
           <View>
             <Text className="text-red-primary font-medium" numberOfLines={1}>

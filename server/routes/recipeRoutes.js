@@ -4,6 +4,7 @@ import {
   createRecipe,
   getUserRecipes,
   getRecipeById,
+  updateRecipe,
   deleteRecipe,
 } from "../controllers/recipeController.js";
 
@@ -17,6 +18,9 @@ router.get("/", verifyToken, getUserRecipes);
 
 // GET /api/recipes/:id - Get a single recipe by ID
 router.get("/:id", getRecipeById);
+
+// PUT /api/recipes/:id - Update a recipe
+router.put("/:id", verifyToken, updateRecipe);
 
 // DELETE /api/recipes/:id - Delete a recipe
 router.delete("/:id", verifyToken, deleteRecipe);

@@ -127,7 +127,7 @@ export function AddIngredientModal({
                       onChangeText={setUnit}
                       className="w-full"
                       inputClassName="h-[52px]"
-                      iconName="arrow-drop-down"
+                      iconName="menu-down"
                     />
                   </View>
                 </View>
