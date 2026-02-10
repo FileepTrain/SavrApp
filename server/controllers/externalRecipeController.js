@@ -1,5 +1,6 @@
 // controllers/externalRecipeController.js
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
+import ExternalIngredientModel from "../models/externalIngredientModel.js";
 
 export const searchExternalRecipes = async (req, res) => {
   try {
@@ -28,7 +29,7 @@ export const searchExternalRecipes = async (req, res) => {
       return res.json({
         success: true,
         results: cached,
-        totalResults: cached.length, // local-only count here
+        totalResults: cached.length,
         _meta: { cachedCount: cached.length, externalCount: 0, offset },
       });
     }
@@ -49,7 +50,6 @@ export const searchExternalRecipes = async (req, res) => {
 
     const data = await resp.json();
 
-    // Forward quota headers if present
     const quotaLeft = resp.headers.get("x-api-quota-left");
     if (quotaLeft) res.set("x-api-quota-left", quotaLeft);
 
@@ -73,7 +73,7 @@ export const searchExternalRecipes = async (req, res) => {
     return res.json({
       success: true,
       results: [...cached, ...externalResults],
-      totalResults: data?.totalResults ?? 0, // Spoonacular total
+      totalResults: data?.totalResults ?? 0,
       _meta: {
         cachedCount: cached.length,
         externalCount: externalResults.length,
@@ -140,6 +140,22 @@ export const getExternalRecipeDetails = async (req, res) => {
       });
     }
 
+    const rawExtended = Array.isArray(data.extendedIngredients)
+      ? data.extendedIngredients
+      : [];
+
+    // ✅ 2.5) Cache ingredient master data in Firestore (upsert by ingredient id)
+    // This stores ingredient info in /externalIngredients so you can reuse it later
+    try {
+      await ExternalIngredientModel.upsertManyFromExternal(
+        EXTERNAL_SOURCE,
+        rawExtended
+      );
+    } catch (ingErr) {
+      console.error("Failed to persist external ingredients:", ingErr);
+      // do not fail the recipe request
+    }
+
     // Simplify to the Spoonacular-shaped object we want to store and return.
     const simplified = {
       id: data.id,
@@ -150,7 +166,11 @@ export const getExternalRecipeDetails = async (req, res) => {
       servings: data.servings,
       summary: data.summary ?? null,
       instructions: data.instructions ?? null,
-      extendedIngredients: (data.extendedIngredients ?? []).map((ing) => ({
+
+      // ✅ keep the list for UI + store ids for easier querying
+      ingredientIds: rawExtended.map((ing) => ing.id).filter(Boolean),
+
+      extendedIngredients: rawExtended.map((ing) => ({
         id: ing.id,
         name: ing.name,
         original: ing.original,
@@ -158,13 +178,14 @@ export const getExternalRecipeDetails = async (req, res) => {
         unit: ing.unit,
         image: ing.image,
       })),
+
       nutrition: includeNutrition ? data.nutrition : null,
       dishTypes: data.dishTypes ?? null,
       diets: data.diets ?? null,
       cuisines: data.cuisines ?? null,
     };
 
-    // 3) Persist to Firestore (upsert)
+    // 3) Persist recipe to Firestore (upsert)
     try {
       await ExternalRecipeModel.upsertFromExternal(
         EXTERNAL_SOURCE,
