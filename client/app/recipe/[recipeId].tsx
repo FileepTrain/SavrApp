@@ -13,9 +13,26 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ingredient } from "@/types/ingredient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Your backend base (Android emulator -> host machine)
 const SERVER_URL = "http://10.0.2.2:3000";
+const FAVORITES_KEY = "FAV_RECIPE_IDS";
+
+async function syncFavorites() {
+  const idToken = await AsyncStorage.getItem("idToken");
+  const saved = await AsyncStorage.getItem(FAVORITES_KEY);
+  const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+
+  await fetch(`${SERVER_URL}/api/auth/update-favorites`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ favoriteIds }),
+  });
+}
 
 type ExternalIngredient = {
   id: number;
@@ -71,7 +88,25 @@ export default function RecipeDetailsPage() {
   const [recipe, setRecipe] = useState<DisplayRecipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [isIngredientsOpen, setIsIngredientsOpen] = useState(true);
+  const [isFavorited, setIsFavorited] = useState(false);
   const insets = useSafeAreaInsets();
+
+  const id = Array.isArray(recipeId) ? recipeId[0] : recipeId;
+
+  const toggleFavorite = async () => {
+    //const id = String(recipeId);
+    const next = !isFavorited;
+    setIsFavorited(next);
+  
+    const saved = await AsyncStorage.getItem(FAVORITES_KEY);
+    const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+    const updated = next
+      ? [...favoriteIds, id]
+      : favoriteIds.filter((fav) => fav !== id);
+  
+    await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
+    await syncFavorites();
+  };
 
   useEffect(() => {
     const fetchRecipe = async () => {
@@ -112,6 +147,11 @@ export default function RecipeDetailsPage() {
               unit: ing.unit,
             }))
           );
+
+          const saved = await AsyncStorage.getItem(FAVORITES_KEY);
+          const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+          //const id = String(recipeId)
+          setIsFavorited(favoriteIds.includes(id));
         } else {
           // External recipe: GET /api/external-recipes/:id/details
           const response = await fetch(
@@ -186,12 +226,16 @@ export default function RecipeDetailsPage() {
         >
           <IconSymbol name="chevron-left" size={24} color="#EB2D2D" />
         </TouchableOpacity>
-
+        
+        {/* Favorite Button */}
         <TouchableOpacity
-          onPress={() => console.log("Favorite clicked")}
+          onPress={() => {
+            console.log("Favorite clicked"),
+            //setIsFavorited((prev) => !prev)
+            toggleFavorite()}}
           className="absolute right-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
         >
-          <IconSymbol name="cards-heart-outline" size={24} color="#EB2D2D" />
+          <IconSymbol name={isFavorited ? "cards-heart" : "cards-heart-outline"} size={24} color="#EB2D2D" />
         </TouchableOpacity>
       </View>
 

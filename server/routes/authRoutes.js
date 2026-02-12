@@ -5,6 +5,8 @@ import {
   register,
   login,
   updateAccount,
+  updateFavorites,
+  getFavorites,
   deleteAccount,
 } from "../controllers/authController.js";
 
@@ -21,6 +23,12 @@ router.post("/login", login);
 
 // PUT /api/auth/update-account - Update user account
 router.put("/update-account", verifyToken, updateAccount);
+
+// PUT /api/auth/update-favorites - Update user favorites
+router.put("/update-favorites", verifyToken, updateFavorites);
+
+// GET /api/auth/favorites - Get array of favorite recipes
+router.get("/get-favorites", verifyToken, getFavorites)
 
 // DELETE /api/auth/delete-account - Delete user account
 router.delete("/delete-account", verifyToken, deleteAccount);

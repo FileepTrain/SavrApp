@@ -1,5 +1,6 @@
 import admin from "firebase-admin";
 import axios from "axios";
+import { success } from "zod";
 
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
 
@@ -240,6 +241,93 @@ export const updateAccount = async (req, res) => {
       code: error.code || "UPDATE_FAILED",
     });
   }
+};
+
+/**
+ * Update user favorites
+ * PUT /api/auth/update-favorites
+ */
+export const updateFavorites = async (req, res) => {
+  const uid = req.user?.uid;
+  const { favoriteIds } = req.body;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Error updating favorites",
+      code: "Update_Failed",
+    });
+  }
+
+  if (!Array.isArray(favoriteIds)) {
+    return res.status(400).json({
+      error: "Favorite IDs must be an array",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+
+    await db.collection("users").doc(uid).update({
+      favoriteIds,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return res.json({
+      success: true,
+      message: "Favorites updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating favorites:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "UPDATE_FAILED",
+    });
+  }
+};
+
+/**
+ * Get user favorites
+ * PUT /api/auth/favorites
+ */
+export const getFavorites = async (req, res) => {
+  const uid = req.user?.uid;
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.json({
+        success: true,
+        favoriteIds: [],
+      });
+    }
+
+    const {favoriteIds} = userDoc.data();
+    const list = Array.isArray(favoriteIds) ? favoriteIds : [];
+
+    return res.json({
+      success: true,
+      favoriteIds: list,
+    });
+  } catch (error) {
+    console.error("Error fetching favorites:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "FAVORITES_FETCH_FAILED",
+    });
+  }
+
 };
 
 /**
