@@ -10,6 +10,9 @@ async function isLocationEnabled() {
   return value === "true";
 }
 
+/*If your emulator still does not output zip try opening google maps app.
+For some reason that seems to solve whatever bug causing denied location access :/
+*/
 async function getLocation() {
   const allowed = await isLocationEnabled();
   if(!allowed) {
@@ -25,8 +28,12 @@ async function getLocation() {
     }
 
     const location = await Location.getCurrentPositionAsync();
-    console.log("Latitude:", location.coords.latitude);
-    console.log("Longitude:", location.coords.longitude);
+    const {latitude, longitude} = location.coords;
+    const [address] = await Location.reverseGeocodeAsync({ latitude, longitude});
+    const zipcode = address?.postalCode?? ''; //if no zip returns empty string
+    console.log("Latitude:", latitude);
+    console.log("Longitude:", longitude);
+    console.log("zipcode:", zipcode)
   } catch (error) {
     console.log("Error getting location:", error);
   }
