@@ -16,7 +16,7 @@ export default function AccountStackLayout() {
         headerTransparent: true,
         header: ({ options, navigation }) => (
           <SafeAreaView className="px-4 pt-7 flex-row items-center">
-            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
+            <TouchableOpacity onPress={() => navigation.popToTop()} className="mr-4">
               <IconSymbol name="chevron-left" size={30} color="black" />
             </TouchableOpacity>
             <Text className="text-2xl font-bold">{options.title}</Text>

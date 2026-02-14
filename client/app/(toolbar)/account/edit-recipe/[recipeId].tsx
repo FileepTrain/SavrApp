@@ -27,6 +27,7 @@ export default function EditRecipePage() {
   const [recipeIngredients, setRecipeIngredients] = useState<Ingredient[]>([]);
   const [recipeDiets, setRecipeDiets] = useState<string[]>([]);
   const [recipeDishTypes, setRecipeDishTypes] = useState<string[]>([]);
+  const [initialImageUrl, setInitialImageUrl] = useState<string | null>(null); // from server, to determine if we should replace vs keep same URL
   const [isIngredientModalVisible, setIsIngredientModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -55,6 +56,7 @@ export default function EditRecipePage() {
         setRecipeTitle(recipe.title ?? "");
         setRecipeSummary(recipe.summary ?? "");
         setRecipeImage(recipe.image ?? null);
+        setInitialImageUrl(recipe.image ?? null);
         setRecipePrepTime(String(recipe.prepTime ?? ""));
         setRecipeCookTime(String(recipe.cookTime ?? ""));
         setRecipeServings(String(recipe.servings ?? ""));
@@ -105,8 +107,6 @@ export default function EditRecipePage() {
       servings: Number(recipeServings),
       ingredients: recipeIngredients,
       instructions: recipeInstructions,
-      diets: recipeDiets,
-      dishTypes: recipeDishTypes,
     });
 
     if (!recipe.success) {
@@ -125,17 +125,40 @@ export default function EditRecipePage() {
         return;
       }
 
+      const formData = new FormData();
+      formData.append("title", recipe.data.title);
+      formData.append("summary", recipe.data.summary ?? "");
+      formData.append("prepTime", String(recipe.data.prepTime));
+      formData.append("cookTime", String(recipe.data.cookTime));
+      formData.append("servings", String(recipe.data.servings));
+      formData.append("instructions", recipe.data.instructions);
+      formData.append("ingredients", JSON.stringify(recipe.data.ingredients));
+
+      if (initialImageUrl && !recipeImage) {
+        formData.append("removeImage", "true");
+      } else if (recipeImage && (recipeImage.startsWith("file://") || recipeImage.startsWith("content://"))) {
+        const filename = recipeImage.split("/").pop() || "recipe-image.jpg";
+        const match = filename.toLowerCase().match(/\.(jpe?g|png|gif|webp)$/);
+        const mimeType = match
+          ? (match[1] === "jpg" || match[1] === "jpeg" ? "image/jpeg" : `image/${match[1]}`)
+          : "image/jpeg";
+        formData.append("image", {
+          uri: recipeImage,
+          name: filename,
+          type: mimeType,
+        } as unknown as Blob);
+      }
+
       const res = await fetch(`${SERVER_URL}/api/recipes/${recipeId}`, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify(recipe.data),
+        body: formData,
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to update recipe");
+        throw new Error(Array.isArray(data.error) ? data.error.join("\n") : data.error || "Failed to update recipe");
       }
       router.push("/account/personal-recipes");
     } catch (err: any) {
@@ -204,6 +227,16 @@ export default function EditRecipePage() {
                 </>
               )}
             </TouchableOpacity>
+            {recipeImage ? (
+              <Button
+                variant="default"
+                className="rounded-lg"
+                textClassName="text-destructive"
+                onPress={() => setRecipeImage(null)}
+              >
+                Remove photo
+              </Button>
+            ) : null}
           </View>
 
           {/* Recipe Title */}

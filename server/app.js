@@ -11,10 +11,10 @@ import externalRecipeRoutes from "./routes/externalRecipeRoutes.js";
 import krogerRoutes from "./routes/krogerRoutes.js";
 import pantryRoutes from "./routes/pantryRoutes.js";
 
-
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://savr-6ab25-default-rtdb.firebaseio.com",
+  storageBucket: "savr-6ab25.firebasestorage.app",
 });
 
 const app = express();

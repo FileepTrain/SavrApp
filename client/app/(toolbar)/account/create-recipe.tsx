@@ -44,9 +44,6 @@ export default function CreateRecipePage() {
       servings: Number(recipeServings),
       ingredients: recipeIngredients,
       instructions: recipeInstructions,
-      diets: [],
-      dishTypes: [],
-      nutrition: null,
     });
 
     if (!recipe.success) {
@@ -65,17 +62,40 @@ export default function CreateRecipePage() {
         return;
       }
 
+      // Send as FormData so we can include the image file in the request body for storage upload
+      const formData = new FormData();
+      formData.append("title", recipe.data.title);
+      formData.append("summary", recipe.data.summary ?? "");
+      formData.append("prepTime", String(recipe.data.prepTime));
+      formData.append("cookTime", String(recipe.data.cookTime));
+      formData.append("servings", String(recipe.data.servings));
+      formData.append("instructions", recipe.data.instructions);
+      formData.append("ingredients", JSON.stringify(recipe.data.ingredients));
+
+      if (recipeImage) {
+        // Extract file extension from image file name and set the mime type accordingly
+        const filename = recipeImage.split("/").pop() || "recipe-image.jpg";
+        const match = filename.toLowerCase().match(/\.(jpe?g|png|gif|webp)$/);
+        const mimeType = match
+          ? (match[1] === "jpg" || match[1] === "jpeg" ? "image/jpeg" : `image/${match[1]}`)
+          : "image/jpeg";
+        formData.append("image", {
+          uri: recipeImage,
+          name: filename,
+          type: mimeType,
+        } as unknown as Blob);
+      }
+
       const res = await fetch(`${SERVER_URL}/api/recipes`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify(recipe.data),
+        body: formData,
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create recipe");
+        throw new Error(Array.isArray(data.error) ? data.error.join("\n") : data.error || "Failed to create recipe");
       }
       router.push("/account/personal-recipes");
     } catch (err: any) {
@@ -94,13 +114,11 @@ export default function CreateRecipePage() {
     }
 
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
     });
-
-    console.log(result);
 
     if (!result.canceled) {
       setRecipeImage(result.assets[0].uri);

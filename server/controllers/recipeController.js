@@ -22,6 +22,55 @@ const RecipeSchema = z.object({
 });
 
 /**
+ * HELPER: Construct the recipe object from the request body
+ */
+function _constructRecipeDocument(req) {
+  const body = req.body || {};
+  // Multipart form data sends all fields as STRINGS; return correct types according to the schema
+  return {
+    title: body.title ?? "",
+    summary: body.summary ?? "",
+    image: body.image ?? null,
+    prepTime: Number(body.prepTime),
+    cookTime: Number(body.cookTime),
+    servings: Number(body.servings),
+    ingredients: JSON.parse(body.ingredients),
+    instructions: body.instructions ?? "",
+  };
+}
+
+/**
+ * HELPER: Upload a file buffer to Firebase Storage and return a long-lived download URL.
+ * @param {Buffer} buffer - File buffer
+ * @param {string} path - Storage path (e.g. "recipes/{uid}/image.jpg")
+ * @param {string} contentType - MIME type (e.g. "image/jpeg")
+ * @returns {Promise<string>} Download URL
+ */
+async function _uploadImageToStorage(buffer, path, contentType) {
+  const bucket = admin.storage().bucket();
+  const file = bucket.file(path);
+  await file.save(buffer, {
+    metadata: { contentType },
+  });
+  const [signedUrl] = await file.getSignedUrl({
+    version: "v4",
+    action: "read",
+    expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+  return signedUrl;
+}
+
+/**
+ * HELPER: Delete all files under users/[uid]/recipes/[recipeId]/ in Storage.
+ */
+async function _deleteRecipeImageFolder(uid, recipeId) {
+  const bucket = admin.storage().bucket();
+  const prefix = `users/${uid}/recipes/${recipeId}/`;
+  const [files] = await bucket.getFiles({ prefix });
+  await Promise.all(files.map((f) => f.delete()));
+}
+
+/**
  * Create a new recipe
  * POST /api/recipes
  */
@@ -30,9 +79,9 @@ export const createRecipe = async (req, res) => {
   const { uid } = req.user;
 
   try {
+    const recipeDocument = _constructRecipeDocument(req);
     // Validate request body
-    const validationResult = RecipeSchema.safeParse(req.body);
-
+    const validationResult = RecipeSchema.safeParse(recipeDocument);
     if (!validationResult.success) {
       const errors = validationResult.error?.issues?.map(
         (issue) => issue.message,
@@ -45,8 +94,7 @@ export const createRecipe = async (req, res) => {
     }
 
     const recipeData = validationResult.data;
-
-    // Destructure ingredients list from rest of recipe data
+    // Destructure the recipe document to get the ingredients list
     const { ingredients: ingredientsList, ...recipeFields } = recipeData;
 
     // Create each ingredient as a document in the "ingredients" collection
@@ -65,6 +113,7 @@ export const createRecipe = async (req, res) => {
           code: "VALIDATION_ERROR",
         });
       }
+      // Create and save each ingredient as a document
       const ingredientRef = db.collection("ingredients").doc();
       batch.set(ingredientRef, {
         name: parsed.data.name,
@@ -80,16 +129,45 @@ export const createRecipe = async (req, res) => {
 
     // Create the recipe document with one-to-many relationship to ingredients collection
     const docRef = await db.collection("recipes").add({
-      userId: uid, // User that created the recipe
+      userId: uid,
+      ingredients: ingredientIds,
       ...recipeFields,
-      ingredients: ingredientIds, // Array of ingredient IDs
       // Initialize default values
-      diets: [],
+      image: null,
       dishTypes: [],
+      diets: [],
       nutrition: null,
+      reviews: [],
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    const recipeId = docRef.id; // Use recipe ID for storage path
+
+    // Upload image to users/[userId]/recipes/[recipeId]/thumbnail.[ext] and update recipe
+    if (req.file && req.file.buffer) {
+      const ext = (req.file.originalname || "image").split(".").pop() || "jpg";
+      const path = `users/${uid}/recipes/${recipeId}/thumbnail.${ext}`;
+      try {
+        const imageUrl = await _uploadImageToStorage(
+          req.file.buffer,
+          path,
+          req.file.mimetype || "image/jpeg",
+        );
+        await docRef.update({
+          image: imageUrl,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (uploadError) {
+        console.error("Error uploading recipe image to Storage:", uploadError);
+        return res.status(500).json({
+          error:
+            uploadError.message ||
+            "Failed to upload image. Check FIREBASE_STORAGE_BUCKET and that the bucket exists in Firebase Console.",
+          code: "IMAGE_UPLOAD_FAILED",
+        });
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -266,9 +344,14 @@ export const updateRecipe = async (req, res) => {
       });
     }
 
-    // Validate request body
-    const validationResult = RecipeSchema.safeParse(req.body);
+    // Build recipe from body (multipart sends strings; JSON sends typed values)
+    const recipeDocument =
+      req.file || typeof req.body?.ingredients === "string"
+        ? _constructRecipeDocument(req)
+        : req.body;
 
+    // Validate request body
+    const validationResult = RecipeSchema.safeParse(recipeDocument);
     if (!validationResult.success) {
       const errors = validationResult.error?.issues?.map(
         (issue) => issue.message,
@@ -281,7 +364,43 @@ export const updateRecipe = async (req, res) => {
     }
 
     const recipeData = validationResult.data;
+    // Destructure the recipe document to get the ingredients list
     const { ingredients: ingredientsList, ...recipeFields } = recipeData;
+
+    // Resolve new image URL: remove, replace, or keep existing
+    let imageUrl = doc.data().image ?? null;
+    const removeImage =
+      req.body?.removeImage === "true" || req.body?.removeImage === true;
+
+    if (removeImage) {
+      try {
+        await _deleteRecipeImageFolder(uid, id);
+      } catch (e) {
+        console.warn("Storage cleanup on image remove:", e.message);
+      }
+      imageUrl = null;
+    } else if (req.file && req.file.buffer) {
+      try {
+        await _deleteRecipeImageFolder(uid, id);
+      } catch (e) {
+        console.warn("Storage cleanup before replace:", e.message);
+      }
+      const ext = (req.file.originalname || "image").split(".").pop() || "jpg";
+      const path = `users/${uid}/recipes/${id}/thumbnail.${ext}`;
+      try {
+        imageUrl = await _uploadImageToStorage(
+          req.file.buffer,
+          path,
+          req.file.mimetype || "image/jpeg",
+        );
+      } catch (uploadError) {
+        console.error("Error uploading recipe image to Storage:", uploadError);
+        return res.status(500).json({
+          error: "Failed to upload image",
+          code: "IMAGE_UPLOAD_FAILED",
+        });
+      }
+    }
 
     // Delete old ingredient documents
     const oldIngredientIds = doc.data().ingredients || [];
@@ -296,7 +415,6 @@ export const updateRecipe = async (req, res) => {
     // Create new ingredient documents
     const ingredientIds = [];
     const batch = db.batch();
-
     for (const raw of ingredientsList) {
       const parsed = IngredientSchema.safeParse(raw);
       if (!parsed.success) {
@@ -318,12 +436,12 @@ export const updateRecipe = async (req, res) => {
       });
       ingredientIds.push(ingredientRef.id);
     }
-
     await batch.commit();
 
     // Update the recipe document
     await docRef.update({
       ...recipeFields,
+      image: imageUrl,
       ingredients: ingredientIds,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -370,6 +488,13 @@ export const deleteRecipe = async (req, res) => {
     }
 
     await docRef.delete();
+
+    // Remove recipe image(s) from Storage
+    try {
+      await _deleteRecipeImageFolder(uid, id);
+    } catch (e) {
+      console.warn("Storage cleanup on recipe delete:", e.message);
+    }
 
     res.json({
       success: true,

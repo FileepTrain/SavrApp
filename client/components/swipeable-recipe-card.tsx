@@ -1,9 +1,12 @@
-import React from "react";
-import { View, Text, Pressable } from "react-native";
+import React, { useState } from "react";
+import { View, Text, Pressable, Alert, ActivityIndicator } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router } from "expo-router";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { RecipeCard } from "./recipe-card";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const SERVER_URL = "http://10.0.2.2:3000";
 
 interface SwipeableRecipeCardProps {
   id: string;
@@ -22,6 +25,29 @@ export function SwipeableRecipeCard({
   reviewsLength = 0,
   image,
 }: SwipeableRecipeCardProps) {
+
+  const [loading, setLoading] = useState(false);
+
+  const handleDeleteRecipe = async () => {
+    try {
+      setLoading(true);
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) return;
+      const res = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
+        headers: {
+          "Authorization": `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete recipe");
+    } catch (error) {
+      console.error("Error deleting recipe:", error);
+      Alert.alert("Error", "Failed to delete recipe");
+    } finally {
+      setLoading(false);
+    }
+  }
   const renderRightActions = (
     _progress: unknown,
     _translation: unknown,
@@ -40,13 +66,13 @@ export function SwipeableRecipeCard({
       </Pressable>
       <Pressable
         onPress={() => {
+          handleDeleteRecipe();
           swipeableMethods.close();
-          // TODO: Call delete recipe API
         }}
         className="bg-red-primary justify-center items-center w-20 rounded-xl rounded-l-none gap-1"
       >
         <IconSymbol name="trash-can-outline" size={28} color="--color-background" />
-        <Text className="text-background text-sm font-medium">Delete</Text>
+        {loading ? <ActivityIndicator size="small" color="white" /> : <Text className="text-background text-sm font-medium">Delete</Text>}
       </Pressable>
     </View>
   );

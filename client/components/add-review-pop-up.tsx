@@ -73,7 +73,7 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
                   onPress={() => handleStarPress(index)}
                 >
                   <IconSymbol
-                    name={index <= rating ? "star" : "star-border"}
+                    name={index <= rating ? "star" : "star-outline"}
                     size={40}
                     color={index <= rating ? "#FBCD4F" : "#D1D5DC"}
                   />
