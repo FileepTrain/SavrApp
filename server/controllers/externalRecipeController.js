@@ -1,6 +1,5 @@
 // controllers/externalRecipeController.js
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
-import ExternalIngredientModel from "../models/externalIngredientModel.js";
 
 export const searchExternalRecipes = async (req, res) => {
   try {
@@ -109,19 +108,29 @@ export const getExternalRecipeDetails = async (req, res) => {
       EXTERNAL_SOURCE,
       id
     );
+
+    // If we have it cached AND either:
+    // - nutrition is not requested, OR
+    // - nutrition is requested AND we already have nutrients cached
     if (existing) {
-      const recipeFromDb = { ...existing };
-      if (!includeNutrition) delete recipeFromDb.nutrition;
-      return res.json({ success: true, recipe: recipeFromDb });
+      const hasCachedNutrients =
+        Array.isArray(existing?.nutrition?.nutrients) &&
+        existing.nutrition.nutrients.length > 0;
+
+      if (!includeNutrition || hasCachedNutrients) {
+        const recipeFromDb = { ...existing };
+        if (!includeNutrition) delete recipeFromDb.nutrition;
+        return res.json({ success: true, recipe: recipeFromDb });
+      }
+      // else: fall through and fetch from Spoonacular with nutrition=true
     }
 
-    // 2) Not in DB -> fetch from Spoonacular
+    // 2) Fetch from Spoonacular
+    // ✅ Always fetch with includeNutrition=true so we can store nutrients in DB
     const url = new URL(
-      `https://api.spoonacular.com/recipes/${encodeURIComponent(
-        id
-      )}/information`
+      `https://api.spoonacular.com/recipes/${encodeURIComponent(id)}/information`
     );
-    url.searchParams.set("includeNutrition", includeNutrition ? "true" : "false");
+    url.searchParams.set("includeNutrition", "true");
 
     const resp = await fetch(url, {
       headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
@@ -140,23 +149,17 @@ export const getExternalRecipeDetails = async (req, res) => {
       });
     }
 
-    const rawExtended = Array.isArray(data.extendedIngredients)
-      ? data.extendedIngredients
+    // ✅ keep ONLY the nutrients array
+    const nutrients = Array.isArray(data?.nutrition?.nutrients)
+      ? data.nutrition.nutrients.map((n) => ({
+          name: n.name,
+          amount: n.amount,
+          unit: n.unit,
+          percentOfDailyNeeds: n.percentOfDailyNeeds,
+        }))
       : [];
 
-    // ✅ 2.5) Cache ingredient master data in Firestore (upsert by ingredient id)
-    // This stores ingredient info in /externalIngredients so you can reuse it later
-    try {
-      await ExternalIngredientModel.upsertManyFromExternal(
-        EXTERNAL_SOURCE,
-        rawExtended
-      );
-    } catch (ingErr) {
-      console.error("Failed to persist external ingredients:", ingErr);
-      // do not fail the recipe request
-    }
-
-    // Simplify to the Spoonacular-shaped object we want to store and return.
+    // Simplify the object we store and return
     const simplified = {
       id: data.id,
       title: data.title,
@@ -167,10 +170,8 @@ export const getExternalRecipeDetails = async (req, res) => {
       summary: data.summary ?? null,
       instructions: data.instructions ?? null,
 
-      // ✅ keep the list for UI + store ids for easier querying
-      ingredientIds: rawExtended.map((ing) => ing.id).filter(Boolean),
-
-      extendedIngredients: rawExtended.map((ing) => ({
+      // keep ingredient list as-is (no extra caching)
+      extendedIngredients: (data.extendedIngredients ?? []).map((ing) => ({
         id: ing.id,
         name: ing.name,
         original: ing.original,
@@ -179,21 +180,26 @@ export const getExternalRecipeDetails = async (req, res) => {
         image: ing.image,
       })),
 
-      nutrition: includeNutrition ? data.nutrition : null,
+      // ✅ only store nutrients
+      nutrition: { nutrients },
+
       dishTypes: data.dishTypes ?? null,
       diets: data.diets ?? null,
       cuisines: data.cuisines ?? null,
     };
 
-    // 3) Persist recipe to Firestore (upsert)
+    // 3) Persist to Firestore (upsert)
     try {
-      await ExternalRecipeModel.upsertFromExternal(
-        EXTERNAL_SOURCE,
-        id,
-        simplified
-      );
+      await ExternalRecipeModel.upsertFromExternal(EXTERNAL_SOURCE, id, simplified);
     } catch (insertErr) {
       console.error("Failed to persist external recipe:", insertErr);
+    }
+
+    // 4) Return based on includeNutrition flag
+    if (!includeNutrition) {
+      const out = { ...simplified };
+      delete out.nutrition;
+      return res.json({ success: true, recipe: out });
     }
 
     return res.json({ success: true, recipe: simplified });

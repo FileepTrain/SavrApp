@@ -1,8 +1,10 @@
 import { IngredientsList } from "@/components/recipe/ingredients-list";
 import RecipeRating from "@/components/recipe/recipe-rating";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { Ingredient } from "@/types/ingredient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -12,8 +14,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ingredient } from "@/types/ingredient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Your backend base (Android emulator -> host machine)
 const SERVER_URL = "http://10.0.2.2:3000";
@@ -43,6 +43,13 @@ type ExternalIngredient = {
   image?: string;
 };
 
+type Nutrient = {
+  name: string;
+  amount: number;
+  unit: string;
+  percentOfDailyNeeds: number;
+};
+
 type ExternalRecipe = {
   id: number;
   title: string;
@@ -53,6 +60,7 @@ type ExternalRecipe = {
   summary?: string;
   instructions?: string;
   extendedIngredients?: ExternalIngredient[];
+  nutrition?: { nutrients: Nutrient[] } | null;
 };
 
 /** Display shape used by the UI (normalized from both personal and external) */
@@ -84,42 +92,47 @@ export default function RecipeDetailsPage() {
   const router = useRouter();
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
 
+  const insets = useSafeAreaInsets();
+
+  const id = useMemo(() => {
+    const raw = Array.isArray(recipeId) ? recipeId[0] : recipeId;
+    return raw ?? "";
+  }, [recipeId]);
+
   const [loading, setLoading] = useState(true);
   const [recipe, setRecipe] = useState<DisplayRecipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [isIngredientsOpen, setIsIngredientsOpen] = useState(true);
   const [isFavorited, setIsFavorited] = useState(false);
-  const insets = useSafeAreaInsets();
-
-  const id = Array.isArray(recipeId) ? recipeId[0] : recipeId;
 
   const toggleFavorite = async () => {
-    //const id = String(recipeId);
+    if (!id) return;
+
     const next = !isFavorited;
     setIsFavorited(next);
-  
+
     const saved = await AsyncStorage.getItem(FAVORITES_KEY);
     const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+
     const updated = next
-      ? [...favoriteIds, id]
+      ? [...new Set([...favoriteIds, id])]
       : favoriteIds.filter((fav) => fav !== id);
-  
+
     await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
     await syncFavorites();
   };
 
   useEffect(() => {
     const fetchRecipe = async () => {
-      if (!recipeId) return;
+      if (!id) return;
 
       setLoading(true);
       try {
-        if (isPersonalRecipeId(recipeId)) {
+        if (isPersonalRecipeId(id)) {
           // Personal recipe: GET /api/recipes/:id
-          const response = await fetch(
-            `${SERVER_URL}/api/recipes/${recipeId}`,
-            { method: "GET" }
-          );
+          const response = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
+            method: "GET",
+          });
           const data = await response.json();
 
           if (!response.ok) {
@@ -127,6 +140,7 @@ export default function RecipeDetailsPage() {
           }
 
           const r = data.recipe;
+
           setRecipe({
             title: r.title,
             summary: r.summary,
@@ -140,6 +154,7 @@ export default function RecipeDetailsPage() {
             rating: r.rating,
             reviewsLength: r.reviews?.length ?? 0,
           });
+
           setIngredients(
             (r.ingredients ?? []).map((ing: Ingredient) => ({
               name: ing.name,
@@ -150,12 +165,11 @@ export default function RecipeDetailsPage() {
 
           const saved = await AsyncStorage.getItem(FAVORITES_KEY);
           const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
-          //const id = String(recipeId)
           setIsFavorited(favoriteIds.includes(id));
         } else {
-          // External recipe: GET /api/external-recipes/:id/details
+          // External recipe: include nutrition so we can show calories on this page
           const response = await fetch(
-            `${SERVER_URL}/api/external-recipes/${recipeId}/details`,
+            `${SERVER_URL}/api/external-recipes/${id}/details?includeNutrition=true`,
             { method: "GET" }
           );
           const data = await response.json();
@@ -165,6 +179,15 @@ export default function RecipeDetailsPage() {
           }
 
           const r: ExternalRecipe = data.recipe;
+
+          const caloriesNutrient = r.nutrition?.nutrients?.find(
+            (n) => n.name === "Calories"
+          );
+          const calories =
+            caloriesNutrient?.amount != null
+              ? Math.round(Number(caloriesNutrient.amount))
+              : undefined;
+
           setRecipe({
             title: r.title,
             image: r.image,
@@ -172,7 +195,11 @@ export default function RecipeDetailsPage() {
             servings: r.servings,
             summary: r.summary ?? undefined,
             instructions: r.instructions ?? undefined,
+            calories,
+            rating: 0,
+            reviewsLength: 0,
           });
+
           setIngredients(
             (r.extendedIngredients ?? []).map((ing) => ({
               name: ing.name,
@@ -180,6 +207,10 @@ export default function RecipeDetailsPage() {
               unit: ing.unit ?? "serving",
             }))
           );
+
+          const saved = await AsyncStorage.getItem(FAVORITES_KEY);
+          const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+          setIsFavorited(favoriteIds.includes(id));
         }
       } catch (error) {
         console.error("Error fetching recipe:", error);
@@ -189,7 +220,7 @@ export default function RecipeDetailsPage() {
     };
 
     fetchRecipe();
-  }, [recipeId]);
+  }, [id]);
 
   if (loading) {
     return (
@@ -226,16 +257,17 @@ export default function RecipeDetailsPage() {
         >
           <IconSymbol name="chevron-left" size={24} color="#EB2D2D" />
         </TouchableOpacity>
-        
+
         {/* Favorite Button */}
         <TouchableOpacity
-          onPress={() => {
-            console.log("Favorite clicked"),
-            //setIsFavorited((prev) => !prev)
-            toggleFavorite()}}
+          onPress={toggleFavorite}
           className="absolute right-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
         >
-          <IconSymbol name={isFavorited ? "cards-heart" : "cards-heart-outline"} size={24} color="#EB2D2D" />
+          <IconSymbol
+            name={isFavorited ? "cards-heart" : "cards-heart-outline"}
+            size={24}
+            color="#EB2D2D"
+          />
         </TouchableOpacity>
       </View>
 
@@ -275,8 +307,8 @@ export default function RecipeDetailsPage() {
                   {recipe?.prepTime != null
                     ? `${recipe.prepTime} min`
                     : recipe?.readyInMinutes != null
-                      ? `${recipe.readyInMinutes} min`
-                      : "—"}
+                    ? `${recipe.readyInMinutes} min`
+                    : "—"}
                 </Text>
                 <Text className="text-muted-foreground text-sm">
                   {recipe?.prepTime != null ? "Prep" : "Total"}
@@ -309,7 +341,10 @@ export default function RecipeDetailsPage() {
               <TouchableOpacity
                 className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
                 onPress={() =>
-                  router.push({ pathname: "/recipe/nutrition", params: { recipeId } })
+                  router.push({
+                    pathname: "/recipe/nutrition",
+                    params: { recipeId: id },
+                  })
                 }
               >
                 <IconSymbol
@@ -323,7 +358,10 @@ export default function RecipeDetailsPage() {
               <TouchableOpacity
                 className="flex-1 mx-1 bg-white rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
                 onPress={() =>
-                  router.push({ pathname: "/recipe/reviews", params: { recipeId } })
+                  router.push({
+                    pathname: "/recipe/reviews",
+                    params: { recipeId: id },
+                  })
                 }
               >
                 <IconSymbol
@@ -337,7 +375,10 @@ export default function RecipeDetailsPage() {
               <TouchableOpacity
                 className="flex-1 mx-1 bg-white rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
                 onPress={() =>
-                  router.push({ pathname: "/recipe/share", params: { recipeId } })
+                  router.push({
+                    pathname: "/recipe/share",
+                    params: { recipeId: id },
+                  })
                 }
               >
                 <IconSymbol
@@ -352,30 +393,34 @@ export default function RecipeDetailsPage() {
             {/* TOGGLE BUTTONS: ingredients / instructions */}
             <View className="flex-row justify-around items-center bg-background rounded-xl h-10 p-1 shadow">
               <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${isIngredientsOpen
-                  ? "bg-red-primary text-background"
-                  : "bg-background text-foreground"
-                  }`}
+                className={`w-1/2 py-1 rounded-lg ${
+                  isIngredientsOpen
+                    ? "bg-red-primary text-background"
+                    : "bg-background text-foreground"
+                }`}
                 onPress={() => setIsIngredientsOpen(true)}
               >
                 <Text
-                  className={`text-center ${isIngredientsOpen ? "text-background" : "text-foreground"
-                    }`}
+                  className={`text-center ${
+                    isIngredientsOpen ? "text-background" : "text-foreground"
+                  }`}
                 >
                   Ingredients
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${!isIngredientsOpen
-                  ? "bg-red-primary"
-                  : "bg-background text-background"
-                  }`}
+                className={`w-1/2 py-1 rounded-lg ${
+                  !isIngredientsOpen
+                    ? "bg-red-primary"
+                    : "bg-background text-background"
+                }`}
                 onPress={() => setIsIngredientsOpen(false)}
               >
                 <Text
-                  className={`text-center ${!isIngredientsOpen ? "text-background" : "text-foreground"
-                    }`}
+                  className={`text-center ${
+                    !isIngredientsOpen ? "text-background" : "text-foreground"
+                  }`}
                 >
                   Instructions
                 </Text>
