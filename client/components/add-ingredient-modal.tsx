@@ -155,21 +155,13 @@ export function AddIngredientModal({
         .filter(Boolean) as Suggestion[];
 
       setResults(list);
-
-      // 🔎 If you STILL get empty here, show what came back (first 250 chars)
-      if (list.length === 0) {
-        Alert.alert(
-          "Debug: empty results",
-          `Status: ${parsed.status}\nBody starts:\n${String(parsed.raw || "").slice(0, 250)}`
-        );
-      }
     } catch (e: any) {
       setResults([]);
       setResultsOpen(false);
       Alert.alert(
         "Search failed",
         e?.message ||
-          "Could not search ingredients. Check SERVER_URL and that /api/spoonacular is reachable."
+        "Could not search ingredients. Check SERVER_URL and that /api/spoonacular is reachable."
       );
     } finally {
       setLoadingSearch(false);
@@ -290,23 +282,16 @@ export function AddIngredientModal({
   return (
     <Modal visible={visible} transparent animationType="fade">
       <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
-        <Pressable onPress={() => {}} style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <Pressable onPress={() => { }} style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <View
-              className="w-[345px] bg-white rounded-[20px] overflow-hidden"
-              style={{
-                shadowColor: "#000",
-                shadowOpacity: 0.15,
-                shadowRadius: 20,
-                shadowOffset: { width: 0, height: 4 },
-                elevation: 8,
-              }}
+              className="w-[345px] bg-background rounded-xl overflow-hidden shadow-xl"
             >
               {/* Header */}
-              <View className="w-full h-[62px] bg-[#EB2D2D] flex-row items-center justify-between px-6">
-                <Text className="text-white text-[20px] font-bold tracking-[0.5px]">{title}</Text>
+              <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
+                <Text className="text-background text-lg font-bold tracking-[0.5px]">{title}</Text>
                 <Pressable onPress={onClose}>
-                  <IconSymbol name="close" size={24} color="#FFFFFF" />
+                  <IconSymbol name="close" size={24} color="--color-background" />
                 </Pressable>
               </View>
 
@@ -314,7 +299,7 @@ export function AddIngredientModal({
               <View className="px-6 pt-6 pb-4 gap-4">
                 {/* Name + Search */}
                 <View style={{ zIndex: 9999 }} className="gap-2">
-                  <Text className="text-[14px] text-[#666666] font-medium">{nameLabel}</Text>
+                  <Text className="text-muted-foreground font-medium">{nameLabel}</Text>
 
                   <View className="flex-row items-center gap-2">
                     <View className="flex-1">
@@ -331,12 +316,8 @@ export function AddIngredientModal({
 
                     <Pressable
                       onPress={runSearch}
-                      className="h-[52px] w-[52px] rounded-xl bg-[#EB2D2D] items-center justify-center"
+                      className="h-[52px] w-[52px] rounded-full bg-red-primary items-center justify-center shadow-xl"
                       style={{
-                        shadowColor: "#000",
-                        shadowOpacity: 0.15,
-                        shadowRadius: 4,
-                        shadowOffset: { width: 0, height: 2 },
                         elevation: 5,
                         opacity: isLocked ? 0.6 : 1,
                       }}
@@ -349,15 +330,9 @@ export function AddIngredientModal({
                   {resultsOpen && (
                     <View
                       style={{
-                        position: "relative",
                         zIndex: 9999,
-                        shadowColor: "#000",
-                        shadowOpacity: 0.08,
-                        shadowRadius: 10,
-                        shadowOffset: { width: 0, height: 4 },
-                        elevation: 10,
                       }}
-                      className="bg-white rounded-xl border border-[#eee] overflow-hidden"
+                      className="relative bg-background rounded-xl border border-muted-background overflow-hidden shadow-xl"
                     >
                       {loadingSearch ? (
                         <View className="py-3 items-center justify-center">
@@ -365,7 +340,7 @@ export function AddIngredientModal({
                         </View>
                       ) : results.length === 0 ? (
                         <View className="px-4 py-3">
-                          <Text className="text-[14px] text-[#666666]">No matches. Try another search.</Text>
+                          <Text className="text-sm text-muted-foreground">No matches. Try another search.</Text>
                         </View>
                       ) : (
                         <FlatList
@@ -376,9 +351,9 @@ export function AddIngredientModal({
                           renderItem={({ item }) => (
                             <Pressable
                               onPress={() => handlePickResult(item)}
-                              className="px-4 py-3 border-b border-[#f2f2f2]"
+                              className="px-4 py-3 border-b border-muted-background"
                             >
-                              <Text className="text-[15px] text-black">{item.name}</Text>
+                              <Text className="text-foreground">{item.name}</Text>
                             </Pressable>
                           )}
                         />
@@ -386,28 +361,31 @@ export function AddIngredientModal({
                     </View>
                   )}
 
+                  {!selectedId && (
+                    <Text className="text-sm text-muted-foreground">Select an ingredient to continue.</Text>
+                  )}
+
                   {isLocked && (
                     <View className="flex-row items-center gap-2">
                       {loadingUnits ? (
                         <>
                           <ActivityIndicator />
-                          <Text className="text-[12px] text-[#666666]">Loading acceptable units…</Text>
+                          <Text className="text-sm text-muted-foreground">Loading acceptable units…</Text>
                         </>
                       ) : unitOptions.length > 0 ? (
-                        <Text className="text-[12px] text-[#666666]">Ingredient selected ✓ (edit name to change)</Text>
+                        <Text className="text-sm text-muted-foreground">Ingredient selected (edit name to change)</Text>
                       ) : (
-                        <Text className="text-[12px] text-[#666666]">Ingredient selected, but units not available.</Text>
+                        <Text className="text-sm text-muted-foreground">Ingredient selected, but units not available.</Text>
                       )}
                     </View>
                   )}
                 </View>
-
                 {/* Amount + Unit */}
                 <View className="flex-row gap-3">
                   <View className="flex-1 gap-2">
-                    <Text className="text-[14px] text-[#666666] font-medium">Amount</Text>
+                    <Text className="text-muted-foreground font-medium">Amount</Text>
                     <Input
-                      placeholder={selectedId ? "1" : "Select ingredient first"}
+                      placeholder="1"
                       value={amount}
                       onChangeText={setAmount}
                       inputType="number-pad"
@@ -418,7 +396,7 @@ export function AddIngredientModal({
                   </View>
 
                   <View className="flex-1 gap-2">
-                    <Text className="text-[14px] text-[#666666] font-medium">Unit</Text>
+                    <Text className="text-sm text-muted-foreground font-medium">Unit</Text>
 
                     <Pressable
                       disabled={!canEditAmountAndUnit}
@@ -426,10 +404,10 @@ export function AddIngredientModal({
                       style={{ opacity: canEditAmountAndUnit ? 1 : 0.5 }}
                     >
                       <View className="h-[52px] rounded-lg border border-muted-background bg-background flex-row items-center justify-between px-3">
-                        <Text className="text-[16px]">
-                          {unit || (selectedId ? "Select unit" : "Select ingredient first")}
+                        <Text className={`text-muted-foreground ${canEditAmountAndUnit ? "" : "opacity-50"}`}>
+                          {unit || "Select unit"}
                         </Text>
-                        <IconSymbol name="menu-down" size={22} color="#666666" />
+                        <IconSymbol name="menu-down" size={22} color="--color-icon" />
                       </View>
                     </Pressable>
                   </View>
@@ -439,24 +417,20 @@ export function AddIngredientModal({
                 <View className="flex-row gap-3 pt-2">
                   <Pressable
                     onPress={onClose}
-                    className="flex-1 h-[52px] border-[2px] border-[#EB2D2D] rounded-[12px] items-center justify-center"
+                    className="flex-1 h-[52px] border border-red-primary rounded-xl items-center justify-center"
                   >
-                    <Text className="text-[16px] font-bold text-[#EB2D2D]">Cancel</Text>
+                    <Text className="text-lg font-bold text-red-primary">Cancel</Text>
                   </Pressable>
 
                   <Pressable
                     onPress={handleConfirm}
-                    className="flex-1 h-[52px] bg-[#EB2D2D] rounded-[12px] items-center justify-center"
+                    className="flex-1 h-[52px] bg-red-primary rounded-xl items-center justify-center shadow-xl"
                     style={{
-                      shadowColor: "#000",
-                      shadowOpacity: 0.15,
-                      shadowRadius: 4,
-                      shadowOffset: { width: 0, height: 2 },
                       elevation: 5,
                       opacity: selectedId && unitOptions.length > 0 && !loadingUnits ? 1 : 0.6,
                     }}
                   >
-                    <Text className="text-[16px] font-bold text-white">Confirm</Text>
+                    <Text className="text-lg text-background font-bold">Confirm</Text>
                   </Pressable>
                 </View>
               </View>
@@ -473,12 +447,12 @@ export function AddIngredientModal({
                     paddingHorizontal: 24,
                   }}
                 >
-                  <Pressable onPress={() => {}} style={{ width: "100%", maxWidth: 360 }}>
-                    <View className="bg-white rounded-[16px] overflow-hidden">
-                      <View className="px-4 py-3 border-b border-[#eee] flex-row items-center justify-between">
-                        <Text className="text-[16px] font-bold">Select Unit</Text>
+                  <Pressable onPress={() => { }} style={{ width: "100%", maxWidth: 360 }}>
+                    <View className="bg-background rounded-[16px] overflow-hidden">
+                      <View className="px-4 py-3 border-b border-muted-background flex-row items-center justify-between">
+                        <Text className="text-foreground font-bold">Select Unit</Text>
                         <Pressable onPress={() => setUnitMenuOpen(false)}>
-                          <IconSymbol name="close" size={22} color="#111" />
+                          <IconSymbol name="close" size={22} color="--color-icon" />
                         </Pressable>
                       </View>
 
@@ -493,9 +467,9 @@ export function AddIngredientModal({
                               setUnit(item);
                               setUnitMenuOpen(false);
                             }}
-                            className="px-4 py-3 border-b border-[#f2f2f2]"
+                            className="px-4 py-3 border-b border-muted-background"
                           >
-                            <Text className="text-[15px] text-black">{item}</Text>
+                            <Text className="text-foreground">{item}</Text>
                           </Pressable>
                         )}
                       />

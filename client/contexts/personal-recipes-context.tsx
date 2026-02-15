@@ -27,7 +27,7 @@ export interface PersonalRecipeItem {
   calories?: number;
   rating?: number;
   reviews?: unknown[];
-  extendedIngredients?: ExtendedIngredient[]; // ✅ matches backend schema
+  extendedIngredients?: ExtendedIngredient[];
   instructions?: string;
   [key: string]: unknown;
 }
@@ -39,7 +39,7 @@ export interface RecipePayload {
   prepTime: number;
   cookTime: number;
   servings: number;
-  extendedIngredients: ExtendedIngredient[]; // ✅ IMPORTANT
+  extendedIngredients: ExtendedIngredient[];
   instructions: string;
 }
 
@@ -123,13 +123,13 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
     }
   }, []);
 
-  /** Create recipe */
+  /** Create recipe in database */
   const createRecipe = useCallback(
     async (data: RecipePayload, imageUri?: string | null) => {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) throw new Error("Session expired");
 
-      // ✅ fail early if payload wrong
+      // Fail early if payload wrong
       if (!Array.isArray(data.extendedIngredients) || data.extendedIngredients.length === 0) {
         throw new Error("At least one ingredient is required (extendedIngredients).");
       }
@@ -141,8 +141,7 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
       formData.append("cookTime", String(data.cookTime ?? 0));
       formData.append("servings", String(data.servings ?? 1));
       formData.append("instructions", data.instructions ?? "");
-
-      // ✅ IMPORTANT: backend expects THIS key
+      // IMPORTANT: backend expects THIS key
       formData.append("extendedIngredients", JSON.stringify(data.extendedIngredients));
 
       if (imageUri) _appendImageToFormData(formData, imageUri);
@@ -167,7 +166,7 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
     [refetch]
   );
 
-  /** Update recipe */
+  /** Update recipe in database */
   const updateRecipe = useCallback(
     async (recipeId: string, data: RecipePayload, imageOptions?: UpdateRecipeImageOptions) => {
       const idToken = await AsyncStorage.getItem("idToken");
@@ -184,8 +183,7 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
       formData.append("cookTime", String(data.cookTime ?? 0));
       formData.append("servings", String(data.servings ?? 1));
       formData.append("instructions", data.instructions ?? "");
-
-      // ✅ IMPORTANT: backend expects THIS key
+      // IMPORTANT: backend expects THIS key
       formData.append("extendedIngredients", JSON.stringify(data.extendedIngredients));
 
       if (imageOptions?.removeImage) formData.append("removeImage", "true");
@@ -211,7 +209,7 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
     [refetch]
   );
 
-  /** Delete recipe */
+  /** Delete recipe from database */
   const deleteRecipe = useCallback(
     async (id: string) => {
       const idToken = await AsyncStorage.getItem("idToken");

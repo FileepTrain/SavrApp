@@ -17,22 +17,18 @@ const NumberFromAny = (minValue, msg) =>
       const n = Number(val);
       return Number.isFinite(n) ? n : val;
     },
-    z.number().min(minValue, msg)
+    z.number().min(minValue, msg),
   );
 
 const OptionalNumberFromAny = (minValue, msg) =>
-  z.preprocess(
-    (val) => {
-      if (val === "" || val === null || val === undefined) return undefined;
-      const n = Number(val);
-      return Number.isFinite(n) ? n : val;
-    },
-    z.number().min(minValue, msg).optional()
-  );
+  z.preprocess((val) => {
+    if (val === "" || val === null || val === undefined) return undefined;
+    const n = Number(val);
+    return Number.isFinite(n) ? n : val;
+  }, z.number().min(minValue, msg).optional());
 
 /**
- * ✅ Ingredient + Recipe schemas
- * IMPORTANT: normalized storage shape in Firestore: extendedIngredients[]
+ * Ingredient + Recipe schemas
  */
 const IngredientSchema = z.object({
   id: OptionalNumberFromAny(0, "Ingredient id must be >= 0"),
@@ -55,6 +51,21 @@ const RecipeSchema = z.object({
     .min(1, "At least one ingredient is required"),
   instructions: z.string().min(1, "Instructions are required"),
 });
+
+function _constructRecipeDocument(req) {
+  const body = req.body || {};
+  // Multipart form data sends all fields as STRINGS; return correct types according to the schema
+  return {
+    title: body.title ?? "",
+    summary: body.summary ?? "",
+    image: body.image ?? null,
+    prepTime: Number(body.prepTime),
+    cookTime: Number(body.cookTime),
+    servings: Number(body.servings),
+    extendedIngredients: JSON.parse(body.extendedIngredients),
+    instructions: body.instructions ?? "",
+  };
+}
 
 /**
  * Upload a file buffer to Firebase Storage and return a signed download URL.
@@ -85,73 +96,6 @@ async function _deleteRecipeImageFolder(uid, recipeId) {
 }
 
 /**
- * Parse either:
- * - extendedIngredients (new schema shape)
- * - OR ingredients (older client shape: { name, quantity, unit })
- *
- * Accepts array or JSON string.
- */
-function _parseAnyIngredients(rawExtended, rawIngredients) {
-  const raw = rawExtended ?? rawIngredients;
-  if (!raw) return [];
-
-  if (Array.isArray(raw)) return raw;
-
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
-}
-
-/**
- * Normalize mixed ingredient shapes into extendedIngredients shape.
- * Supports:
- *  - { id, name, original, amount, unit, image }   (extended ingredient)
- *  - { name, quantity, unit }                      (old ingredient)
- */
-function _normalizeToExtendedIngredients(list) {
-  if (!Array.isArray(list)) return [];
-
-  return list
-    .map((x) => {
-      if (!x) return null;
-
-      // new shape (extended)
-      if (x.name && (x.amount !== undefined || x.unit !== undefined)) {
-        return {
-          id: x.id ?? null,
-          name: String(x.name),
-          original: x.original ?? x.name ?? null,
-          amount: x.amount ?? 0,
-          unit: String(x.unit ?? ""),
-          image: x.image ?? null,
-        };
-      }
-
-      // old shape (ingredients)
-      if (x.name && (x.quantity !== undefined || x.unit !== undefined)) {
-        return {
-          id: null,
-          name: String(x.name),
-          original: String(x.name),
-          amount: x.quantity ?? 0,
-          unit: String(x.unit ?? ""),
-          image: null,
-        };
-      }
-
-      return null;
-    })
-    .filter(Boolean);
-}
-
-/**
  * Build a Spoonacular ingredient line like "2 tbsp olive oil"
  */
 function _toIngredientLine(ing) {
@@ -163,8 +107,7 @@ function _toIngredientLine(ing) {
 
 /**
  * Compute nutrition via Spoonacular and store on the recipe doc.
- *
- * ✅ Stores ONLY { nutrients: [...] } to match externalRecipeController.
+ ** Stores ONLY { nutrients: [...] } to match externalRecipeController.
  */
 async function _computeAndStoreNutritionForDoc(docRef, recipe) {
   const ings = Array.isArray(recipe.extendedIngredients)
@@ -214,7 +157,7 @@ async function _computeAndStoreNutritionForDoc(docRef, recipe) {
   }));
 
   const caloriesNutrient = nutrients.find(
-    (n) => String(n?.name || "").toLowerCase() === "calories"
+    (n) => String(n?.name || "").toLowerCase() === "calories",
   );
 
   const calories =
@@ -240,26 +183,14 @@ export const createRecipe = async (req, res) => {
   const { uid } = req.user;
 
   try {
-    const body = req.body || {};
-
-    const rawList = _parseAnyIngredients(body.extendedIngredients, body.ingredients);
-    const normalized = _normalizeToExtendedIngredients(rawList);
-
-    const incoming = {
-      title: body.title ?? "",
-      summary: body.summary ?? "",
-      image: body.image ?? null,
-      prepTime: body.prepTime,
-      cookTime: body.cookTime,
-      servings: body.servings,
-      extendedIngredients: normalized,
-      instructions: body.instructions ?? "",
-    };
-
-    const validated = RecipeSchema.safeParse(incoming);
+    // Construct recipe document from request body
+    const recipeDocument = _constructRecipeDocument(req);
+    // Validate recipe document
+    const validated = RecipeSchema.safeParse(recipeDocument);
     if (!validated.success) {
-      const errors =
-        validated.error?.issues?.map((i) => i.message) ?? ["Validation failed"];
+      const errors = validated.error?.issues?.map((i) => i.message) ?? [
+        "Validation failed",
+      ];
       return res.status(400).json({
         error: errors,
         code: "VALIDATION_ERROR",
@@ -292,7 +223,7 @@ export const createRecipe = async (req, res) => {
         image: ing.image ?? null,
       })),
 
-      // ✅ FIX: actually store instructions on create
+      // Actually store instructions on create
       instructions: recipeData.instructions,
 
       nutrition: null,
@@ -319,7 +250,7 @@ export const createRecipe = async (req, res) => {
         const imageUrl = await _uploadImageToStorage(
           req.file.buffer,
           path,
-          req.file.mimetype || "image/jpeg"
+          req.file.mimetype || "image/jpeg",
         );
 
         await docRef.update({
@@ -339,7 +270,7 @@ export const createRecipe = async (req, res) => {
       }
     }
 
-    // ✅ Auto-calc nutrition on create (best effort)
+    // Auto-calc nutrition on create (best effort)
     try {
       const { nutrition, calories } = await _computeAndStoreNutritionForDoc(
         docRef,
@@ -348,7 +279,7 @@ export const createRecipe = async (req, res) => {
           servings: docPayload.servings,
           extendedIngredients: docPayload.extendedIngredients,
           instructions: docPayload.instructions,
-        }
+        },
       );
 
       return res.status(201).json({
@@ -361,7 +292,7 @@ export const createRecipe = async (req, res) => {
     } catch (e) {
       console.warn(
         "Nutrition compute failed on create:",
-        e?.response?.data || e?.message || e
+        e?.response?.data || e?.message || e,
       );
 
       return res.status(201).json({
@@ -402,7 +333,7 @@ export const getUserRecipes = async (req, res) => {
 
     if (needsIndex) {
       console.warn(
-        "Firestore missing composite index for (userId + createdAt desc). Falling back to unordered query."
+        "Firestore missing composite index for (userId + createdAt desc). Falling back to unordered query.",
       );
 
       try {
@@ -476,7 +407,7 @@ export const getRecipeById = async (req, res) => {
 
 /**
  * PUT /api/recipes/:id
- * If ingredients are provided, nutrition+calories are invalidated (set to null).
+ * If ingredients are provided, nutrition+calories are recalculated (best effort).
  */
 export const updateRecipe = async (req, res) => {
   const db = admin.firestore();
@@ -504,33 +435,16 @@ export const updateRecipe = async (req, res) => {
     }
 
     const body = req.body || {};
-    const ingredientsWereProvided =
-      body.extendedIngredients != null || body.ingredients != null;
+    const ingredientsWereProvided = body.extendedIngredients != null;
 
-    const rawList = ingredientsWereProvided
-      ? _parseAnyIngredients(body.extendedIngredients, body.ingredients)
-      : null;
-
-    const normalized =
-      rawList !== null
-        ? _normalizeToExtendedIngredients(rawList)
-        : existing.extendedIngredients ?? [];
-
-    const incoming = {
-      title: body.title ?? existing.title ?? "",
-      summary: body.summary ?? existing.summary ?? "",
-      image: body.image ?? existing.image ?? null,
-      prepTime: body.prepTime ?? existing.prepTime ?? 0,
-      cookTime: body.cookTime ?? existing.cookTime ?? 0,
-      servings: body.servings ?? existing.servings ?? 1,
-      extendedIngredients: normalized,
-      instructions: body.instructions ?? existing.instructions ?? "",
-    };
-
-    const validated = RecipeSchema.safeParse(incoming);
+    // Construct recipe document from request body
+    const recipeDocument = _constructRecipeDocument(req);
+    // Validate recipe document
+    const validated = RecipeSchema.safeParse(recipeDocument);
     if (!validated.success) {
-      const errors =
-        validated.error?.issues?.map((i) => i.message) ?? ["Validation failed"];
+      const errors = validated.error?.issues?.map((i) => i.message) ?? [
+        "Validation failed",
+      ];
       return res.status(400).json({
         error: errors,
         code: "VALIDATION_ERROR",
@@ -543,7 +457,7 @@ export const updateRecipe = async (req, res) => {
     // Image handling
     let imageUrl = existing.image ?? null;
     const removeImage =
-      body?.removeImage === "true" || body?.removeImage === true;
+      req.body?.removeImage === "true" || req.body?.removeImage === true;
 
     if (removeImage) {
       try {
@@ -566,7 +480,7 @@ export const updateRecipe = async (req, res) => {
         imageUrl = await _uploadImageToStorage(
           req.file.buffer,
           path,
-          req.file.mimetype || "image/jpeg"
+          req.file.mimetype || "image/jpeg",
         );
       } catch (uploadError) {
         console.error("Error uploading recipe image:", uploadError);
@@ -576,6 +490,15 @@ export const updateRecipe = async (req, res) => {
         });
       }
     }
+
+    const extendedIngredients = recipeData.extendedIngredients.map((ing) => ({
+      id: ing.id ?? null,
+      name: ing.name,
+      original: ing.original ?? ing.name,
+      amount: Number(ing.amount ?? 0),
+      unit: String(ing.unit ?? "").toLowerCase(),
+      image: ing.image ?? null,
+    }));
 
     await docRef.update({
       title: recipeData.title,
@@ -589,22 +512,42 @@ export const updateRecipe = async (req, res) => {
 
       servings: Number(recipeData.servings),
 
-      extendedIngredients: recipeData.extendedIngredients.map((ing) => ({
-        id: ing.id ?? null,
-        name: ing.name,
-        original: ing.original ?? ing.name,
-        amount: Number(ing.amount ?? 0),
-        unit: String(ing.unit ?? "").toLowerCase(),
-        image: ing.image ?? null,
-      })),
+      extendedIngredients,
 
       instructions: recipeData.instructions,
 
-      nutrition: ingredientsWereProvided ? null : existing.nutrition ?? null,
-      calories: ingredientsWereProvided ? null : existing.calories ?? null,
+      nutrition: ingredientsWereProvided ? null : (existing.nutrition ?? null),
+      calories: ingredientsWereProvided ? null : (existing.calories ?? null),
 
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    // Recalculate nutrition when ingredients were provided (best effort)
+    if (ingredientsWereProvided) {
+      try {
+        const { nutrition, calories } = await _computeAndStoreNutritionForDoc(
+          docRef,
+          {
+            title: recipeData.title,
+            servings: recipeData.servings,
+            extendedIngredients,
+            instructions: recipeData.instructions,
+          },
+        );
+
+        return res.json({
+          success: true,
+          message: "Recipe updated successfully",
+          nutrition,
+          calories,
+        });
+      } catch (e) {
+        console.warn(
+          "Nutrition compute failed on update:",
+          e?.response?.data || e?.message || e,
+        );
+      }
+    }
 
     return res.json({
       success: true,
@@ -723,7 +666,7 @@ export const computeRecipeNutrition = async (req, res) => {
 
     console.error(
       "computeRecipeNutrition error:",
-      error?.response?.data || error?.message || error
+      error?.response?.data || error?.message || error,
     );
 
     return res.status(status).json({

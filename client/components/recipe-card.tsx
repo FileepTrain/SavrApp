@@ -19,7 +19,6 @@ export const RecipeCard = ({
   // Replace props with recipe object in the future
   id,
   title,
-  // TODO: Accept image
   calories = 0,
   rating = 0,
   reviewsLength = 0,
@@ -30,7 +29,7 @@ export const RecipeCard = ({
   if (variant === "default") {
     return (
       <Link href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}>
-        <View className="bg-white rounded-2xl overflow-hidden flex-col w-48 h-56 drop-shadow-xl">
+        <View className="bg-background rounded-2xl overflow-hidden flex-col w-48 h-56 drop-shadow-xl">
           {image ? (
             <Image
               source={{ uri: image }}
@@ -64,7 +63,7 @@ export const RecipeCard = ({
   // Horizontal variant
   return (
     <Link href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}>
-      <View className="bg-white flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
+      <View className="bg-background flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
         {image ? (
           <Image
             source={{ uri: image }}

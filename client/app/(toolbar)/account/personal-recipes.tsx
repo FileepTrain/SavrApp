@@ -67,7 +67,7 @@ export default function PersonalRecipesPage() {
               </View>
             }
             renderItem={({ item }) => (
-              <View className="mb-3">
+              <View className="mb-3 w-full">
                 <SwipeableRecipeCard
                   id={item.id}
                   title={item.title ?? "Untitled"}

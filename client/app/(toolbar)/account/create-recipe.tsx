@@ -57,17 +57,16 @@ export default function CreateRecipePage() {
   };
 
   const handleCreateRecipe = async () => {
-    // ✅ Keep your existing validation (it expects `ingredients` with quantity/unit)
     const payloadForValidation = {
       title: recipeTitle,
       summary: recipeSummary,
       image: recipeImage,
-      prepTime: Number(recipePrepTime || 0),
-      cookTime: Number(recipeCookTime || 0),
-      servings: Number(recipeServings || 1),
-      ingredients: recipeIngredients.map((ing) => ({
+      prepTime: Number(recipePrepTime),
+      cookTime: Number(recipeCookTime),
+      servings: Number(recipeServings),
+      extendedIngredients: recipeIngredients.map((ing) => ({
         name: ing.name,
-        quantity: Number(ing.amount),
+        amount: Number(ing.amount),
         unit: ing.unit,
       })),
       instructions: recipeInstructions,
@@ -79,31 +78,10 @@ export default function CreateRecipePage() {
       return;
     }
 
-    // 🚨 IMPORTANT: Backend expects `extendedIngredients`, not `ingredients`
-    const backendPayload = {
-      title: validated.data.title,
-      summary: validated.data.summary ?? "",
-      prepTime: validated.data.prepTime ?? 0,
-      cookTime: validated.data.cookTime ?? 0,
-      servings: validated.data.servings ?? 1,
-      instructions: validated.data.instructions,
-
-      // ✅ The correct field name + correct object shape
-      extendedIngredients: recipeIngredients.map((ing) => ({
-        id: ing.id ?? null,
-        name: ing.name,
-        original: ing.original ?? ing.name,
-        amount: Number(ing.amount),
-        unit: String(ing.unit).toLowerCase(),
-        image: ing.image ?? null,
-      })),
-    };
-
     try {
       setLoading(true);
 
-      // ✅ Send correct shape to context
-      await createRecipe(backendPayload as any, recipeImage ?? undefined);
+      await createRecipe(validated.data, recipeImage ?? undefined);
 
       router.push("/account/personal-recipes");
     } catch (err: unknown) {
@@ -221,7 +199,7 @@ export default function CreateRecipePage() {
               <IngredientsList
                 list={recipeIngredients.map((ing) => ({
                   name: ing.name,
-                  quantity: Number(ing.amount),
+                  amount: Number(ing.amount),
                   unit: ing.unit,
                 }))}
                 onRemove={handleRemoveIngredient}

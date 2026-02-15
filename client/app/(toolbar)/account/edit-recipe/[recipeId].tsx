@@ -12,6 +12,7 @@ import { IngredientsList } from "@/components/recipe/ingredients-list";
 import { router, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  type ExtendedIngredient,
   usePersonalRecipes,
 } from "@/contexts/personal-recipes-context";
 
@@ -28,8 +29,6 @@ export default function EditRecipePage() {
   const [recipeInstructions, setRecipeInstructions] = useState<string>("");
   const [recipeServings, setRecipeServings] = useState<string>("");
   const [recipeIngredients, setRecipeIngredients] = useState<Ingredient[]>([]);
-  const [recipeDiets, setRecipeDiets] = useState<string[]>([]);
-  const [recipeDishTypes, setRecipeDishTypes] = useState<string[]>([]);
   const [initialImageUrl, setInitialImageUrl] = useState<string | null>(null); // from server, to determine if we should replace vs keep same URL
   const [isIngredientModalVisible, setIsIngredientModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -65,21 +64,17 @@ export default function EditRecipePage() {
         setRecipeServings(String(recipe.servings ?? ""));
         setRecipeInstructions(recipe.instructions || "");
 
-        if (Array.isArray(recipe.ingredients)) {
+        if (Array.isArray(recipe.extendedIngredients)) {
           setRecipeIngredients(
-            recipe.ingredients.map((ing: { name: string; quantity: number; unit: string }) => ({
+            recipe.extendedIngredients.map((ing: ExtendedIngredient) => ({
               name: ing.name,
-              quantity: ing.quantity,
+              amount: ing.amount,
               unit: ing.unit,
             }))
           );
         } else {
           setRecipeIngredients([]);
         }
-        setRecipeDiets(Array.isArray(recipe.diets) ? recipe.diets : []);
-        setRecipeDishTypes(
-          Array.isArray(recipe.dishTypes) ? recipe.dishTypes : []
-        );
       } catch (err: any) {
         Alert.alert("Error", err.message, [
           { text: "OK", onPress: () => router.back() },
@@ -108,7 +103,7 @@ export default function EditRecipePage() {
       prepTime: Number(recipePrepTime),
       cookTime: Number(recipeCookTime),
       servings: Number(recipeServings),
-      ingredients: recipeIngredients,
+      extendedIngredients: recipeIngredients,
       instructions: recipeInstructions,
     });
 

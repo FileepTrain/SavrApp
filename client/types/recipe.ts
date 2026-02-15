@@ -8,7 +8,7 @@ export const RecipeSchema = z.object({
   prepTime: z.number().min(0, "Prep time must not be negative"),
   cookTime: z.number().min(0, "Cook time must not be negative"),
   servings: z.number().min(1, "Total servings must be at least 1"),
-  ingredients: z
+  extendedIngredients: z
     .array(IngredientSchema)
     .min(1, "At least one ingredient is required"),
   instructions: z.string().min(1, "Instructions are required"),

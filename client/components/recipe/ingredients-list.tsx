@@ -13,7 +13,7 @@ export function IngredientsList({ list, onRemove }: { list: Ingredient[], onRemo
         >
           <View className="flex-1 flex-row gap-2 items-center">
             <Text className="text-red-primary font-extrabold text-2xl leading-none">{'\u2022'}</Text>
-            <Text className="text-foreground font-medium">{item.quantity} {item.unit} of {item.name}</Text>
+            <Text className="text-foreground font-medium">{item.amount} {item.unit} of {item.name}</Text>
           </View>
           {onRemove && (
             <TouchableOpacity onPress={() => onRemove?.(index)}>
