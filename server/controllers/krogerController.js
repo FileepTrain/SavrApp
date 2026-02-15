@@ -167,7 +167,12 @@ async function fetchPriceForTerm(term, locationId, limit = 5, method = "median",
     found: true,
     term,
     product: selected,
-    cost: selected?.price ?? null,
+    cost:
+      typeof selected?.unit?.unitCost === "number"
+        ? selected.unit.unitCost
+        : selected?.price ?? null,
+    rawPrice: selected?.price ?? null,
+    unitCost: selected?.unit?.unitCost ?? null,
     candidates: includeCandidates ? candidates : undefined
   };
 }
@@ -345,51 +350,4 @@ export const getPriceBatch = async (req, res) => {
   }
 };
 
-export const getMultiStorePrice = async (req, res) => {
-  const { term, zip } = req.query;
-  const limit = Number(req.query.limit || 5);
-  const storesToCheck = Number(req.query.stores || 3);
-  const method = req.query.method || "median";
-
-  if (!term || !zip) {
-    return res.status(400).json({
-      error: "Missing required query params: term, zip",
-    });
-  }
-
-  try {
-    // STEP 1: Automatically get stores from ZIP
-    const locationIds = await getStoresByZip(zip, storesToCheck);
-
-    if (locationIds.length === 0) {
-      return res.json({ error: "No stores found near ZIP" });
-    }
-
-    // STEP 2: For each store, fetch price
-    const results = await Promise.all(
-      locationIds.map(loc =>
-        fetchPriceForTerm(term, loc, limit, method, false)
-      )
-    );
-
-    // STEP 3: Pick the best store
-    const best = results
-      .filter(r => r.cost !== null)
-      .sort((a, b) => a.cost - b.cost)[0] || null;
-
-    return res.json({
-      term,
-      zip,
-      method,
-      bestStore: best,
-      allStores: results
-    });
-
-  } catch (err) {
-    console.error("Multi-store price error:", err);
-    return res.status(500).json({
-      error: "Failed to fetch multi-store prices",
-      details: err.message
-    });
-  }
-};
+export { fetchPriceForTerm, getAccessToken };

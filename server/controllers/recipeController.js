@@ -2,6 +2,7 @@
 import admin from "firebase-admin";
 import axios from "axios";
 import { z } from "zod";
+import { fetchPriceForTerm, getAccessToken } from "./krogerController.js";
 
 // ✅ Store personal recipes in their own collection
 const RECIPES_COLL = "personal_recipes";
@@ -82,6 +83,79 @@ async function _deleteRecipeImageFolder(uid, recipeId) {
   const prefix = `users/${uid}/recipes/${recipeId}/`;
   const [files] = await bucket.getFiles({ prefix });
   await Promise.all(files.map((f) => f.delete()));
+}
+
+/**
+ * Pull store ID used for ingredient price lookup.
+ */
+const KROGER_API_BASE = process.env.KROGER_API_BASE;
+
+async function _getStoreIdForRecipe(zip = "90713") {
+  try {
+    const token = await getAccessToken();
+    const resp = await axios.get(`${KROGER_API_BASE}/locations`, {
+      params: {
+        "filter.zipCode.near": zip,
+        "filter.limit": 1,
+      },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const stores = resp.data?.data || [];
+    return stores.length > 0 ? stores[0].locationId : null;
+  } catch (err) {
+    console.error("Kroger store lookup failed:", err.message);
+    return null;
+  }
+}
+
+/**
+ * Calculates price of recipe and imports it into doc.
+ */
+async function _computeAndStorePriceForDoc(docRef, recipe) {
+  try {
+    const locationId = await _getStoreIdForRecipe("90713");
+    if (!locationId) return null;
+
+    const ingredientNames = (recipe.extendedIngredients || [])
+      .map((ing) => ing.name)
+      .filter(Boolean);
+
+    if (ingredientNames.length === 0) return null;
+
+    const results = await Promise.all(
+      ingredientNames.map((name) =>
+        fetchPriceForTerm(name, locationId, 5, "median", false)
+      )
+    );
+
+    let total = 0;
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const ingredient = recipe.extendedIngredients[i];
+
+      const quantity = Number(ingredient?.amount || 1);
+
+      if (typeof r?.unitCost === "number") {
+        total += r.unitCost * quantity;
+      } else if (typeof r?.rawPrice === "number") {
+        // fallback: full package price
+        total += r.rawPrice;
+      }
+    }
+
+    const finalPrice = Number(total.toFixed(2));
+
+    await docRef.update({
+      price: finalPrice,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return finalPrice;
+  } catch (err) {
+    console.warn("Kroger price calculation failed:", err.message);
+    return null;
+  }
 }
 
 /**
@@ -297,6 +371,7 @@ export const createRecipe = async (req, res) => {
 
       nutrition: null,
       calories: null,
+      price: null,
 
       dishTypes: [],
       diets: [],
@@ -350,6 +425,10 @@ export const createRecipe = async (req, res) => {
           instructions: docPayload.instructions,
         }
       );
+      const price = await _computeAndStorePriceForDoc(docRef, {
+        extendedIngredients: docPayload.extendedIngredients,
+      });
+      
 
       return res.status(201).json({
         success: true,
@@ -357,17 +436,18 @@ export const createRecipe = async (req, res) => {
         message: "Recipe created successfully",
         nutrition,
         calories,
+        price,
       });
     } catch (e) {
       console.warn(
-        "Nutrition compute failed on create:",
+        "Nutrition/price compute failed on create:",
         e?.response?.data || e?.message || e
       );
 
       return res.status(201).json({
         success: true,
         id: recipeId,
-        message: "Recipe created successfully (nutrition pending)",
+        message: "Recipe created successfully (nutrition/price pending)",
       });
     }
   } catch (error) {
