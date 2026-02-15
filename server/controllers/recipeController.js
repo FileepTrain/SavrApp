@@ -487,6 +487,16 @@ export const deleteRecipe = async (req, res) => {
       });
     }
 
+    // Delete ingredient documents referenced by this recipe
+    const oldIngredientIds = doc.data().ingredients || [];
+    if (oldIngredientIds.length > 0) {
+      const batch = db.batch();
+      for (const ingredientId of oldIngredientIds) {
+        batch.delete(db.collection("ingredients").doc(ingredientId));
+      }
+      await batch.commit();
+    }
+
     await docRef.delete();
 
     // Remove recipe image(s) from Storage

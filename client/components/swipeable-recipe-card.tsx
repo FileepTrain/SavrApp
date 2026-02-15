@@ -4,9 +4,7 @@ import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeabl
 import { router } from "expo-router";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { RecipeCard } from "./recipe-card";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const SERVER_URL = "http://10.0.2.2:3000";
+import { usePersonalRecipes } from "@/contexts/personal-recipes-context";
 
 interface SwipeableRecipeCardProps {
   id: string;
@@ -25,29 +23,21 @@ export function SwipeableRecipeCard({
   reviewsLength = 0,
   image,
 }: SwipeableRecipeCardProps) {
-
+  const { deleteRecipe } = usePersonalRecipes();
   const [loading, setLoading] = useState(false);
 
   const handleDeleteRecipe = async () => {
     try {
       setLoading(true);
-      const idToken = await AsyncStorage.getItem("idToken");
-      if (!idToken) return;
-      const res = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
-        headers: {
-          "Authorization": `Bearer ${idToken}`,
-          "Content-Type": "application/json",
-        },
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete recipe");
+      await deleteRecipe(id);
     } catch (error) {
       console.error("Error deleting recipe:", error);
       Alert.alert("Error", "Failed to delete recipe");
     } finally {
       setLoading(false);
     }
-  }
+  };
+
   const renderRightActions = (
     _progress: unknown,
     _translation: unknown,

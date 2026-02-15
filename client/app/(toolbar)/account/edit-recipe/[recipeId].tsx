@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ThemedSafeView } from "@/components/themed-safe-view";
-import { Text, View, TouchableOpacity, Alert, Image, ScrollView } from "react-native";
+import { Text, View, TouchableOpacity, Alert, Image, ScrollView, ActivityIndicator } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import Input from "@/components/ui/input";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -11,12 +11,15 @@ import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { IngredientsList } from "@/components/recipe/ingredients-list";
 import { router, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ActivityIndicator } from "react-native";
+import {
+  usePersonalRecipes,
+} from "@/contexts/personal-recipes-context";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
 export default function EditRecipePage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
+  const { updateRecipe } = usePersonalRecipes();
   const [recipeImage, setRecipeImage] = useState<string | null>(null);
   const [recipeTitle, setRecipeTitle] = useState<string>("");
   const [recipeSummary, setRecipeSummary] = useState<string>("");
@@ -116,7 +119,6 @@ export default function EditRecipePage() {
 
     try {
       setLoading(true);
-
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) {
         Alert.alert("Session expired", "Please log in again to save changes.", [
@@ -124,45 +126,24 @@ export default function EditRecipePage() {
         ]);
         return;
       }
-
-      const formData = new FormData();
-      formData.append("title", recipe.data.title);
-      formData.append("summary", recipe.data.summary ?? "");
-      formData.append("prepTime", String(recipe.data.prepTime));
-      formData.append("cookTime", String(recipe.data.cookTime));
-      formData.append("servings", String(recipe.data.servings));
-      formData.append("instructions", recipe.data.instructions);
-      formData.append("ingredients", JSON.stringify(recipe.data.ingredients));
-
-      if (initialImageUrl && !recipeImage) {
-        formData.append("removeImage", "true");
-      } else if (recipeImage && (recipeImage.startsWith("file://") || recipeImage.startsWith("content://"))) {
-        const filename = recipeImage.split("/").pop() || "recipe-image.jpg";
-        const match = filename.toLowerCase().match(/\.(jpe?g|png|gif|webp)$/);
-        const mimeType = match
-          ? (match[1] === "jpg" || match[1] === "jpeg" ? "image/jpeg" : `image/${match[1]}`)
-          : "image/jpeg";
-        formData.append("image", {
-          uri: recipeImage,
-          name: filename,
-          type: mimeType,
-        } as unknown as Blob);
+      // Determine if we should remove the image or replace it with a new one
+      const imageOptions =
+        initialImageUrl && !recipeImage
+          ? { removeImage: true as const }
+          : recipeImage && (recipeImage.startsWith("file://") || recipeImage.startsWith("content://"))
+            ? { imageUri: recipeImage }
+            : undefined;
+      await updateRecipe(recipeId!, recipe.data, imageOptions);
+      router.back();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update recipe";
+      if (message === "Session expired") {
+        Alert.alert("Session expired", "Please log in again to save changes.", [
+          { text: "OK", onPress: () => router.replace("/login") },
+        ]);
+      } else {
+        Alert.alert("Error", message);
       }
-
-      const res = await fetch(`${SERVER_URL}/api/recipes/${recipeId}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(Array.isArray(data.error) ? data.error.join("\n") : data.error || "Failed to update recipe");
-      }
-      router.push("/account/personal-recipes");
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
     }
@@ -365,7 +346,7 @@ export default function EditRecipePage() {
             onPress={handleSaveRecipe}
             disabled={loading}
           >
-            Save Recipe
+            {loading ? <ActivityIndicator size="small" color="black" /> : "Save Recipe"}
           </Button>
         </View>
       </ScrollView>

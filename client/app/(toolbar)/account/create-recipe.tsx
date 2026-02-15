@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ThemedSafeView } from "@/components/themed-safe-view";
-import { Text, View, TouchableOpacity, Alert, Image, ScrollView } from "react-native";
+import { Text, View, TouchableOpacity, Alert, Image, ScrollView, ActivityIndicator } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import Input from "@/components/ui/input";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -11,10 +11,10 @@ import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { IngredientsList } from "@/components/recipe/ingredients-list";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const SERVER_URL = "http://10.0.2.2:3000";
+import { usePersonalRecipes } from "@/contexts/personal-recipes-context";
 
 export default function CreateRecipePage() {
+  const { createRecipe } = usePersonalRecipes();
   const [recipeImage, setRecipeImage] = useState<string | null>(null);
   const [recipeTitle, setRecipeTitle] = useState<string>("");
   const [recipeSummary, setRecipeSummary] = useState<string>("");
@@ -53,7 +53,6 @@ export default function CreateRecipePage() {
 
     try {
       setLoading(true);
-
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) {
         Alert.alert("Session expired", "Please log in again to create a recipe.", [
@@ -61,45 +60,17 @@ export default function CreateRecipePage() {
         ]);
         return;
       }
-
-      // Send as FormData so we can include the image file in the request body for storage upload
-      const formData = new FormData();
-      formData.append("title", recipe.data.title);
-      formData.append("summary", recipe.data.summary ?? "");
-      formData.append("prepTime", String(recipe.data.prepTime));
-      formData.append("cookTime", String(recipe.data.cookTime));
-      formData.append("servings", String(recipe.data.servings));
-      formData.append("instructions", recipe.data.instructions);
-      formData.append("ingredients", JSON.stringify(recipe.data.ingredients));
-
-      if (recipeImage) {
-        // Extract file extension from image file name and set the mime type accordingly
-        const filename = recipeImage.split("/").pop() || "recipe-image.jpg";
-        const match = filename.toLowerCase().match(/\.(jpe?g|png|gif|webp)$/);
-        const mimeType = match
-          ? (match[1] === "jpg" || match[1] === "jpeg" ? "image/jpeg" : `image/${match[1]}`)
-          : "image/jpeg";
-        formData.append("image", {
-          uri: recipeImage,
-          name: filename,
-          type: mimeType,
-        } as unknown as Blob);
+      await createRecipe(recipe.data, recipeImage ?? undefined);
+      router.back();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create recipe";
+      if (message === "Session expired") {
+        Alert.alert("Session expired", "Please log in again to create a recipe.", [
+          { text: "OK", onPress: () => router.replace("/login") },
+        ]);
+      } else {
+        Alert.alert("Error", message);
       }
-
-      const res = await fetch(`${SERVER_URL}/api/recipes`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(Array.isArray(data.error) ? data.error.join("\n") : data.error || "Failed to create recipe");
-      }
-      router.push("/account/personal-recipes");
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
     }
@@ -240,7 +211,7 @@ export default function CreateRecipePage() {
             />
           </View>
           <Button variant="default" className="h-16 rounded-xl" textClassName="text-lg font-medium text-primary" onPress={handleCreateRecipe} disabled={loading}>
-            Create Recipe
+            {loading ? <ActivityIndicator size="small" color="black" /> : "Create Recipe"}
           </Button>
         </View>
       </ScrollView >
