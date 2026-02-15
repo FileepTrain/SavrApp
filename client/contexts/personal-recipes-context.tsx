@@ -1,9 +1,19 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+
+/** Ingredient shape your backend expects */
+export interface ExtendedIngredient {
+  id?: number | null;
+  name: string;
+  original?: string | null;
+  amount: number;
+  unit: string;
+  image?: string | null;
+}
 
 /** Recipe as a complete document object returned from GET /api/recipes */
 export interface PersonalRecipeItem {
@@ -17,32 +27,30 @@ export interface PersonalRecipeItem {
   calories?: number;
   rating?: number;
   reviews?: unknown[];
-  ingredients?: unknown[];
+  extendedIngredients?: ExtendedIngredient[]; // ✅ matches backend schema
   instructions?: string;
   [key: string]: unknown;
 }
 
-/** Payload for create/update (aligns with recipe schema shape) */
+/** Payload for create/update (ALIGN WITH BACKEND) */
 export interface RecipePayload {
   title: string;
   summary?: string;
   prepTime: number;
   cookTime: number;
   servings: number;
-  ingredients: { name: string; quantity: number; unit: string }[];
+  extendedIngredients: ExtendedIngredient[]; // ✅ IMPORTANT
   instructions: string;
 }
 
 export interface UpdateRecipeImageOptions {
-  /** New image from picker (file:// or content:// URI) */
   imageUri?: string | null;
-  /** True if user removed the existing image */
   removeImage?: boolean;
 }
 
 interface PersonalRecipesState {
   recipes: PersonalRecipeItem[];
-  loading: boolean; // True when in the process of fetching recipes
+  loading: boolean;
   error: string | null;
 }
 
@@ -60,10 +68,11 @@ interface PersonalRecipesContextValue extends PersonalRecipesState {
 
 const PersonalRecipesContext = createContext<PersonalRecipesContextValue | null>(null);
 
-/** Fetch the personal recipes from the server and stores them in the client */
+/** Fetch personal recipes */
 async function fetchPersonalRecipes(): Promise<PersonalRecipeItem[]> {
   const idToken = await AsyncStorage.getItem("idToken");
   if (!idToken) return [];
+
   const res = await fetch(`${SERVER_URL}/api/recipes`, {
     method: "GET",
     headers: {
@@ -71,33 +80,35 @@ async function fetchPersonalRecipes(): Promise<PersonalRecipeItem[]> {
       "Content-Type": "application/json",
     },
   });
+
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to fetch recipes");
-  return data.recipes ?? [];
+  if (!res.ok) throw new Error(data?.error || "Failed to fetch recipes");
+
+  return Array.isArray(data?.recipes) ? data.recipes : [];
 }
 
-/** HELPER: Append the image to the form data with the proper MIME type */
+/** HELPER: append image to FormData */
 const _appendImageToFormData = (formData: FormData, imageUri: string): void => {
   const filename = imageUri.split("/").pop() || "recipe-image.jpg";
   const match = filename.toLowerCase().match(/\.(jpe?g|png|gif|webp)$/);
   const mimeType = match
-    ? (match[1] === "jpg" || match[1] === "jpeg" ? "image/jpeg" : `image/${match[1]}`)
+    ? match[1] === "jpg" || match[1] === "jpeg"
+      ? "image/jpeg"
+      : `image/${match[1]}`
     : "image/jpeg";
+
   formData.append("image", {
     uri: imageUri,
     name: filename,
     type: mimeType,
   } as unknown as Blob);
-}
+};
 
 export function PersonalRecipesProvider({ children }: { children: React.ReactNode }) {
   const [recipes, setRecipes] = useState<PersonalRecipeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /** Refetch the personal recipes from the database by calling fetchPersonalRecipes
-   ** Ensures that the client is synced with the database by updating the recipes state
-   */
   const refetch = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -112,76 +123,100 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
     }
   }, []);
 
-  /** Create a new personal recipe in the database */
+  /** Create recipe */
   const createRecipe = useCallback(
     async (data: RecipePayload, imageUri?: string | null) => {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) throw new Error("Session expired");
+
+      // ✅ fail early if payload wrong
+      if (!Array.isArray(data.extendedIngredients) || data.extendedIngredients.length === 0) {
+        throw new Error("At least one ingredient is required (extendedIngredients).");
+      }
+
       const formData = new FormData();
       formData.append("title", data.title);
       formData.append("summary", data.summary ?? "");
-      formData.append("prepTime", String(data.prepTime));
-      formData.append("cookTime", String(data.cookTime));
-      formData.append("servings", String(data.servings));
-      formData.append("instructions", data.instructions);
-      formData.append("ingredients", JSON.stringify(data.ingredients));
+      formData.append("prepTime", String(data.prepTime ?? 0));
+      formData.append("cookTime", String(data.cookTime ?? 0));
+      formData.append("servings", String(data.servings ?? 1));
+      formData.append("instructions", data.instructions ?? "");
+
+      // ✅ IMPORTANT: backend expects THIS key
+      formData.append("extendedIngredients", JSON.stringify(data.extendedIngredients));
+
       if (imageUri) _appendImageToFormData(formData, imageUri);
+
       const res = await fetch(`${SERVER_URL}/api/recipes`, {
         method: "POST",
         headers: { Authorization: `Bearer ${idToken}` },
         body: formData,
       });
+
       const json = await res.json();
       if (!res.ok) {
         throw new Error(
-          Array.isArray(json.error) ? json.error.join("\n") : json.error || "Failed to create recipe"
+          Array.isArray(json?.error)
+            ? json.error.join("\n")
+            : json?.error || "Failed to create recipe"
         );
       }
+
       await refetch();
     },
     [refetch]
   );
 
-  /** Update a personal recipe in the database */
+  /** Update recipe */
   const updateRecipe = useCallback(
-    async (
-      recipeId: string,
-      data: RecipePayload,
-      imageOptions?: UpdateRecipeImageOptions
-    ) => {
+    async (recipeId: string, data: RecipePayload, imageOptions?: UpdateRecipeImageOptions) => {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) throw new Error("Session expired");
+
+      if (!Array.isArray(data.extendedIngredients) || data.extendedIngredients.length === 0) {
+        throw new Error("At least one ingredient is required (extendedIngredients).");
+      }
+
       const formData = new FormData();
       formData.append("title", data.title);
       formData.append("summary", data.summary ?? "");
-      formData.append("prepTime", String(data.prepTime));
-      formData.append("cookTime", String(data.cookTime));
-      formData.append("servings", String(data.servings));
-      formData.append("instructions", data.instructions);
-      formData.append("ingredients", JSON.stringify(data.ingredients));
+      formData.append("prepTime", String(data.prepTime ?? 0));
+      formData.append("cookTime", String(data.cookTime ?? 0));
+      formData.append("servings", String(data.servings ?? 1));
+      formData.append("instructions", data.instructions ?? "");
+
+      // ✅ IMPORTANT: backend expects THIS key
+      formData.append("extendedIngredients", JSON.stringify(data.extendedIngredients));
+
       if (imageOptions?.removeImage) formData.append("removeImage", "true");
       else if (imageOptions?.imageUri) _appendImageToFormData(formData, imageOptions.imageUri);
+
       const res = await fetch(`${SERVER_URL}/api/recipes/${recipeId}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${idToken}` },
         body: formData,
       });
+
       const json = await res.json();
       if (!res.ok) {
         throw new Error(
-          Array.isArray(json.error) ? json.error.join("\n") : json.error || "Failed to update recipe"
+          Array.isArray(json?.error)
+            ? json.error.join("\n")
+            : json?.error || "Failed to update recipe"
         );
       }
+
       await refetch();
     },
     [refetch]
   );
 
-  /** Delete a personal recipe from the database */
+  /** Delete recipe */
   const deleteRecipe = useCallback(
     async (id: string) => {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) throw new Error("Session expired");
+
       const res = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
         method: "DELETE",
         headers: {
@@ -189,6 +224,7 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
           "Content-Type": "application/json",
         },
       });
+
       if (!res.ok) throw new Error("Failed to delete recipe");
       await refetch();
     },
@@ -210,20 +246,11 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
     setRecipes,
   };
 
-  return (
-    <PersonalRecipesContext.Provider value={value}>
-      {children}
-    </PersonalRecipesContext.Provider>
-  );
+  return <PersonalRecipesContext.Provider value={value}>{children}</PersonalRecipesContext.Provider>;
 }
 
-/** Hook to use the personal recipes context
- * @returns The personal recipes context value and CRUD operations
-*/
 export function usePersonalRecipes(): PersonalRecipesContextValue {
   const ctx = useContext(PersonalRecipesContext);
-  if (!ctx) {
-    throw new Error("usePersonalRecipes must be used within PersonalRecipesProvider");
-  }
+  if (!ctx) throw new Error("usePersonalRecipes must be used within PersonalRecipesProvider");
   return ctx;
 }

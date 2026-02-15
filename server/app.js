@@ -10,6 +10,8 @@ import ingredientRoutes from "./routes/ingredientRoutes.js";
 import externalRecipeRoutes from "./routes/externalRecipeRoutes.js";
 import krogerRoutes from "./routes/krogerRoutes.js";
 import pantryRoutes from "./routes/pantryRoutes.js";
+import spoonacularRoutes from "./routes/spoonacular.js";
+
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -30,6 +32,8 @@ app.use("/api/ingredients", ingredientRoutes);
 app.use("/api/external-recipes", externalRecipeRoutes);
 app.use("/api/kroger", krogerRoutes);
 app.use("/api/pantry", pantryRoutes);
+app.use("/api/spoonacular", spoonacularRoutes);
+
 
 app.get("/", (req, res) => {
   res.send("Hello World!");

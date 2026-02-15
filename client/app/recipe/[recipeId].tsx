@@ -128,15 +128,39 @@ export default function RecipeDetailsPage() {
 
       setLoading(true);
       try {
+        const saved = await AsyncStorage.getItem(FAVORITES_KEY);
+        const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+        setIsFavorited(favoriteIds.includes(id));
+
         if (isPersonalRecipeId(id)) {
-          // Personal recipe: GET /api/recipes/:id
+          // ✅ Personal recipe: requires auth token
+          const idToken = await AsyncStorage.getItem("idToken");
+          if (!idToken) {
+            router.replace("/login");
+            return;
+          }
+
           const response = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
             method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
           });
+
           const data = await response.json();
 
           if (!response.ok) {
-            throw new Error(data?.error || "Failed to fetch recipe");
+            const msg = data?.error || "Failed to fetch recipe";
+            // if token expired / invalid -> send to login
+            if (
+              typeof msg === "string" &&
+              msg.toLowerCase().includes("token")
+            ) {
+              router.replace("/login");
+              return;
+            }
+            throw new Error(msg);
           }
 
           const r = data.recipe;
@@ -150,22 +174,32 @@ export default function RecipeDetailsPage() {
             readyInMinutes: (r.prepTime ?? 0) + (r.cookTime ?? 0),
             servings: r.servings,
             instructions: r.instructions,
-            calories: r.calories,
+            // your schema stores nutrition under nutrition.nutrients
+            calories:
+              Array.isArray(r?.nutrition?.nutrients)
+                ? Math.round(
+                    Number(
+                      r.nutrition.nutrients.find((n: any) => n?.name === "Calories")
+                        ?.amount ?? 0
+                    )
+                  ) || undefined
+                : undefined,
             rating: r.rating,
             reviewsLength: r.reviews?.length ?? 0,
           });
 
+          // ✅ IMPORTANT: personal recipes store ingredients as extendedIngredients
+          const ext = Array.isArray(r?.extendedIngredients)
+            ? r.extendedIngredients
+            : [];
+
           setIngredients(
-            (r.ingredients ?? []).map((ing: Ingredient) => ({
+            ext.map((ing: any) => ({
               name: ing.name,
-              quantity: ing.quantity,
-              unit: ing.unit,
+              quantity: Number(ing.amount ?? 0),
+              unit: ing.unit ?? "",
             }))
           );
-
-          const saved = await AsyncStorage.getItem(FAVORITES_KEY);
-          const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
-          setIsFavorited(favoriteIds.includes(id));
         } else {
           // External recipe: include nutrition so we can show calories on this page
           const response = await fetch(
@@ -207,10 +241,6 @@ export default function RecipeDetailsPage() {
               unit: ing.unit ?? "serving",
             }))
           );
-
-          const saved = await AsyncStorage.getItem(FAVORITES_KEY);
-          const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
-          setIsFavorited(favoriteIds.includes(id));
         }
       } catch (error) {
         console.error("Error fetching recipe:", error);
@@ -220,7 +250,7 @@ export default function RecipeDetailsPage() {
     };
 
     fetchRecipe();
-  }, [id]);
+  }, [id, router]);
 
   if (loading) {
     return (
@@ -322,7 +352,6 @@ export default function RecipeDetailsPage() {
                 <Text className="text-muted-foreground text-sm">Cook</Text>
               </View>
 
-              {/* Servings */}
               <View className="justify-center items-center">
                 <Text className="text-foreground font-bold">
                   {recipe?.servings ?? 0}
@@ -336,7 +365,7 @@ export default function RecipeDetailsPage() {
               {stripHtml(recipe?.summary ?? "") || "No description available"}
             </Text>
 
-            {/* BUTTON ROW: Nutrition | Reviews | Share */}
+            {/* BUTTON ROW */}
             <View className="flex-row justify-between gap-2">
               <TouchableOpacity
                 className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
@@ -364,11 +393,7 @@ export default function RecipeDetailsPage() {
                   })
                 }
               >
-                <IconSymbol
-                  name="chat-outline"
-                  size={18}
-                  color="--color-secondary"
-                />
+                <IconSymbol name="chat-outline" size={18} color="--color-secondary" />
                 <Text className="font-medium">Reviews</Text>
               </TouchableOpacity>
 
@@ -390,13 +415,11 @@ export default function RecipeDetailsPage() {
               </TouchableOpacity>
             </View>
 
-            {/* TOGGLE BUTTONS: ingredients / instructions */}
+            {/* TOGGLE BUTTONS */}
             <View className="flex-row justify-around items-center bg-background rounded-xl h-10 p-1 shadow">
               <TouchableOpacity
                 className={`w-1/2 py-1 rounded-lg ${
-                  isIngredientsOpen
-                    ? "bg-red-primary text-background"
-                    : "bg-background text-foreground"
+                  isIngredientsOpen ? "bg-red-primary" : "bg-background"
                 }`}
                 onPress={() => setIsIngredientsOpen(true)}
               >
@@ -411,9 +434,7 @@ export default function RecipeDetailsPage() {
 
               <TouchableOpacity
                 className={`w-1/2 py-1 rounded-lg ${
-                  !isIngredientsOpen
-                    ? "bg-red-primary"
-                    : "bg-background text-background"
+                  !isIngredientsOpen ? "bg-red-primary" : "bg-background"
                 }`}
                 onPress={() => setIsIngredientsOpen(false)}
               >
@@ -442,17 +463,13 @@ export default function RecipeDetailsPage() {
               ) : (
                 <View className="bg-white rounded-xl p-4 shadow gap-2">
                   <Text className="text-foreground font-medium">
-                    {stripHtml(recipe?.instructions) ||
-                      "No instructions available"}
+                    {stripHtml(recipe?.instructions) || "No instructions available"}
                   </Text>
                 </View>
               )}
 
-              {/* Similar Recipes Placeholder */}
               <View className="bg-background rounded-xl p-4 shadow gap-2">
-                <Text className="text-lg font-semibold">
-                  Similar Recipes Placeholder
-                </Text>
+                <Text className="text-lg font-semibold">Similar Recipes Placeholder</Text>
                 <Text className="text-muted-foreground">
                   This area will display similar recipe items.
                 </Text>
