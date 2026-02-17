@@ -1,14 +1,108 @@
 import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AddReviewModal } from "@/components/add-review-pop-up";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLocalSearchParams } from "expo-router";
+
+const SERVER_URL = "http://10.0.2.2:3000";
 
 export default function ReviewsPage() {
-  const [isAddReviewOpen, setIsAddReviewOpen] = useState(false);
+  const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
+  const id = useMemo( //useMemo is a react hook to cache reults (kinda like useCallback)
+    () => (Array.isArray(recipeId) ? recipeId[0] : recipeId) ?? "",
+    [recipeId]
+  );
 
-  const handleSubmitReview = (data: { rating: number; review: string }) => {
+  const [isAddReviewOpen, setIsAddReviewOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  type Review = {
+    id: string;
+    authorDisplayName: string | null;
+    rating: number;
+    review: string;
+    createdAt?: string;
+  };
+
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+
+  const loadReviews = async () => {
+    if (!id) return;
+  
+    const token = await AsyncStorage.getItem("idToken");
+    if (!token) return;
+  
+    setLoadingReviews(true);
+    try {
+      const res = await fetch(
+        `${SERVER_URL}/api/reviews?recipeId=${encodeURIComponent(id)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+  
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load reviews");
+  
+      setReviews(Array.isArray(json.reviews) ? json.reviews : []);
+    } catch (e) {
+      setError("Failed to load reviews");
+    } finally {
+      setLoadingReviews(false);
+    }
+  };
+
+  useEffect(() => {
+    loadReviews();
+  }, [id]);
+
+  const handleSubmitReview = async (data: { rating: number; review: string }) => {
     console.log("New review submitted:", data);
+    if (!id) {
+      setError("Recipe not found.");
+      return;
+    }
+    const token = await AsyncStorage.getItem("idToken");
+    if (!token) {
+      setError("Please sign in to submit a review.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${SERVER_URL}/api/reviews`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          recipeId: id,
+          rating: data.rating,
+          review: data.review.trim(),
+        }),
+      });
+  
+      const json = await res.json().catch(() => ({}));
+  
+      if (!res.ok) {
+        setError(json.error || json.message || "Failed to submit review");
+        return;
+      }
+  
+      setIsAddReviewOpen(false);
+      loadReviews();
+    } catch (e) {
+      setError("Network error. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -30,29 +124,53 @@ export default function ReviewsPage() {
             ))}
           </View>
 
-          <Text className="text-gray-600 mt-2">Based on 0 reviews</Text>
+          <Text className="text-gray-600 mt-2">Based on {reviews.length} reviews</Text>
         </View>
 
         {/* Reviews List */}
         <Text className="text-gray-600 mb-2 ml-1">Reviews</Text>
-
-        <View className="bg-white rounded-xl shadow p-4 mb-4 flex-row gap-3">
-          <View className="w-12 h-12 rounded-full bg-[#EB2D2D] items-center justify-center">
-            <Text className="text-white font-bold text-lg">?</Text>
+        
+        {error ? (
+          <View className="bg-red-100 border border-red-300 rounded-xl p-3 mb-3">
+            <Text className="text-red-700">{error}</Text>
           </View>
+        ) : null}
 
-          <View className="flex-1">
-            <Text className="font-bold text-base">Anonymous</Text>
-
-            <View className="flex-row mb-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <IconSymbol key={i} name="star" size={16} color="#FBCD4F" />
-              ))}
+        {/* Review tiles */}
+        {loadingReviews ? (
+          <Text className="text-gray-600">Loading reviews...</Text>
+        ) : reviews.length === 0 ? (
+          <Text className="text-gray-600">No reviews yet.</Text>
+        ) : (  
+          reviews.map((r) => (
+            <View key={r.id} className="bg-white rounded-xl shadow p-4 mb-4 flex-row gap-3">
+              <View className="w-12 h-12 rounded-full bg-[#EB2D2D] items-center justify-center">
+                <Text className="text-white font-bold text-lg">
+                  {(r.authorDisplayName?.[0] ?? "?").toUpperCase()}
+                </Text>      
+              </View>      
+              
+              <View className="flex-1">        
+                <Text className="font-bold text-base">
+                  {r.authorDisplayName ?? "Anonymous"}
+                </Text>
+                
+                <View className="flex-row mb-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <IconSymbol
+                      key={i}
+                      name={i + 1 <= r.rating ? "star" : "star-outline"}
+                      size={16}
+                      color={i + 1 <= r.rating ? "#FBCD4F" : "#D1D5DC"}
+                    />          
+                  ))}        
+                </View>        
+              
+                <Text className="text-gray-600">{r.review}</Text>
+              </View>
             </View>
-
-            <Text className="text-gray-600">Review text placeholder...</Text>
-          </View>
-        </View>
+          ))
+        )}
 
         <View className="h-24" />
       </ScrollView>

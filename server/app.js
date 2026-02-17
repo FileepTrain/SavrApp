@@ -11,6 +11,7 @@ import externalRecipeRoutes from "./routes/externalRecipeRoutes.js";
 import krogerRoutes from "./routes/krogerRoutes.js";
 import pantryRoutes from "./routes/pantryRoutes.js";
 import spoonacularRoutes from "./routes/spoonacular.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
 
 
 admin.initializeApp({
@@ -33,6 +34,7 @@ app.use("/api/external-recipes", externalRecipeRoutes);
 app.use("/api/kroger", krogerRoutes);
 app.use("/api/pantry", pantryRoutes);
 app.use("/api/spoonacular", spoonacularRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 
 app.get("/", (req, res) => {
