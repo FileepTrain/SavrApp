@@ -3,14 +3,18 @@ import express from "express";
 import {
   searchExternalRecipes,
   getExternalRecipeDetails,
+  getExternalRecipeFeed,
 } from "../controllers/externalRecipeController.js";
 
 const router = express.Router();
 
-// GET /api/external-recipes/search?q=pasta&number=10&offset=0
+// Homepage Feed route
+router.get("/feed", getExternalRecipeFeed);
+
+// Search route
 router.get("/search", searchExternalRecipes);
 
-// GET /api/external-recipes/:id/details?includeNutrition=false
+// Details route
 router.get("/:id/details", getExternalRecipeDetails);
 
 export default router;

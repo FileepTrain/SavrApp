@@ -1,6 +1,8 @@
 // controllers/externalRecipeController.js
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
+import ExternalIngredientModel from "../models/externalIngredientModel.js";
 
+// Search external recipes from spoonacular and firestore
 export const searchExternalRecipes = async (req, res) => {
   try {
     const q = (req.query.q ?? "").trim();
@@ -16,14 +18,13 @@ export const searchExternalRecipes = async (req, res) => {
 
     const EXTERNAL_SOURCE = "spoonacular";
 
-    // 1) Search cached recipes in Firestore first
+    // Search cached recipes in Firestore first
     const cached = await ExternalRecipeModel.searchCachedByTitle(
       EXTERNAL_SOURCE,
       q,
       number
     );
 
-    // If cached fills the page, return without hitting Spoonacular
     if (cached.length >= number) {
       return res.json({
         success: true,
@@ -33,7 +34,7 @@ export const searchExternalRecipes = async (req, res) => {
       });
     }
 
-    // 2) Need more -> query Spoonacular for remaining slots
+    // Query Spoonacular if not in cache
     const remaining = number - cached.length;
 
     const url = new URL("https://api.spoonacular.com/recipes/complexSearch");
@@ -48,7 +49,6 @@ export const searchExternalRecipes = async (req, res) => {
     });
 
     const data = await resp.json();
-
     const quotaLeft = resp.headers.get("x-api-quota-left");
     if (quotaLeft) res.set("x-api-quota-left", quotaLeft);
 
@@ -60,7 +60,6 @@ export const searchExternalRecipes = async (req, res) => {
       });
     }
 
-    // 3) Merge cached + external results (avoid duplicates)
     const cachedIds = new Set(cached.map((r) => r.id));
 
     const externalResults = Array.isArray(data?.results)
@@ -88,6 +87,7 @@ export const searchExternalRecipes = async (req, res) => {
   }
 };
 
+// Acquire Recipe Details
 export const getExternalRecipeDetails = async (req, res) => {
   try {
     const id = String(req.params.id ?? "").trim();
@@ -103,34 +103,22 @@ export const getExternalRecipeDetails = async (req, res) => {
 
     const EXTERNAL_SOURCE = "spoonacular";
 
-    // 1) Try Firestore first
+    // Try Firestore first
     const existing = await ExternalRecipeModel.findByExternal(
       EXTERNAL_SOURCE,
       id
     );
-
-    // If we have it cached AND either:
-    // - nutrition is not requested, OR
-    // - nutrition is requested AND we already have nutrients cached
     if (existing) {
-      const hasCachedNutrients =
-        Array.isArray(existing?.nutrition?.nutrients) &&
-        existing.nutrition.nutrients.length > 0;
-
-      if (!includeNutrition || hasCachedNutrients) {
-        const recipeFromDb = { ...existing };
-        if (!includeNutrition) delete recipeFromDb.nutrition;
-        return res.json({ success: true, recipe: recipeFromDb });
-      }
-      // else: fall through and fetch from Spoonacular with nutrition=true
+      const recipeFromDb = { ...existing };
+      if (!includeNutrition) delete recipeFromDb.nutrition;
+      return res.json({ success: true, recipe: recipeFromDb });
     }
 
-    // 2) Fetch from Spoonacular
-    // ✅ Always fetch with includeNutrition=true so we can store nutrients in DB
+    // Fetch from Spoonacular
     const url = new URL(
       `https://api.spoonacular.com/recipes/${encodeURIComponent(id)}/information`
     );
-    url.searchParams.set("includeNutrition", "true");
+    url.searchParams.set("includeNutrition", includeNutrition ? "true" : "false");
 
     const resp = await fetch(url, {
       headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
@@ -149,17 +137,20 @@ export const getExternalRecipeDetails = async (req, res) => {
       });
     }
 
-    // ✅ keep ONLY the nutrients array
-    const nutrients = Array.isArray(data?.nutrition?.nutrients)
-      ? data.nutrition.nutrients.map((n) => ({
-          name: n.name,
-          amount: n.amount,
-          unit: n.unit,
-          percentOfDailyNeeds: n.percentOfDailyNeeds,
-        }))
+    const rawExtended = Array.isArray(data.extendedIngredients)
+      ? data.extendedIngredients
       : [];
 
-    // Simplify the object we store and return
+    // Cache ingredient
+    try {
+      await ExternalIngredientModel.upsertManyFromExternal(
+        EXTERNAL_SOURCE,
+        rawExtended
+      );
+    } catch (ingErr) {
+      console.error("Failed to persist external ingredients:", ingErr);
+    }
+
     const simplified = {
       id: data.id,
       title: data.title,
@@ -169,9 +160,8 @@ export const getExternalRecipeDetails = async (req, res) => {
       servings: data.servings,
       summary: data.summary ?? null,
       instructions: data.instructions ?? null,
-
-      // keep ingredient list as-is (no extra caching)
-      extendedIngredients: (data.extendedIngredients ?? []).map((ing) => ({
+      ingredientIds: rawExtended.map((ing) => ing.id).filter(Boolean),
+      extendedIngredients: rawExtended.map((ing) => ({
         id: ing.id,
         name: ing.name,
         original: ing.original,
@@ -179,27 +169,17 @@ export const getExternalRecipeDetails = async (req, res) => {
         unit: ing.unit,
         image: ing.image,
       })),
-
-      // ✅ only store nutrients
-      nutrition: { nutrients },
-
+      nutrition: includeNutrition ? data.nutrition : null,
       dishTypes: data.dishTypes ?? null,
       diets: data.diets ?? null,
       cuisines: data.cuisines ?? null,
     };
 
-    // 3) Persist to Firestore (upsert)
+    // Attempts to grab external recipes
     try {
       await ExternalRecipeModel.upsertFromExternal(EXTERNAL_SOURCE, id, simplified);
     } catch (insertErr) {
       console.error("Failed to persist external recipe:", insertErr);
-    }
-
-    // 4) Return based on includeNutrition flag
-    if (!includeNutrition) {
-      const out = { ...simplified };
-      delete out.nutrition;
-      return res.json({ success: true, recipe: out });
     }
 
     return res.json({ success: true, recipe: simplified });
@@ -208,6 +188,21 @@ export const getExternalRecipeDetails = async (req, res) => {
     return res.status(500).json({
       error: error.message || "Internal server error",
       code: "EXTERNAL_DETAILS_FAILED",
+    });
+  }
+};
+
+// Pulls cached recipe from Firestore
+export const getExternalRecipeFeed = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
+    const results = await ExternalRecipeModel.getLatestCached(limit);
+    return res.json({ success: true, results });
+  } catch (error) {
+    console.error("Error getting external recipe feed:", error);
+    return res.status(500).json({
+      error: error.message || "Internal server error",
+      code: "EXTERNAL_FEED_FAILED",
     });
   }
 };

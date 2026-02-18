@@ -92,7 +92,7 @@ export default function PantryPage() {
     }
   };
 
-  // ✅ Fix 1: Safe delete that doesn't assume JSON response
+  // Safe delete that doesn't assume JSON response
   const deletePantryItem = async (id: string) => {
     try {
       setDeletingId(id);
@@ -107,7 +107,7 @@ export default function PantryPage() {
         },
       });
 
-      const raw = await res.text(); // ✅ read as text first
+      const raw = await res.text();
       let data: any = null;
 
       try {

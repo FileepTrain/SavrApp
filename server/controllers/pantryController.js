@@ -1,6 +1,6 @@
 import admin from "firebase-admin";
 
-// Post
+// Post items
 export const addPantryItem = async (req, res) => {
   try {
     const db = admin.firestore();
@@ -34,7 +34,7 @@ export const addPantryItem = async (req, res) => {
   }
 };
 
-// Get
+// Get items
 export const getUserPantry = async (req, res) => {
   try {
     const db = admin.firestore();
@@ -43,7 +43,7 @@ export const getUserPantry = async (req, res) => {
     const snapshot = await db
       .collection("pantryItems")
       .where("uid", "==", uid)
-      .get(); // ✅ no orderBy
+      .get();
 
     const items = snapshot.docs.map((doc) => ({
       id: doc.id,
@@ -57,7 +57,7 @@ export const getUserPantry = async (req, res) => {
   }
 };
 
-// Delete
+// Delete items
 export const deletePantryItem = async (req, res) => {
   try {
     const db = admin.firestore();
@@ -84,4 +84,3 @@ export const deletePantryItem = async (req, res) => {
     return res.status(500).json({ error: "Failed to delete pantry item" });
   }
 };
-
