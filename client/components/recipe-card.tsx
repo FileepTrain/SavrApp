@@ -61,9 +61,9 @@ if (variant === "default") {
  return (
    <Link href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}>
      <View className="bg-white flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
-       {image ? (
+       {imageUrl ? (
          <Image
-           source={{ uri: image }}
+           source={{ uri: imageUrl }}
            className="h-full w-32 rounded-xl rounded-r-none"
            resizeMode="cover"
          />

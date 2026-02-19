@@ -63,6 +63,10 @@ export default function AccountStackLayout() {
           name="edit-profile"
           options={{ title: "Edit Profile" }}
         />
+        <Stack.Screen
+          name="cookware-settings"
+          options={{ title: "My Cookware" }}
+        />
       </Stack>
     </PersonalRecipesProvider>
   );

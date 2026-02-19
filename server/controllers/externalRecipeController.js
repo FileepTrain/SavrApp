@@ -2,6 +2,18 @@
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
 import ExternalIngredientModel from "../models/externalIngredientModel.js";
 
+/**
+ * Extract only the nutrients array from Spoonacular's nutrition object.
+ * Spoonacular returns nutrition with nutrients, properties, flavonoids, ingredient nutrition, etc.
+ * We store only { nutrients: [...] } to avoid storing the rest.
+ */
+function nutritionOnlyNutrients(nutrition) {
+  if (!nutrition || !nutrition.nutrients || !Array.isArray(nutrition.nutrients)) {
+    return null;
+  }
+  return { nutrients: nutrition.nutrients };
+}
+
 // Search external recipes from spoonacular and firestore
 export const searchExternalRecipes = async (req, res) => {
   try {
@@ -110,26 +122,46 @@ export const getExternalRecipeDetails = async (req, res) => {
     );
     if (existing) {
       const recipeFromDb = { ...existing };
-      if (!includeNutrition) delete recipeFromDb.nutrition;
+      if (!includeNutrition) {
+        delete recipeFromDb.nutrition;
+      } else if (recipeFromDb.nutrition) {
+        // Filter nutrition even for cached recipes
+        recipeFromDb.nutrition = nutritionOnlyNutrients(recipeFromDb.nutrition);
+      }
       return res.json({ success: true, recipe: recipeFromDb });
     }
 
-    // Fetch from Spoonacular
-    const url = new URL(
+    // Fetch from Spoonacular (recipe info + equipment in parallel)
+    const infoUrl = new URL(
       `https://api.spoonacular.com/recipes/${encodeURIComponent(id)}/information`
     );
-    url.searchParams.set("includeNutrition", includeNutrition ? "true" : "false");
+    infoUrl.searchParams.set("includeNutrition", includeNutrition ? "true" : "false");
 
-    const resp = await fetch(url, {
-      headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
-    });
+    const equipmentUrl = `https://api.spoonacular.com/recipes/${encodeURIComponent(id)}/equipmentWidget.json`;
 
-    const data = await resp.json();
+    const [infoResp, equipmentResp] = await Promise.all([
+      fetch(infoUrl, {
+        headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
+      }),
+      fetch(equipmentUrl, {
+        headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
+      }),
+    ]);
 
-    const quotaLeft = resp.headers.get("x-api-quota-left");
+    const data = await infoResp.json();
+    let equipmentData = { equipment: [] };
+    try {
+      if (equipmentResp.ok) {
+        equipmentData = await equipmentResp.json();
+      }
+    } catch {
+      // Equipment fetch failed; continue without it
+    }
+
+    const quotaLeft = infoResp.headers.get("x-api-quota-left");
     if (quotaLeft) res.set("x-api-quota-left", quotaLeft);
 
-    if (!resp.ok) {
+    if (!infoResp.ok) {
       return res.status(resp.status).json({
         error: data?.message || "Spoonacular request failed",
         code: "SPOONACULAR_ERROR",
@@ -151,6 +183,13 @@ export const getExternalRecipeDetails = async (req, res) => {
       console.error("Failed to persist external ingredients:", ingErr);
     }
 
+    const equipment = Array.isArray(equipmentData?.equipment)
+      ? equipmentData.equipment.map((e) => ({
+          name: e.name ?? null,
+          image: e.image ? `https://img.spoonacular.com/equipment_100x100/${e.image}` : null,
+        }))
+      : [];
+
     const simplified = {
       id: data.id,
       title: data.title,
@@ -169,7 +208,8 @@ export const getExternalRecipeDetails = async (req, res) => {
         unit: ing.unit,
         image: ing.image,
       })),
-      nutrition: includeNutrition ? data.nutrition : null,
+      equipment,
+      nutrition: includeNutrition ? nutritionOnlyNutrients(data.nutrition) : null,
       dishTypes: data.dishTypes ?? null,
       diets: data.diets ?? null,
       cuisines: data.cuisines ?? null,

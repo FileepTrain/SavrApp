@@ -1,5 +1,6 @@
 // app/account/settings.tsx (or wherever this file lives)
 import { ThemedSafeView } from "@/components/themed-safe-view";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { router } from "expo-router";
 import React, {useEffect, useState} from "react";
 import { Image, Pressable, Text, View, Switch } from "react-native";
@@ -99,6 +100,43 @@ export default function SettingsPage() {
             </Text>
             <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
               Update your account password
+            </Text>
+          </View>
+        </View>
+
+        {/* Right: chevron icon substitute */}
+        <View className="w-5 h-5 items-center justify-center">
+          <View className="w-3 h-3 border-r-[1.7px] border-b-[1.7px] border-[#666666] rotate-[-45deg]" />
+        </View>
+      </Pressable>
+
+      {/* Cookware Settings */}
+      <Pressable
+        onPress={() => router.push("/account/cookware-settings")}
+        className="w-full h-[77px] bg-white rounded-[12px] flex-row items-center justify-between px-4 mb-6
+                   shadow-sm"
+        style={{
+          shadowColor: "#000",
+          shadowOpacity: 0.1,
+          shadowOffset: { width: 0, height: 1 },
+          shadowRadius: 3,
+          elevation: 3,
+        }}
+      >
+        {/*icon + text box*/}
+        <View className="flex-row items-center gap-4">
+          {/*Icon*/}
+          <View className="w-10 h-10 rounded-[10px] bg-[#F2F2F2] items-center justify-center">
+            <IconSymbol name="pot-steam-outline" size={20} color="#666666" />
+          </View>
+
+          {/*Text container*/}
+          <View className="flex-col">
+            <Text className="text-[16px] font-medium leading-6 tracking-[0.5px] text-black">
+              My Cookware
+            </Text>
+            <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
+              Select cookware you have
             </Text>
           </View>
         </View>

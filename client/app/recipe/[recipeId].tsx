@@ -50,6 +50,11 @@ type Nutrient = {
   percentOfDailyNeeds: number;
 };
 
+type EquipmentItem = {
+  name: string;
+  image?: string | null;
+};
+
 type ExternalRecipe = {
   id: number;
   title: string;
@@ -60,6 +65,7 @@ type ExternalRecipe = {
   summary?: string;
   instructions?: string;
   extendedIngredients?: ExternalIngredient[];
+  equipment?: EquipmentItem[];
   nutrition?: { nutrients: Nutrient[] } | null;
 };
 
@@ -73,6 +79,7 @@ type DisplayRecipe = {
   servings?: number;
   summary?: string;
   instructions?: string;
+  equipment?: EquipmentItem[];
   calories?: number;
   rating?: number;
   reviewsLength?: number;
@@ -229,6 +236,7 @@ export default function RecipeDetailsPage() {
             servings: r.servings,
             summary: r.summary ?? undefined,
             instructions: r.instructions ?? undefined,
+            equipment: r.equipment ?? [],
             calories,
             rating: 0,
             reviewsLength: 0,
@@ -465,6 +473,40 @@ export default function RecipeDetailsPage() {
                   <Text className="text-foreground font-medium">
                     {stripHtml(recipe?.instructions) || "No instructions available"}
                   </Text>
+                </View>
+              )}
+
+              {/* Cookware / Equipment */}
+              {recipe?.equipment && recipe.equipment.length > 0 && (
+                <View className="bg-background rounded-xl p-4 shadow gap-2">
+                  <Text className="text-lg font-semibold text-foreground">
+                    Cookware Needed
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {recipe.equipment.map((item, idx) => (
+                      <View
+                        key={idx}
+                        className="flex-row items-center gap-2 bg-muted-background rounded-lg px-3 py-2"
+                      >
+                        {item.image ? (
+                          <Image
+                            source={{ uri: item.image }}
+                            className="w-8 h-8 rounded"
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <IconSymbol
+                            name="pot-steam-outline"
+                            size={20}
+                            color="--color-icon"
+                          />
+                        )}
+                        <Text className="text-foreground font-medium">
+                          {item.name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               )}
 

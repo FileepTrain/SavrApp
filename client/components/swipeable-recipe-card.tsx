@@ -73,7 +73,7 @@ export function SwipeableRecipeCard({
       overshootRight={false}
       friction={2}
     >
-      <RecipeCard id={id} title={title} calories={calories} rating={rating} reviewsLength={reviewsLength} variant="horizontal" image={image} />
+      <RecipeCard id={id} title={title} calories={calories} rating={rating} reviewsLength={reviewsLength} variant="horizontal" imageUrl={image} />
     </ReanimatedSwipeable>
   );
 }

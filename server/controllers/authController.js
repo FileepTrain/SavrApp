@@ -267,13 +267,22 @@ export const updateFavorites = async (req, res) => {
 
   try {
     const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    
+    // Check if document exists first
+    const userDoc = await userDocRef.get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User document not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
 
-    await db.collection("users").doc(uid).update({
+    // Update only the favoriteIds field (update() automatically merges)
+    await userDocRef.update({
       favoriteIds,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    });
 
     return res.json({
       success: true,
@@ -328,6 +337,101 @@ export const getFavorites = async (req, res) => {
     });
   }
 
+};
+
+/**
+ * Update user cookware preferences
+ * PUT /api/auth/update-cookware
+ */
+export const updateCookware = async (req, res) => {
+  const uid = req.user?.uid;
+  const { cookware } = req.body;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Error updating cookware",
+      code: "UPDATE_FAILED",
+    });
+  }
+
+  if (!Array.isArray(cookware)) {
+    return res.status(400).json({
+      error: "Cookware must be an array",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    
+    // Check if document exists first
+    const userDoc = await userDocRef.get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User document not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+
+    // Update only the cookware field (update() automatically merges)
+    await userDocRef.update({
+      cookware,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      success: true,
+      message: "Cookware updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating cookware:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "UPDATE_FAILED",
+    });
+  }
+};
+
+/**
+ * Get user cookware preferences
+ * GET /api/auth/get-cookware
+ */
+export const getCookware = async (req, res) => {
+  const uid = req.user?.uid;
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.json({
+        success: true,
+        cookware: [],
+      });
+    }
+
+    const { cookware } = userDoc.data();
+    const list = Array.isArray(cookware) ? cookware : [];
+
+    return res.json({
+      success: true,
+      cookware: list,
+    });
+  } catch (error) {
+    console.error("Error fetching cookware:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "COOKWARE_FETCH_FAILED",
+    });
+  }
 };
 
 /**

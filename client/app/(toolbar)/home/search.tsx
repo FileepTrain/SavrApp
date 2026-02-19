@@ -119,7 +119,7 @@ export default function HomeSearchScreen() {
 
   const renderItem = ({ item }: { item: SearchResult }) => (
     <View className="mb-3">
-      <RecipeCard id={item.id.toString()} variant="horizontal" title={item.title} image={item.image} />
+      <RecipeCard id={item.id.toString()} variant="horizontal" title={item.title} imageUrl={item.image} />
     </View>
     // <TouchableOpacity
     //   onPress={() => router.push(`/recipe/${item.id}`)}

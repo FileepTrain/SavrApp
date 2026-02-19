@@ -7,6 +7,8 @@ import {
   updateAccount,
   updateFavorites,
   getFavorites,
+  updateCookware,
+  getCookware,
   deleteAccount,
 } from "../controllers/authController.js";
 
@@ -27,8 +29,14 @@ router.put("/update-account", verifyToken, updateAccount);
 // PUT /api/auth/update-favorites - Update user favorites
 router.put("/update-favorites", verifyToken, updateFavorites);
 
-// GET /api/auth/favorites - Get array of favorite recipes
-router.get("/get-favorites", verifyToken, getFavorites)
+// GET /api/auth/get-favorites - Get array of favorite recipes
+router.get("/get-favorites", verifyToken, getFavorites);
+
+// PUT /api/auth/update-cookware - Update user cookware preferences
+router.put("/update-cookware", verifyToken, updateCookware);
+
+// GET /api/auth/get-cookware - Get user cookware preferences
+router.get("/get-cookware", verifyToken, getCookware);
 
 // DELETE /api/auth/delete-account - Delete user account
 router.delete("/delete-account", verifyToken, deleteAccount);
