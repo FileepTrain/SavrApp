@@ -167,7 +167,12 @@ async function fetchPriceForTerm(term, locationId, limit = 5, method = "median",
     found: true,
     term,
     product: selected,
-    cost: selected?.price ?? null,
+    cost:
+      typeof selected?.unit?.unitCost === "number"
+        ? selected.unit.unitCost
+        : selected?.price ?? null,
+    rawPrice: selected?.price ?? null,
+    unitCost: selected?.unit?.unitCost ?? null,
     candidates: includeCandidates ? candidates : undefined
   };
 }
@@ -393,3 +398,5 @@ export const getMultiStorePrice = async (req, res) => {
     });
   }
 };
+
+export { fetchPriceForTerm, getAccessToken };
