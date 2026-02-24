@@ -66,7 +66,7 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <ThemedSafeView className="flex-1 bg-[#F5E7E8] pt-safe-or-20">
+    <ThemedSafeView className="flex-1 pt-safe-or-20">
       {/* Form container */}
       <View className="px-4 gap-6">
         {/* Current password (for UX only) */}

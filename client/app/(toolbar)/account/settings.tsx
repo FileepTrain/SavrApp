@@ -2,7 +2,7 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { router } from "expo-router";
-import React, {useEffect, useState} from "react";
+import React, { useEffect, useState } from "react";
 import { Image, Pressable, Text, View, Switch } from "react-native";
 import profileIcon from "../../../assets/images/ProfileIcon.png";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -89,8 +89,7 @@ export default function SettingsPage() {
         <View className="flex-row items-center gap-4">
           {/* Icon container */}
           <View className="w-10 h-10 rounded-[10px] bg-[#F2F2F2] items-center justify-center">
-            {/* Simple “settings/lock” glyph substitute */}
-            <View className="w-5 h-5 border-[1.7px] border-[#666666] rounded-[4px]" />
+            <IconSymbol name="lock-outline" size={20} color="#666666" />
           </View>
 
           {/* Text container */}
@@ -160,8 +159,9 @@ export default function SettingsPage() {
       >
         {/*icon + text box*/}
         <View className="flex-row items-center gap-4">
-          {/*Icon*/}
-          <View className="w-10 h-10 bg-gray-200 rounded-[12]" />
+          <View className="w-10 h-10 rounded-[10px] bg-[#F2F2F2] items-center justify-center">
+            <IconSymbol name="map-marker-outline" size={20} color="#666666" />
+          </View>
 
           {/*Text container*/}
           <View className="flex-col">
@@ -169,15 +169,15 @@ export default function SettingsPage() {
               Share Your Location
             </Text>
             <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
-              Sharing is {locationEnabled ? "enabled": "disabled"}
+              Sharing is {locationEnabled ? "enabled" : "disabled"}
             </Text>
           </View>
         </View>
 
         <Switch
-          style={{transform: [{ scaleX: 1.3}, {scaleY: 1.3}] }}
+          style={{ transform: [{ scaleX: 1.3 }, { scaleY: 1.3 }] }}
           trackColor={{ false: "#9c989e", true: "#2adb47" }}
-          thumbColor= "#ffffff"
+          thumbColor="#ffffff"
           value={locationEnabled}
           onValueChange={toggleSwitch}
         />

@@ -212,7 +212,7 @@ export default function CookwareSettingsPage() {
   );
 
   return (
-    <ThemedSafeView className="flex-1 bg-[#F5E7E8]">
+    <ThemedSafeView className="flex-1 pt-safe-or-20">
       {/* Search Bar */}
       <View className="px-4 pt-4 pb-2">
         <View className="bg-white rounded-[12px] flex-row items-center px-4 h-12 shadow-sm">
@@ -259,11 +259,10 @@ export default function CookwareSettingsPage() {
                     {item}
                   </Text>
                   <View
-                    className={`w-6 h-6 rounded-[6px] border-2 items-center justify-center ${
-                      isSelected
-                        ? "bg-red-primary border-red-primary"
-                        : "border-[#CCCCCC] bg-white"
-                    }`}
+                    className={`w-6 h-6 rounded-[6px] border-2 items-center justify-center ${isSelected
+                      ? "bg-red-primary border-red-primary"
+                      : "border-[#CCCCCC] bg-white"
+                      }`}
                   >
                     {isSelected && (
                       <Text className="text-white text-xs font-bold">✓</Text>

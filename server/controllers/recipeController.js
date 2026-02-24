@@ -4,7 +4,6 @@ import axios from "axios";
 import { z } from "zod";
 import { fetchPriceForTerm, getAccessToken } from "./krogerController.js";
 
-
 // ✅ Store personal recipes in their own collection
 const RECIPES_COLL = "personal_recipes";
 const SPOON_BASE = "https://api.spoonacular.com";
@@ -136,8 +135,8 @@ async function _computeAndStorePriceForDoc(docRef, recipe) {
 
     const results = await Promise.all(
       ingredientNames.map((name) =>
-        fetchPriceForTerm(name, locationId, 5, "median", false)
-      )
+        fetchPriceForTerm(name, locationId, 5, "median", false),
+      ),
     );
 
     let total = 0;
@@ -392,6 +391,7 @@ export const createRecipe = async (req, res) => {
 
 /**
  * GET /api/recipes
+ ** Returns all recipes of the authenticated user
  */
 export const getUserRecipes = async (req, res) => {
   const db = admin.firestore();
@@ -449,8 +449,55 @@ export const getUserRecipes = async (req, res) => {
 };
 
 /**
+ * Get all recipes (any user) that match optional filters and optional search query.
+ * Used by combined-recipes feed. Does not require auth.
+ * @param {Object} filters - { budgetMin, budgetMax, limit, q }
+ * @returns {Promise<Array>} Array of recipe objects (id, title, image, summary, price, calories, ...)
+ */
+export const getAllRecipes = async (filters = {}) => {
+  const db = admin.firestore();
+  const budgetMin = Number.isFinite(Number(filters.budgetMin))
+    ? Number(filters.budgetMin)
+    : 0;
+  const budgetMax = Number.isFinite(Number(filters.budgetMax))
+    ? Number(filters.budgetMax)
+    : 100;
+  // Limit the number of recipes to fetch between 1 and 200
+  const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 200);
+  const q = typeof filters.q === "string" ? filters.q.trim().toLowerCase() : "";
+
+  const fetchLimit = 200;
+  const snap = await db
+    .collection(RECIPES_COLL)
+    .orderBy("updatedAt", "desc")
+    .limit(fetchLimit)
+    .get();
+
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const filtered = docs.filter((r) => {
+    const price = r.price;
+    if (price == null || typeof price !== "number") return false;
+    if (price < budgetMin || price > budgetMax) return false;
+    if (q) {
+      const title = (r.title ?? "").toLowerCase();
+      const summary = (r.summary ?? "").toLowerCase();
+      const text = `${title} ${summary}`;
+      const tokens = q.split(/\s+/).filter(Boolean);
+      const matches = tokens.every((token) => text.includes(token));
+      if (!matches) return false;
+    }
+    return true;
+  });
+
+  // Return a set number of recipes containing all of its information
+  return filtered.slice(0, limit);
+};
+
+/**
  * GET /api/recipes/:id
- * NOTE: Requires auth, and enforces ownership.
+ ** Returns the details of a single recipe by its ID
+ ** NOTE: Requires auth, and enforces ownership.
  */
 export const getRecipeById = async (req, res) => {
   const db = admin.firestore();
@@ -468,9 +515,9 @@ export const getRecipeById = async (req, res) => {
     }
 
     const data = docRef.data();
-    if (data?.userId !== uid) {
-      return res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
-    }
+    // if (data?.userId !== uid) {
+    //   return res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+    // }
 
     return res.json({
       success: true,

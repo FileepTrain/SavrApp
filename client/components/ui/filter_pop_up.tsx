@@ -26,6 +26,7 @@ type Props = {
   onChangeDraft: (next: Filters) => void;
   onApply: () => void;
   onCancel: () => void;
+  onReset: () => void;
 };
 
 // Filter options
@@ -50,14 +51,13 @@ function Chip({
   return (
     <Pressable
       onPress={onPress}
-      className={`px-3 py-2 rounded-xl border ${
-        selected
-          ? "bg-black border-black"
-          : "bg-white border-muted-background"
-      }`}
+      className={`px-3 py-2 rounded-xl border ${selected
+        ? "bg-foreground border-foreground"
+        : "bg-background border-muted-background"
+        }`}
       style={{ alignSelf: "flex-start" }}
     >
-      <Text className={selected ? "text-white font-medium" : "text-foreground"}>
+      <Text className={selected ? "text-background font-medium" : "text-foreground"}>
         {label}
       </Text>
     </Pressable>
@@ -70,6 +70,7 @@ export default function FilterModal({
   onChangeDraft,
   onApply,
   onCancel,
+  onReset,
 }: Props) {
   const budgetLabel = useMemo(
     () => `$${draft.budgetMin}-${draft.budgetMax}`,
@@ -79,7 +80,7 @@ export default function FilterModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable onPress={onCancel} className="flex-1 bg-black/30 items-center justify-center px-6">
-        <Pressable onPress={() => {}} className="w-full max-w-[420px] bg-white rounded-2xl overflow-hidden">
+        <Pressable onPress={() => { }} className="w-full max-w-[420px] bg-background rounded-2xl overflow-hidden">
           {/* Header */}
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-muted-background">
             <Text className="text-xl font-bold text-foreground">Filter by</Text>
@@ -199,9 +200,9 @@ export default function FilterModal({
                 variant="muted"
                 className="h-14 rounded-xl"
                 textClassName="text-base font-semibold text-foreground"
-                onPress={onCancel}
+                onPress={onReset}
               >
-                Cancel
+                Reset Filters
               </Button>
             </View>
           </ScrollView>

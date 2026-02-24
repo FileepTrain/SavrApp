@@ -6,7 +6,7 @@ import { RecipeCard } from "@/components/recipe-card";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
-import FilterModal, { Filters } from "@/components/ui/filter_pop_up";
+import { useHomeFilter } from "@/contexts/home-filter-context";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
@@ -24,24 +24,12 @@ function extractCalories(summary?: string | null): number {
   return m ? Number(m[1]) : 0;
 }
 
-const DEFAULT_FILTERS: Filters = {
-  budgetMin: 0,
-  budgetMax: 100,
-  allergies: [],
-  foodTypes: [],
-  cookware: [],
-};
-
 // Display Home Screen
 export default function HomeScreen() {
+  const { appliedFilters, openFilterModal } = useHomeFilter();
   const [searchQuery, setSearchQuery] = useState("");
   const [recipes, setRecipes] = useState<ExternalRecipe[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Filter modal state
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [appliedFilters, setAppliedFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
 
   const handleSearch = () => {
     const q = searchQuery.trim();
@@ -60,7 +48,7 @@ export default function HomeScreen() {
     router.push(`/(toolbar)/home/search?${params.toString()}`);
   };
 
-// Fetch feed from server
+  // Fetch feed from server
   const fetchFeed = async () => {
     setLoading(true);
     try {
@@ -96,10 +84,7 @@ export default function HomeScreen() {
           variant="muted"
           icon={{ name: "filter-outline", color: "--color-icon" }}
           className="w-14 h-14"
-          onPress={() => {
-            setDraftFilters(appliedFilters); // open with current applied
-            setIsFilterOpen(true);
-          }}
+          onPress={openFilterModal}
         />
         <Input
           className="flex-1"
@@ -119,18 +104,6 @@ export default function HomeScreen() {
 
   return (
     <ThemedSafeView className="flex-1">
-      {/* Filter Modal */}
-      <FilterModal
-        visible={isFilterOpen}
-        draft={draftFilters}
-        onChangeDraft={setDraftFilters}
-        onCancel={() => setIsFilterOpen(false)}
-        onApply={() => {
-          setAppliedFilters(draftFilters);
-          setIsFilterOpen(false);
-        }}
-      />
-
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="red" />

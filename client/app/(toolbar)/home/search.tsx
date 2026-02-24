@@ -1,17 +1,17 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
+import { useHomeFilter, DEFAULT_FILTERS } from "@/contexts/home-filter-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
+import type { Filters } from "@/components/ui/filter_pop_up";
 
 type SearchResult = {
   id: number;
@@ -19,10 +19,38 @@ type SearchResult = {
   image?: string;
 };
 
+type FilteredRecipe = {
+  id: string;
+  title: string;
+  image?: string | null;
+  summary?: string | null;
+  calories?: number;
+};
+
+type ListItem = SearchResult | FilteredRecipe;
+
 const API_BASE = "http://10.0.2.2:3000";
 const PAGE_SIZE = 10;
 
+function hasActiveFilters(filters: Filters): boolean {
+  // Check if filters are different from default filters
+  if (filters.budgetMin !== DEFAULT_FILTERS.budgetMin || filters.budgetMax !== DEFAULT_FILTERS.budgetMax) return true;
+  const sameArray = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((x) => b.includes(x));
+  if (!sameArray(filters.allergies, DEFAULT_FILTERS.allergies)) return true;
+  if (!sameArray(filters.foodTypes, DEFAULT_FILTERS.foodTypes)) return true;
+  if (!sameArray(filters.cookware, DEFAULT_FILTERS.cookware)) return true;
+  return false;
+}
+
+function extractCalories(summary?: string | null): number {
+  if (!summary) return 0;
+  const m = summary.match(/(\d+)\s*calories/i);
+  return m ? Number(m[1]) : 0;
+}
+
 export default function HomeSearchScreen() {
+  const { appliedFilters, openFilterModal } = useHomeFilter();
   const params = useLocalSearchParams<{ q?: string }>();
   const queryParam = useMemo(
     () => (params.q ?? "").toString().trim(),
@@ -31,17 +59,105 @@ export default function HomeSearchScreen() {
 
   const [searchQuery, setSearchQuery] = useState(queryParam);
 
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [personalResults, setPersonalResults] = useState<FilteredRecipe[]>([]);
+  const [externalResults, setExternalResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false); // initial load
-  const [loadingMore, setLoadingMore] = useState(false); // pagination load
+  const [loadingMore, setLoadingMore] = useState(false); // pagination load (external only)
   const [error, setError] = useState("");
 
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  // avoid duplicate calls on fast scroll
   const fetchingRef = useRef(false);
 
+  // Display user-generated recipes followed by external recipes in a unified list
+  const results = useMemo(
+    () => [...personalResults, ...externalResults],
+    [personalResults, externalResults]
+  );
+
+  // Single place for all API calls: personal (filters ± search) and, when there is a query, external search
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    setOffset(0);
+    setHasMore(true);
+
+    const trimmed = queryParam.trim();
+    let cancelled = false;
+
+    if (!trimmed) {
+      // No search query: fetch only personal recipes matching filters
+      const params = new URLSearchParams({
+        budgetMin: String(appliedFilters.budgetMin),
+        budgetMax: String(appliedFilters.budgetMax),
+        limit: "20",
+      });
+      fetch(`${API_BASE}/api/combined-recipes?${params}`)
+        .then((r) => {
+          if (!r.ok) throw new Error("Failed to load recipes.");
+          return r.json();
+        })
+        .then((data) => {
+          if (cancelled) return;
+          setPersonalResults(Array.isArray(data?.results) ? data.results : []);
+          setExternalResults([]);
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setError(e?.message ?? "Network error.");
+            setPersonalResults([]);
+            setExternalResults([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+      return () => { cancelled = true; };
+    }
+
+    // Search query: fetch personal (filters + q) and external (only q for now) in parallel
+    const params = new URLSearchParams({
+      budgetMin: String(appliedFilters.budgetMin),
+      budgetMax: String(appliedFilters.budgetMax),
+      limit: "20",
+      q: trimmed,
+    });
+    Promise.all([
+      fetch(`${API_BASE}/api/combined-recipes?${params}`).then((r) => {
+        if (!r.ok) throw new Error("Failed to load personal recipes.");
+        return r.json();
+      }),
+      fetch(
+        `${API_BASE}/api/external-recipes/search?q=${encodeURIComponent(trimmed)}&number=${PAGE_SIZE}&offset=0`
+      ).then((r) => {
+        if (!r.ok) throw new Error("Failed to load external results.");
+        return r.json();
+      }),
+    ])
+      .then(([combinedData, externalData]) => {
+        if (cancelled) return;
+        setPersonalResults(Array.isArray(combinedData?.results) ? combinedData.results : []);
+        const ext = Array.isArray(externalData?.results) ? externalData.results : [];
+        setExternalResults(ext);
+        setHasMore(ext.length === PAGE_SIZE);
+        setOffset(PAGE_SIZE);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e?.message ?? "Network error.");
+          setPersonalResults([]);
+          setExternalResults([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [queryParam, appliedFilters]);
+
+  // Keep search input in sync with URL param
   useEffect(() => {
     setSearchQuery(queryParam);
   }, [queryParam]);
@@ -54,7 +170,6 @@ export default function HomeSearchScreen() {
     fetchingRef.current = true;
 
     if (append) setLoadingMore(true);
-    else setLoading(true);
 
     setError("");
 
@@ -68,7 +183,7 @@ export default function HomeSearchScreen() {
 
       if (!res.ok) {
         setError(data?.error ?? "Search failed.");
-        if (!append) setResults([]);
+        if (!append) setExternalResults([]);
         setHasMore(false);
         return;
       }
@@ -77,31 +192,18 @@ export default function HomeSearchScreen() {
         ? data.results
         : [];
 
-      setResults((prev) => (append ? [...prev, ...page] : page));
-
+      setExternalResults((prev) => (append ? [...prev, ...page] : page));
       setHasMore(page.length === PAGE_SIZE);
       setOffset(nextOffset + PAGE_SIZE);
     } catch (e: any) {
       setError(e?.message ?? "Network error.");
-      if (!append) setResults([]);
+      if (!append) setExternalResults([]);
       setHasMore(false);
     } finally {
-      if (append) setLoadingMore(false);
-      else setLoading(false);
+      setLoadingMore(false);
       fetchingRef.current = false;
     }
   };
-
-  useEffect(() => {
-    if (!queryParam) return;
-
-    setResults([]);
-    setOffset(0);
-    setHasMore(true);
-
-    fetchPage(queryParam, 0, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryParam]);
 
   const handleSubmitSearch = () => {
     const q = searchQuery.trim();
@@ -117,47 +219,45 @@ export default function HomeSearchScreen() {
     fetchPage(queryParam, offset, true);
   };
 
-  const renderItem = ({ item }: { item: SearchResult }) => (
-    <View className="mb-3">
-      <RecipeCard id={item.id.toString()} variant="horizontal" title={item.title} imageUrl={item.image} />
-    </View>
-    // <TouchableOpacity
-    //   onPress={() => router.push(`/recipe/${item.id}`)}
-    //   className="bg-white rounded-xl flex-row mb-3 overflow-hidden"
-    // >
-    //   {!!item.image && (
-    //     <Image source={{ uri: item.image }} style={{ width: 113, height: 82 }} />
-    //   )}
-    //   <View className="flex-1 px-3 py-2">
-    //     <Text className="font-bold text-red-600" numberOfLines={2}>
-    //       {item.title}
-    //     </Text>
-    //     <Text className="mt-1">Calories: —</Text>
-    //     <Text className="mt-1">Rating: —</Text>
-    //   </View>
-    // </TouchableOpacity>
-  );
+  const renderItem = ({ item }: { item: ListItem }) => {
+    const id = String(item.id);
+    const calories = "calories" in item && item.calories != null ? item.calories : "summary" in item ? extractCalories(item.summary) : 0;
+    return (
+      <View className="mb-3">
+        <RecipeCard
+          id={id}
+          variant="horizontal"
+          title={item.title}
+          imageUrl={item.image ?? undefined}
+          calories={calories}
+        />
+      </View>
+    );
+  };
 
   return (
     <ThemedSafeView className="flex-1">
       <FlatList
         data={results}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
-        onEndReached={handleLoadMore}
+        onEndReached={queryParam ? handleLoadMore : undefined}
         onEndReachedThreshold={0.6}
         ListHeaderComponent={
           <View className="pt-16 pb-2">
             <View className="flex-row justify-center items-center gap-2 mb-3">
-              <Button
-                variant="muted"
-                icon={{ name: "filter-outline", color: "--color-icon" }}
-                className="w-14 h-14"
-                onPress={() => {
-                  console.log("TODO: filters");
-                }}
-              />
+              <View>
+                {hasActiveFilters(appliedFilters) && (
+                  <View className="absolute w-3 h-3 top-0 right-0 bg-red-primary z-10 rounded-full" />
+                )}
+                <Button
+                  variant="muted"
+                  icon={{ name: "filter-outline", color: "--color-icon" }}
+                  className="w-14 h-14"
+                  onPress={openFilterModal}
+                />
+              </View>
               <Input
                 className="flex-1"
                 placeholder="Search for a Recipe"
@@ -178,7 +278,7 @@ export default function HomeSearchScreen() {
               </Text>
             )}
 
-            {loading && <ActivityIndicator className="mt-3" />}
+            {loading && <ActivityIndicator className="mt-3" color="red" />}
 
             {!!error && <Text style={{ color: "red" }}>{error}</Text>}
           </View>
@@ -190,12 +290,12 @@ export default function HomeSearchScreen() {
         ListEmptyComponent={
           !loading && !error ? (
             <Text className="opacity-60 mt-2 px-6">
-              {queryParam ? "No results found." : "Search for a recipe above."}
+              No recipes found that match your filters and search query.
             </Text>
           ) : null
         }
         ListFooterComponent={
-          loadingMore ? (
+          queryParam && loadingMore ? (
             <View className="py-4">
               <ActivityIndicator />
             </View>

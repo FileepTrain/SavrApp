@@ -12,6 +12,7 @@ import krogerRoutes from "./routes/krogerRoutes.js";
 import pantryRoutes from "./routes/pantryRoutes.js";
 import spoonacularRoutes from "./routes/spoonacular.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import combinedRecipeRoutes from "./routes/combinedRecipeRoutes.js";
 
 
 admin.initializeApp({
@@ -35,7 +36,7 @@ app.use("/api/kroger", krogerRoutes);
 app.use("/api/pantry", pantryRoutes);
 app.use("/api/spoonacular", spoonacularRoutes);
 app.use("/api/reviews", reviewRoutes);
-
+app.use("/api/combined-recipes", combinedRecipeRoutes);
 
 app.get("/", (req, res) => {
   res.send("Hello World!");

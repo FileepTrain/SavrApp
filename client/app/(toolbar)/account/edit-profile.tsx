@@ -134,7 +134,7 @@ export default function EditProfilesPage() {
     };
 
     return (
-        <ThemedSafeView className="flex-1 bg-[#F5E7E8] pt-safe-or-20">
+        <ThemedSafeView className="flex-1 pt-safe-or-20">
             <View className="flex-1">
                 {/*Username bubble*/}
                 <Text className="text-[14px] text-[#1E1E1E]">Current Username</Text>

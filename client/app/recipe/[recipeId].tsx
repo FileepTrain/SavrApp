@@ -83,6 +83,7 @@ type DisplayRecipe = {
   calories?: number;
   rating?: number;
   reviewsLength?: number;
+  price?: number;
 };
 
 function stripHtml(html?: string) {
@@ -185,14 +186,15 @@ export default function RecipeDetailsPage() {
             calories:
               Array.isArray(r?.nutrition?.nutrients)
                 ? Math.round(
-                    Number(
-                      r.nutrition.nutrients.find((n: any) => n?.name === "Calories")
-                        ?.amount ?? 0
-                    )
-                  ) || undefined
+                  Number(
+                    r.nutrition.nutrients.find((n: any) => n?.name === "Calories")
+                      ?.amount ?? 0
+                  )
+                ) || undefined
                 : undefined,
             rating: r.rating,
             reviewsLength: r.reviews?.length ?? 0,
+            price: r.price,
           });
 
           // ✅ IMPORTANT: personal recipes store ingredients as extendedIngredients
@@ -245,7 +247,7 @@ export default function RecipeDetailsPage() {
           setIngredients(
             (r.extendedIngredients ?? []).map((ing) => ({
               name: ing.name,
-              quantity: Number((ing.amount ?? 1).toFixed(2)),
+              amount: Number((ing.amount ?? 1).toFixed(2)),
               unit: ing.unit ?? "serving",
             }))
           );
@@ -334,7 +336,7 @@ export default function RecipeDetailsPage() {
                   Calories: {recipe?.calories != null ? recipe.calories : "—"}
                 </Text>
                 <Text className="text-muted-foreground text-sm font-medium">
-                  Avg. $—
+                  Avg. ${recipe?.price != null ? recipe.price : "—"}
                 </Text>
               </View>
             </View>
@@ -345,8 +347,8 @@ export default function RecipeDetailsPage() {
                   {recipe?.prepTime != null
                     ? `${recipe.prepTime} min`
                     : recipe?.readyInMinutes != null
-                    ? `${recipe.readyInMinutes} min`
-                    : "—"}
+                      ? `${recipe.readyInMinutes} min`
+                      : "—"}
                 </Text>
                 <Text className="text-muted-foreground text-sm">
                   {recipe?.prepTime != null ? "Prep" : "Total"}
@@ -393,7 +395,7 @@ export default function RecipeDetailsPage() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                className="flex-1 mx-1 bg-white rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
+                className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
                 onPress={() =>
                   router.push({
                     pathname: "/recipe/reviews",
@@ -406,7 +408,7 @@ export default function RecipeDetailsPage() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                className="flex-1 mx-1 bg-white rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
+                className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
                 onPress={() =>
                   router.push({
                     pathname: "/recipe/share",
@@ -426,30 +428,26 @@ export default function RecipeDetailsPage() {
             {/* TOGGLE BUTTONS */}
             <View className="flex-row justify-around items-center bg-background rounded-xl h-10 p-1 shadow">
               <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${
-                  isIngredientsOpen ? "bg-red-primary" : "bg-background"
-                }`}
+                className={`w-1/2 py-1 rounded-lg ${isIngredientsOpen ? "bg-red-primary" : "bg-background"
+                  }`}
                 onPress={() => setIsIngredientsOpen(true)}
               >
                 <Text
-                  className={`text-center ${
-                    isIngredientsOpen ? "text-background" : "text-foreground"
-                  }`}
+                  className={`text-center ${isIngredientsOpen ? "text-background" : "text-foreground"
+                    }`}
                 >
                   Ingredients
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${
-                  !isIngredientsOpen ? "bg-red-primary" : "bg-background"
-                }`}
+                className={`w-1/2 py-1 rounded-lg ${!isIngredientsOpen ? "bg-red-primary" : "bg-background"
+                  }`}
                 onPress={() => setIsIngredientsOpen(false)}
               >
                 <Text
-                  className={`text-center ${
-                    !isIngredientsOpen ? "text-background" : "text-foreground"
-                  }`}
+                  className={`text-center ${!isIngredientsOpen ? "text-background" : "text-foreground"
+                    }`}
                 >
                   Instructions
                 </Text>
