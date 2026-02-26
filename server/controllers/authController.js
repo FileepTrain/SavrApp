@@ -487,3 +487,192 @@ export const deleteAccount = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get user allergies
+ * GET /api/auth/get-allergies
+ */
+export const getAllergies = async (req, res) => {
+  const uid = req.user?.uid;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.json({
+        success: true,
+        allergies: [],
+      });
+    }
+
+    const {allergies} = userDoc.data();
+    const list = Array.isArray(allergies) ? allergies : [];
+
+    return res.json({
+      success: true,
+      allergies: list,
+    });
+  } catch (error) {
+    console.error("Error fetching allergies:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "ALLERGIES_FETCH_FAILED",
+    });
+  }
+}
+
+
+/**
+ * Update user allergies
+ * PUT /api/auth/update-allergies
+ */
+export const updateAllergies = async (req, res) => {
+  const uid = req.user?.uid;
+  const { allergies } = req.body;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Error updating allergies",
+      code: "UPDATE_FAILED",
+    });
+  }
+
+  if (!Array.isArray(allergies)) {
+    return res.status(400).json({
+      error: "Allergies must be an array",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User document not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+
+    await userDocRef.update({
+      allergies,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      success: true,
+      message: "Allergies updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating allergies:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "UPDATE_FAILED",
+    });
+  }
+}
+
+/**
+ * Get user Diets
+ * GET /api/auth/get-diets
+ */
+export const getDiets = async (req, res) => {
+  const uid = req.user?.uid;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.json({
+        success: true,
+        diets: [],
+      });
+    }
+
+    const {diets} = userDoc.data();
+    const list = Array.isArray(diets) ? diets : [];
+
+    return res.json({
+      success: true,
+      diets: list,
+    });
+  } catch (error) {
+    console.error("Error fetching diets:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "DIETS_FETCH_FAILED",
+    });
+  }
+}
+
+/**
+ * Update user diets
+ * PUT /api/auth/update-diets
+ */
+export const updateDiets = async (req, res) => {
+  const uid = req.user?.uid;
+  const { diets } = req.body;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Error updating diets",
+      code: "UPDATE_FAILED",
+    });
+  }
+
+  if (!Array.isArray(diets)) {
+    return res.status(400).json({
+      error: "Diets must be an array",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User document not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+
+    await userDocRef.update({
+      diets,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      success: true,
+      message: "Diets updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating diets:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "UPDATE_FAILED",
+    });
+  }
+}
