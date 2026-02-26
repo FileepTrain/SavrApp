@@ -14,15 +14,8 @@ type ExternalRecipe = {
   id: number;
   title: string;
   image?: string | null;
-  summary?: string | null;
+  calories?: number | null;
 };
-
-// Display Calories
-function extractCalories(summary?: string | null): number {
-  if (!summary) return 0;
-  const m = summary.match(/(\d+)\s*calories/i);
-  return m ? Number(m[1]) : 0;
-}
 
 // Display Home Screen
 export default function HomeScreen() {
@@ -116,7 +109,7 @@ export default function HomeScreen() {
             <RecipeCard
               id={String(item.id)}
               title={item.title}
-              calories={extractCalories(item.summary)}
+              calories={item.calories ?? undefined}
               rating={4.5}
               imageUrl={item.image ?? undefined}
             />

@@ -1,6 +1,6 @@
 // controllers/externalRecipeController.js
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
-import ExternalIngredientModel from "../models/externalIngredientModel.js";
+import { _computePriceForRecipe } from "./combinedRecipeController.js";
 
 /**
  * Extract only the nutrients array from Spoonacular's nutrition object.
@@ -8,52 +8,181 @@ import ExternalIngredientModel from "../models/externalIngredientModel.js";
  * We store only { nutrients: [...] } to avoid storing the rest.
  */
 function nutritionOnlyNutrients(nutrition) {
-  if (!nutrition || !nutrition.nutrients || !Array.isArray(nutrition.nutrients)) {
+  if (
+    !nutrition ||
+    !nutrition.nutrients ||
+    !Array.isArray(nutrition.nutrients)
+  ) {
     return null;
   }
   return { nutrients: nutrition.nutrients };
 }
 
-// Search external recipes from spoonacular and firestore
-export const searchExternalRecipes = async (req, res) => {
-  try {
-    const q = (req.query.q ?? "").trim();
-    const number = Math.min(parseInt(req.query.number ?? "10", 10), 20);
-    const offset = Math.max(parseInt(req.query.offset ?? "0", 10), 0);
+/** Extract the calorie count from the summary text of an external recipe */
+function extractCaloriesFromSummary(summary) {
+  if (!summary || typeof summary !== "string") return undefined;
+  const match = summary.match(/(\d+)\s*calories/i);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : undefined;
+}
 
-    if (!q) {
-      return res.status(400).json({
-        error: "Missing query parameter: q",
-        code: "MISSING_QUERY",
-      });
+/**
+ * Parse filter params from request query into a normalized filters object.
+ * Add new filter types here; passesFilters() should implement the matching logic for each.
+ */
+function parseFiltersFromQuery(query) {
+  const filters = {};
+  const budgetMin = Number.isFinite(Number(query?.budgetMin))
+    ? Number(query.budgetMin)
+    : null;
+  const budgetMax = Number.isFinite(Number(query?.budgetMax))
+    ? Number(query.budgetMax)
+    : null;
+  if (budgetMin != null && budgetMax != null) {
+    filters.budget = { min: budgetMin, max: budgetMax };
+  }
+  // Future: filters.allergies = parseArray(query.allergies);
+  // Future: filters.cookware = parseArray(query.cookware);
+  return filters;
+}
+
+/**
+ * Returns true if the recipe passes all active filters.
+ * Recipe shape: { price?, ... } (and later: extendedIngredients, equipment, readyInMinutes, etc.)
+ * Add new filter logic here when new filter types are introduced.
+ */
+function passesFilters(recipe, filters) {
+  if (!filters || typeof filters !== "object") return true;
+
+  if (filters.budget) {
+    const { min, max } = filters.budget;
+    const price = recipe.price;
+    if (typeof price !== "number" || price < min || price > max) return false;
+  }
+
+  // Future: if (filters.allergies?.length) { ... }
+  // Future: if (filters.cookware?.length) { ... }
+
+  return true;
+}
+
+/**
+ * Build simplified recipe payload from a Spoonacular recipe object (e.g. from complexSearch).
+ * Includes normalized nutrition (when API provides it), computed price from ingredients,
+ * and flattened, numbered instruction steps.
+ */
+async function buildSimplifiedPayloadFromSpoonacular(data) {
+  const nutrition = data.nutrition || null;
+
+  // complexSearch returns ingredients under nutrition.ingredients (and sometimes extendedIngredients)
+  const nutritionIngredients = Array.isArray(nutrition?.ingredients)
+    ? nutrition.ingredients
+    : [];
+  const rawExtended =
+    nutritionIngredients.length > 0
+      ? nutritionIngredients
+      : Array.isArray(data.extendedIngredients)
+        ? data.extendedIngredients
+        : [];
+
+  const extendedIngredients = rawExtended.map((ing) => ({
+    id: ing.id,
+    name: ing.name,
+    // original: ing.original ?? null,
+    amount: ing.amount,
+    unit: ing.unit,
+    // image: ing.image ?? null,
+  }));
+
+  // Flatten analyzedInstructions into a single ordered list of step strings
+  const instructionSteps = [];
+  if (Array.isArray(data.analyzedInstructions)) {
+    for (const block of data.analyzedInstructions) {
+      const steps = Array.isArray(block?.steps) ? block.steps : [];
+      for (const step of steps) {
+        if (!step || typeof step.step !== "string" || !step.step.trim())
+          continue;
+        instructionSteps.push(step.step);
+      }
     }
+  }
 
-    const EXTERNAL_SOURCE = "spoonacular";
+  const instructionsText =
+    instructionSteps.length > 0
+      ? instructionSteps.join("\n")
+      : (data.instructions ?? null);
 
-    // Search cached recipes in Firestore first
-    const cached = await ExternalRecipeModel.searchCachedByTitle(
-      EXTERNAL_SOURCE,
-      q,
-      number
-    );
+  const price = await _computePriceForRecipe({ extendedIngredients });
 
-    if (cached.length >= number) {
-      return res.json({
-        success: true,
-        results: cached,
-        totalResults: cached.length,
-        _meta: { cachedCount: cached.length, externalCount: 0, offset },
-      });
-    }
+  return {
+    id: data.id,
+    title: data.title,
+    image: data.image,
+    sourceUrl: data.sourceUrl,
+    readyInMinutes: data.readyInMinutes,
+    servings: data.servings,
+    summary: data.summary ?? null,
+    instructions: instructionsText,
+    ingredientIds: rawExtended.map((ing) => ing.id).filter(Boolean),
+    extendedIngredients,
+    equipment: [],
+    nutrition: nutritionOnlyNutrients(nutrition) ?? null,
+    calories: extractCaloriesFromSummary(data.summary) ?? null,
+    price: price ?? null,
+    dishTypes: data.dishTypes ?? null,
+    diets: data.diets ?? null,
+    cuisines: data.cuisines ?? null,
+  };
+}
 
-    // Query Spoonacular if not in cache
+/**
+ * Helper for combined feed: search external recipes and return items in a simplified
+ * shape suitable for combined feed consumers.
+ *
+ * Parameters:
+ * - filters: { q, budgetMin, budgetMax, ...etc later on }
+ * - limit: max number of external items to return (capped at 20)
+ * - offset: pagination offset (number)
+ */
+export const searchExternalRecipes = async ({ filters, limit, offset }) => {
+  const q = (filters?.q ?? "").trim();
+  const number = Math.min(parseInt(limit ?? "10", 10), 20);
+  const safeOffset = Math.max(parseInt(offset ?? "0", 10), 0);
+
+  if (!q || !number) {
+    return {
+      results: [],
+      totalResults: 0,
+      _meta: { cachedCount: 0, externalCount: 0, offset: safeOffset },
+    };
+  }
+
+  const EXTERNAL_SOURCE = "spoonacular";
+
+  // 1. Get cached results first
+  const cached = await ExternalRecipeModel.searchCachedByTitle(
+    EXTERNAL_SOURCE,
+    q,
+    number,
+  );
+  const cachedIds = new Set(cached.map((r) => r.id));
+  console.log("cachedIds", cachedIds);
+
+  let externalFromApi = [];
+  let totalResults = cached.length;
+
+  // 2. If limit not reached, call Spoonacular complexSearch (single rich call)
+  if (cached.length < number) {
     const remaining = number - cached.length;
 
     const url = new URL("https://api.spoonacular.com/recipes/complexSearch");
     url.searchParams.set("query", q);
     url.searchParams.set("number", String(remaining));
-    url.searchParams.set("offset", String(offset));
-    url.searchParams.set("addRecipeInformation", "false");
+    url.searchParams.set("offset", String(safeOffset));
+    url.searchParams.set("addRecipeInformation", "true");
+    url.searchParams.set("addRecipeNutrition", "true");
+    url.searchParams.set("addRecipeInstructions", "true");
     url.searchParams.set("instructionsRequired", "true");
 
     const resp = await fetch(url, {
@@ -61,45 +190,113 @@ export const searchExternalRecipes = async (req, res) => {
     });
 
     const data = await resp.json();
-    const quotaLeft = resp.headers.get("x-api-quota-left");
-    if (quotaLeft) res.set("x-api-quota-left", quotaLeft);
 
     if (!resp.ok) {
-      return res.status(resp.status).json({
-        error: data?.message || "Spoonacular request failed",
-        code: "SPOONACULAR_ERROR",
-        details: data,
-      });
+      throw new Error(data?.message || "Spoonacular request failed");
     }
 
-    const cachedIds = new Set(cached.map((r) => r.id));
-
-    const externalResults = Array.isArray(data?.results)
-      ? data.results
-          .filter((r) => !cachedIds.has(r.id))
-          .map((r) => ({ ...r, _cached: false }))
+    // Exclude results already cached
+    externalFromApi = Array.isArray(data?.results)
+      ? data.results.filter((r) => !cachedIds.has(r.id))
       : [];
+    totalResults = data?.totalResults ?? totalResults;
 
-    return res.json({
-      success: true,
-      results: [...cached, ...externalResults],
-      totalResults: data?.totalResults ?? 0,
-      _meta: {
-        cachedCount: cached.length,
-        externalCount: externalResults.length,
-        offset,
-      },
-    });
-  } catch (error) {
-    console.error("Error searching Spoonacular:", error);
-    return res.status(500).json({
-      error: error.message || "Internal server error",
-      code: "EXTERNAL_SEARCH_FAILED",
-    });
+    // Cache any newly discovered recipes
+    if (externalFromApi.length > 0) {
+      for (const recipeData of externalFromApi) {
+        const id = recipeData.id;
+        if (id == null) continue;
+        try {
+          const simplified =
+            await buildSimplifiedPayloadFromSpoonacular(recipeData);
+          await ExternalRecipeModel.upsertFromExternal(
+            EXTERNAL_SOURCE,
+            id,
+            simplified,
+          );
+        } catch (err) {
+          console.warn(
+            "Failed to cache/price recipe from complexSearch (combined feed)",
+            id,
+            err?.message || err,
+          );
+        }
+      }
+    }
   }
+
+  // 3. Build candidate list (cached first, then newly discovered)
+  const candidateIds = [
+    ...cached.map((r) => r.id),
+    ...externalFromApi.map((r) => r.id),
+  ].slice(0, number);
+
+  // 4. Hydrate from Firestore and attach price
+  const resultsWithPrice = await Promise.all(
+    candidateIds.map(async (id) => {
+      const doc = await ExternalRecipeModel.findByExternal(
+        EXTERNAL_SOURCE,
+        String(id),
+      );
+      const hit =
+        cached.find((r) => r.id === id) ||
+        externalFromApi.find((r) => r.id === id);
+
+      if (doc) {
+        return {
+          id: Number(doc.id),
+          title: doc.title ?? hit?.title ?? null,
+          image: doc.image ?? hit?.image ?? null,
+          calories: doc.calories ?? hit?.calories ?? null,
+          price: typeof doc.price === "number" ? doc.price : null,
+          _cached: !!cached.find((r) => r.id === id),
+        };
+      }
+      if (!hit) return null;
+      return {
+        id: hit.id,
+        title: hit.title ?? null,
+        image: hit.image ?? null,
+        calories: hit.calories ?? null,
+        price: null,
+        _cached: false,
+      };
+    }),
+  );
+
+  let results = resultsWithPrice.filter(Boolean);
+
+  // 5. Apply budget filter using the filters object (budgetMin/budgetMax)
+  let hasActiveFilters = false;
+  const coreFilters = {};
+  if (
+    filters &&
+    Number.isFinite(filters.budgetMin) &&
+    Number.isFinite(filters.budgetMax)
+  ) {
+    coreFilters.budget = {
+      min: Number(filters.budgetMin),
+      max: Number(filters.budgetMax),
+    };
+    hasActiveFilters = true;
+  }
+
+  if (hasActiveFilters) {
+    results = results.filter((r) => passesFilters(r, coreFilters));
+  }
+
+  return {
+    results: results,
+    totalResults: hasActiveFilters ? results.length : totalResults,
+    _meta: {
+      cachedCount: cached.length,
+      externalCount: externalFromApi.length,
+      offset: safeOffset,
+    },
+  };
 };
 
-// Acquire Recipe Details
+// Acquire Recipe Details from Firestore
 export const getExternalRecipeDetails = async (req, res) => {
   try {
     const id = String(req.params.id ?? "").trim();
@@ -115,114 +312,25 @@ export const getExternalRecipeDetails = async (req, res) => {
 
     const EXTERNAL_SOURCE = "spoonacular";
 
-    // Try Firestore first
-    const existing = await ExternalRecipeModel.findByExternal(
+    // External recipes are cached when they appear in search; details are read-only from the database
+    const recipeFromDb = await ExternalRecipeModel.findByExternal(
       EXTERNAL_SOURCE,
-      id
+      id,
     );
-    if (existing) {
-      const recipeFromDb = { ...existing };
-      if (!includeNutrition) {
-        delete recipeFromDb.nutrition;
-      } else if (recipeFromDb.nutrition) {
-        // Filter nutrition even for cached recipes
-        recipeFromDb.nutrition = nutritionOnlyNutrients(recipeFromDb.nutrition);
-      }
-      return res.json({ success: true, recipe: recipeFromDb });
-    }
-
-    // Fetch from Spoonacular (recipe info + equipment in parallel)
-    const infoUrl = new URL(
-      `https://api.spoonacular.com/recipes/${encodeURIComponent(id)}/information`
-    );
-    infoUrl.searchParams.set("includeNutrition", includeNutrition ? "true" : "false");
-
-    const equipmentUrl = `https://api.spoonacular.com/recipes/${encodeURIComponent(id)}/equipmentWidget.json`;
-
-    const [infoResp, equipmentResp] = await Promise.all([
-      fetch(infoUrl, {
-        headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
-      }),
-      fetch(equipmentUrl, {
-        headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
-      }),
-    ]);
-
-    const data = await infoResp.json();
-    let equipmentData = { equipment: [] };
-    try {
-      if (equipmentResp.ok) {
-        equipmentData = await equipmentResp.json();
-      }
-    } catch {
-      // Equipment fetch failed; continue without it
-    }
-
-    const quotaLeft = infoResp.headers.get("x-api-quota-left");
-    if (quotaLeft) res.set("x-api-quota-left", quotaLeft);
-
-    if (!infoResp.ok) {
-      return res.status(resp.status).json({
-        error: data?.message || "Spoonacular request failed",
-        code: "SPOONACULAR_ERROR",
-        details: data,
+    if (!recipeFromDb) {
+      return res.status(404).json({
+        error:
+          "Recipe not found. External recipes are loaded when you search; try searching for this recipe first.",
+        code: "RECIPE_NOT_FOUND",
       });
     }
 
-    const rawExtended = Array.isArray(data.extendedIngredients)
-      ? data.extendedIngredients
-      : [];
-
-    // Cache ingredient
-    try {
-      await ExternalIngredientModel.upsertManyFromExternal(
-        EXTERNAL_SOURCE,
-        rawExtended
-      );
-    } catch (ingErr) {
-      console.error("Failed to persist external ingredients:", ingErr);
+    if (!includeNutrition) {
+      delete recipeFromDb.nutrition;
+    } else if (recipeFromDb.nutrition) {
+      recipeFromDb.nutrition = nutritionOnlyNutrients(recipeFromDb.nutrition);
     }
-
-    const equipment = Array.isArray(equipmentData?.equipment)
-      ? equipmentData.equipment.map((e) => ({
-          name: e.name ?? null,
-          image: e.image ? `https://img.spoonacular.com/equipment_100x100/${e.image}` : null,
-        }))
-      : [];
-
-    const simplified = {
-      id: data.id,
-      title: data.title,
-      image: data.image,
-      sourceUrl: data.sourceUrl,
-      readyInMinutes: data.readyInMinutes,
-      servings: data.servings,
-      summary: data.summary ?? null,
-      instructions: data.instructions ?? null,
-      ingredientIds: rawExtended.map((ing) => ing.id).filter(Boolean),
-      extendedIngredients: rawExtended.map((ing) => ({
-        id: ing.id,
-        name: ing.name,
-        original: ing.original,
-        amount: ing.amount,
-        unit: ing.unit,
-        image: ing.image,
-      })),
-      equipment,
-      nutrition: includeNutrition ? nutritionOnlyNutrients(data.nutrition) : null,
-      dishTypes: data.dishTypes ?? null,
-      diets: data.diets ?? null,
-      cuisines: data.cuisines ?? null,
-    };
-
-    // Attempts to grab external recipes
-    try {
-      await ExternalRecipeModel.upsertFromExternal(EXTERNAL_SOURCE, id, simplified);
-    } catch (insertErr) {
-      console.error("Failed to persist external recipe:", insertErr);
-    }
-
-    return res.json({ success: true, recipe: simplified });
+    return res.json({ success: true, recipe: recipeFromDb });
   } catch (error) {
     console.error("Error getting recipe details:", error);
     return res.status(500).json({
