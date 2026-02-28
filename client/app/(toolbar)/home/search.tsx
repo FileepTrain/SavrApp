@@ -14,23 +14,38 @@ import { RecipeCard } from "@/components/recipe-card";
 import type { Filters } from "@/components/ui/filter_pop_up";
 
 type SearchResult = {
-  id: number;
+  id: number | string;
   title: string;
   image?: string;
+  calories?: number | null;
+  price?: number | null;
 };
-
-type FilteredRecipe = {
-  id: string;
-  title: string;
-  image?: string | null;
-  summary?: string | null;
-  calories?: number;
-};
-
-type ListItem = SearchResult | FilteredRecipe;
 
 const API_BASE = "http://10.0.2.2:3000";
 const PAGE_SIZE = 10;
+
+type SearchCacheEntry = {
+  personalResults: SearchResult[];
+  externalResults: SearchResult[];
+  personalOffset: number;
+  externalOffset: number;
+  personalExhausted: boolean;
+  hasMore: boolean;
+};
+
+function buildSearchKey(query: string, filters: Filters): string {
+  return [
+    query.trim().toLowerCase(),
+    filters.budgetMin,
+    filters.budgetMax,
+    [...filters.allergies].sort().join(","),
+    [...filters.foodTypes].sort().join(","),
+    [...filters.cookware].sort().join(","),
+  ].join("|");
+}
+
+// Locally cache search results to avoid unnecessary API calls
+const searchCache: Record<string, SearchCacheEntry> = {};
 
 function hasActiveFilters(filters: Filters): boolean {
   // Check if filters are different from default filters
@@ -43,10 +58,16 @@ function hasActiveFilters(filters: Filters): boolean {
   return false;
 }
 
-function extractCalories(summary?: string | null): number {
-  if (!summary) return 0;
-  const m = summary.match(/(\d+)\s*calories/i);
-  return m ? Number(m[1]) : 0;
+function isExternalId(id: SearchResult["id"]): boolean {
+  // External (Spoonacular) ids are numeric; personal recipe ids are Firestore doc ids (random strings).
+  if (typeof id === "number") return true;
+  if (typeof id !== "string") return false;
+  return /^\d+$/.test(id);
+}
+
+function getResultKey(item: SearchResult): string {
+  const id = String(item.id ?? "");
+  return isExternalId(item.id) ? `e-${id}` : `p-${id}`;
 }
 
 export default function HomeSearchScreen() {
@@ -59,89 +80,120 @@ export default function HomeSearchScreen() {
 
   const [searchQuery, setSearchQuery] = useState(queryParam);
 
-  const [personalResults, setPersonalResults] = useState<FilteredRecipe[]>([]);
+  const [personalResults, setPersonalResults] = useState<SearchResult[]>([]);
   const [externalResults, setExternalResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false); // initial load
-  const [loadingMore, setLoadingMore] = useState(false); // pagination load (external only)
+  const [loadingMore, setLoadingMore] = useState(false); // pagination load
   const [error, setError] = useState("");
 
-  const [offset, setOffset] = useState(0);
+  const [personalOffset, setPersonalOffset] = useState(0);
+  const [externalOffset, setExternalOffset] = useState(0);
+  const [personalExhausted, setPersonalExhausted] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const fetchingRef = useRef(false);
 
-  // Display user-generated recipes followed by external recipes in a unified list
-  const results = useMemo(
-    () => [...personalResults, ...externalResults],
-    [personalResults, externalResults]
+  // Display user-generated recipes first, then external recipes in a unified list
+  const results = useMemo(() => {
+    const merged = [...personalResults, ...externalResults];
+    const seen = new Set<string>(); // Track seen results to avoid duplicates
+    const unique: SearchResult[] = []; // Unique results
+    for (const item of merged) {
+      const key = getResultKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique;
+  }, [personalResults, externalResults]);
+
+  const searchKey = useMemo(
+    () => buildSearchKey(queryParam, appliedFilters),
+    [queryParam, appliedFilters],
   );
 
-  // Single place for all API calls: personal (filters ± search) and, when there is a query, external search
+  // Single place for all API calls: personal (filters + search), and when there is a query, external search via combined endpoint
   useEffect(() => {
-    setLoading(true);
-    setError("");
-    setOffset(0);
-    setHasMore(true);
-
     const trimmed = queryParam.trim();
-    let cancelled = false;
+    setError("");
 
-    if (!trimmed) {
-      // No search query: fetch only personal recipes matching filters
-      const params = new URLSearchParams({
-        budgetMin: String(appliedFilters.budgetMin),
-        budgetMax: String(appliedFilters.budgetMax),
-        limit: "20",
-      });
-      fetch(`${API_BASE}/api/combined-recipes?${params}`)
-        .then((r) => {
-          if (!r.ok) throw new Error("Failed to load recipes.");
-          return r.json();
-        })
-        .then((data) => {
-          if (cancelled) return;
-          setPersonalResults(Array.isArray(data?.results) ? data.results : []);
-          setExternalResults([]);
-        })
-        .catch((e) => {
-          if (!cancelled) {
-            setError(e?.message ?? "Network error.");
-            setPersonalResults([]);
-            setExternalResults([]);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-      return () => { cancelled = true; };
+    // If we have a cached entry for this query + filters, restore it instead of refetching
+    if (trimmed) {
+      const cached = searchCache[searchKey];
+      if (cached) {
+        setPersonalResults(cached.personalResults);
+        setExternalResults(cached.externalResults);
+        setPersonalOffset(cached.personalOffset);
+        setExternalOffset(cached.externalOffset);
+        setPersonalExhausted(cached.personalExhausted);
+        setHasMore(cached.hasMore);
+        setLoading(false);
+        return;
+      }
     }
 
-    // Search query: fetch personal (filters + q) and external (only q for now) in parallel
+    setLoading(true);
+    setPersonalOffset(0);
+    setExternalOffset(0);
+    setPersonalExhausted(false);
+    setHasMore(true);
+
+    let cancelled = false;
+
+    // Search query: fetch personal and external recipes together via combined recipe API
     const params = new URLSearchParams({
       budgetMin: String(appliedFilters.budgetMin),
       budgetMax: String(appliedFilters.budgetMax),
-      limit: "20",
+      limit: String(PAGE_SIZE),
       q: trimmed,
+      personalOffset: "0",
+      externalOffset: "0",
     });
-    Promise.all([
-      fetch(`${API_BASE}/api/combined-recipes?${params}`).then((r) => {
-        if (!r.ok) throw new Error("Failed to load personal recipes.");
+
+    fetch(`${API_BASE}/api/combined-recipes?${params}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load recipes.");
         return r.json();
-      }),
-      fetch(
-        `${API_BASE}/api/external-recipes/search?q=${encodeURIComponent(trimmed)}&number=${PAGE_SIZE}&offset=0`
-      ).then((r) => {
-        if (!r.ok) throw new Error("Failed to load external results.");
-        return r.json();
-      }),
-    ])
-      .then(([combinedData, externalData]) => {
+      })
+      .then((combinedData) => {
         if (cancelled) return;
-        setPersonalResults(Array.isArray(combinedData?.results) ? combinedData.results : []);
-        const ext = Array.isArray(externalData?.results) ? externalData.results : [];
+
+        const personal = combinedData?.personalResults ?? [];
+        const ext = combinedData?.externalResults ?? [];
+        const meta = combinedData?.meta ?? null;
+
+        setPersonalResults(personal);
         setExternalResults(ext);
-        setHasMore(ext.length === PAGE_SIZE);
-        setOffset(PAGE_SIZE);
+        setPersonalOffset(meta?.personalOffset ?? 0);
+        setExternalOffset(meta?.externalOffset ?? 0);
+
+        const personalReturned = meta?.personalReturned ?? 0;
+        const externalReturned = meta?.externalReturned ?? 0;
+        const externalTotal = meta?.externalTotalResults as number | null | undefined;
+        const externalOffsetFromMeta = meta?.externalOffset ?? 0;
+
+        const morePersonal = !(meta?.personalExhausted ?? false);
+        const moreExternal =
+          typeof externalTotal === "number"
+            ? externalOffsetFromMeta + externalReturned < externalTotal
+            : externalReturned === PAGE_SIZE;
+        /* Fetch more if: 
+        * - there are still more personal results to fetch
+        * - the number of external results consumed so far is less than the total number of external results
+        */
+        setHasMore(morePersonal || moreExternal);
+        setPersonalExhausted(meta?.personalExhausted ?? false);
+
+        // Cache the combined + external results for this query + filters
+        searchCache[searchKey] = {
+          personalResults: personal,
+          externalResults: ext,
+          personalOffset: meta?.personalOffset ?? 0,
+          externalOffset: meta?.externalOffset ?? 0,
+          personalExhausted: meta?.personalExhausted ?? false,
+          hasMore:
+            morePersonal || moreExternal,
+        };
       })
       .catch((e) => {
         if (!cancelled) {
@@ -155,49 +207,97 @@ export default function HomeSearchScreen() {
       });
 
     return () => { cancelled = true; };
-  }, [queryParam, appliedFilters]);
+  }, [queryParam, appliedFilters, searchKey]);
 
   // Keep search input in sync with URL param
   useEffect(() => {
     setSearchQuery(queryParam);
   }, [queryParam]);
 
-  const fetchPage = async (q: string, nextOffset: number, append: boolean) => {
-    const trimmed = q.trim();
+  const fetchMore = async () => {
+    const trimmed = queryParam.trim();
     if (!trimmed) return;
 
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
-    if (append) setLoadingMore(true);
-
+    setLoadingMore(true);
     setError("");
 
+    const params = new URLSearchParams({
+      budgetMin: String(appliedFilters.budgetMin),
+      budgetMax: String(appliedFilters.budgetMax),
+      limit: String(PAGE_SIZE),
+      q: trimmed,
+      personalOffset: String(personalOffset),
+      externalOffset: String(externalOffset),
+    });
+
+    // Once personal results are exhausted, skip attempt to retrieve personal recipes in the backend entirely
+    if (personalExhausted) {
+      params.set("externalOnly", "true");
+    }
+
     try {
-      const res = await fetch(
-        `${API_BASE}/api/external-recipes/search?q=${encodeURIComponent(
-          trimmed
-        )}&number=${PAGE_SIZE}&offset=${nextOffset}`
-      );
+      const res = await fetch(`${API_BASE}/api/combined-recipes?${params}`);
       const data = await res.json();
 
       if (!res.ok) {
         setError(data?.error ?? "Search failed.");
-        if (!append) setExternalResults([]);
         setHasMore(false);
         return;
       }
 
-      const page: SearchResult[] = Array.isArray(data?.results)
-        ? data.results
-        : [];
+      const personal = data?.personalResults ?? [];
+      const ext = data?.externalResults ?? [];
+      const meta = data?.meta ?? null;
+      setPersonalExhausted(meta?.personalExhausted ?? false);
+      setPersonalResults((prev) => [...prev, ...personal]);
+      setExternalResults((prev) => [...prev, ...ext]);
 
-      setExternalResults((prev) => (append ? [...prev, ...page] : page));
-      setHasMore(page.length === PAGE_SIZE);
-      setOffset(nextOffset + PAGE_SIZE);
+      const personalReturned = meta?.personalReturned ?? 0;
+      const externalReturned = meta?.externalReturned ?? 0;
+      const externalTotal = meta?.externalTotalResults as number | null | undefined;
+      const externalOffsetFromMeta = meta?.externalOffset ?? 0;
+
+      setPersonalOffset((prev) => prev + personalReturned);
+      setExternalOffset((prev) => prev + externalReturned);
+
+      const morePersonal = !(meta?.personalExhausted ?? false);
+      const moreExternal =
+        typeof externalTotal === "number"
+          ? externalOffsetFromMeta + externalReturned < externalTotal
+          : externalReturned === PAGE_SIZE;
+
+      /* Fetch more if: 
+      * - there are still more personal results to fetch
+      * - the number of external results consumed so far is less than the total number of external results
+      */
+      setHasMore(morePersonal || moreExternal);
+
+      // Update cache entry for this query + filters if it exists
+      const trimmedKey = trimmed ? searchKey : null;
+      if (trimmedKey && searchCache[trimmedKey]) {
+        const cached = searchCache[trimmedKey];
+        searchCache[trimmedKey] = {
+          ...cached,
+          personalResults: [...cached.personalResults, ...personal],
+          externalResults: [...cached.externalResults, ...ext],
+          personalOffset: cached.personalOffset + (meta?.personalReturned ?? 0),
+          externalOffset: cached.externalOffset + (meta?.externalReturned ?? 0),
+          personalExhausted:
+            meta?.personalExhausted
+              ? meta.personalExhausted
+              : cached.personalExhausted || (meta?.personalReturned ?? 0) < PAGE_SIZE,
+          hasMore:
+            morePersonal ||
+            (typeof externalTotal === "number"
+              ? externalOffsetFromMeta + externalReturned < externalTotal
+              : externalReturned === PAGE_SIZE),
+        };
+      }
     } catch (e: any) {
       setError(e?.message ?? "Network error.");
-      if (!append) setExternalResults([]);
       setHasMore(false);
     } finally {
       setLoadingMore(false);
@@ -216,12 +316,11 @@ export default function HomeSearchScreen() {
     if (!hasMore) return;
     if (loading || loadingMore) return;
 
-    fetchPage(queryParam, offset, true);
+    fetchMore();
   };
 
-  const renderItem = ({ item }: { item: ListItem }) => {
+  const renderItem = ({ item }: { item: SearchResult }) => {
     const id = String(item.id);
-    const calories = "calories" in item && item.calories != null ? item.calories : "summary" in item ? extractCalories(item.summary) : 0;
     return (
       <View className="mb-3">
         <RecipeCard
@@ -229,23 +328,23 @@ export default function HomeSearchScreen() {
           variant="horizontal"
           title={item.title}
           imageUrl={item.image ?? undefined}
-          calories={calories}
+          calories={item.calories ?? undefined}
         />
       </View>
     );
   };
 
   return (
-    <ThemedSafeView className="flex-1">
+    <ThemedSafeView className="flex-1 pt-safe-or-20">
       <FlatList
         data={results}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={getResultKey}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
         onEndReached={queryParam ? handleLoadMore : undefined}
         onEndReachedThreshold={0.6}
         ListHeaderComponent={
-          <View className="pt-16 pb-2">
+          <View className="pb-2">
             <View className="flex-row justify-center items-center gap-2 mb-3">
               <View>
                 {hasActiveFilters(appliedFilters) && (

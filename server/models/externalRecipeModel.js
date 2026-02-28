@@ -43,9 +43,11 @@ async function findByExternal(externalSource, externalId) {
     extendedIngredients: data.extendedIngredients ?? [],
     equipment: data.equipment ?? [],
     nutrition: data.nutrition ?? null,
+    calories: data.calories ?? null,
     dishTypes: data.dishTypes ?? null,
     diets: data.diets ?? null,
     cuisines: data.cuisines ?? null,
+    price: typeof data.price === "number" ? data.price : null,
     _docId: docId,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
@@ -79,6 +81,7 @@ async function searchCachedByTitle(externalSource, q, limit = 10) {
       title: data.title ?? null,
       image: data.image ?? null,
       summary: data.summary ?? null,
+      price: typeof data.price === "number" ? data.price : null,
       _cached: true,
       _docId: d.id,
     };
@@ -109,7 +112,8 @@ async function upsertFromExternal(externalSource, externalId, simplified) {
     image: simplified.image ?? null,
     sourceUrl: simplified.sourceUrl ?? null,
     readyInMinutes:
-      simplified.readyInMinutes !== undefined && simplified.readyInMinutes !== null
+      simplified.readyInMinutes !== undefined &&
+      simplified.readyInMinutes !== null
         ? Number(simplified.readyInMinutes)
         : null,
     servings:
@@ -121,9 +125,11 @@ async function upsertFromExternal(externalSource, externalId, simplified) {
     extendedIngredients: simplified.extendedIngredients ?? [],
     equipment: simplified.equipment ?? [],
     nutrition: simplified.nutrition ?? null,
+    calories: simplified.calories ?? null,
     dishTypes: simplified.dishTypes ?? null,
     diets: simplified.diets ?? null,
     cuisines: simplified.cuisines ?? null,
+    price: simplified.price ?? null,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 
@@ -132,7 +138,7 @@ async function upsertFromExternal(externalSource, externalId, simplified) {
       ...payload,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     },
-    { merge: true }
+    { merge: true },
   );
 
   return { docId };
@@ -154,7 +160,8 @@ async function getLatestCached(limit = 20) {
       id: Number(data.externalId),
       title: data.title ?? null,
       image: data.image ?? null,
-      summary: data.summary ?? null,
+      calories: data.calories ?? null,
+      price: typeof data.price === "number" ? data.price : null,
       _cached: true,
       _docId: d.id,
     };

@@ -67,6 +67,7 @@ type ExternalRecipe = {
   extendedIngredients?: ExternalIngredient[];
   equipment?: EquipmentItem[];
   nutrition?: { nutrients: Nutrient[] } | null;
+  price?: number;
 };
 
 /** Display shape used by the UI (normalized from both personal and external) */
@@ -242,6 +243,7 @@ export default function RecipeDetailsPage() {
             calories,
             rating: 0,
             reviewsLength: 0,
+            price: r.price ?? undefined,
           });
 
           setIngredients(
@@ -336,7 +338,7 @@ export default function RecipeDetailsPage() {
                   Calories: {recipe?.calories != null ? recipe.calories : "—"}
                 </Text>
                 <Text className="text-muted-foreground text-sm font-medium">
-                  Avg. ${recipe?.price != null ? recipe.price : "—"}
+                  Avg. ${recipe?.price != null ? recipe.price.toFixed(2) : "—"}
                 </Text>
               </View>
             </View>
