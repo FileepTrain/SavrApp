@@ -28,26 +28,6 @@ function extractCaloriesFromSummary(summary) {
 }
 
 /**
- * Parse filter params from request query into a normalized filters object.
- * Add new filter types here; passesFilters() should implement the matching logic for each.
- */
-function parseFiltersFromQuery(query) {
-  const filters = {};
-  const budgetMin = Number.isFinite(Number(query?.budgetMin))
-    ? Number(query.budgetMin)
-    : null;
-  const budgetMax = Number.isFinite(Number(query?.budgetMax))
-    ? Number(query.budgetMax)
-    : null;
-  if (budgetMin != null && budgetMax != null) {
-    filters.budget = { min: budgetMin, max: budgetMax };
-  }
-  // Future: filters.allergies = parseArray(query.allergies);
-  // Future: filters.cookware = parseArray(query.cookware);
-  return filters;
-}
-
-/**
  * Returns true if the recipe passes all active filters.
  * Recipe shape: { price?, ... } (and later: extendedIngredients, equipment, readyInMinutes, etc.)
  * Add new filter logic here when new filter types are introduced.
@@ -70,7 +50,7 @@ function passesFilters(recipe, filters) {
 /**
  * Build simplified recipe payload from a Spoonacular recipe object (e.g. from complexSearch).
  * Includes normalized nutrition (when API provides it), computed price from ingredients,
- * and flattened, numbered instruction steps.
+ * flattened, numbered instruction steps, and a deduped list of equipment used.
  */
 async function buildSimplifiedPayloadFromSpoonacular(data) {
   const nutrition = data.nutrition || null;
@@ -95,15 +75,29 @@ async function buildSimplifiedPayloadFromSpoonacular(data) {
     // image: ing.image ?? null,
   }));
 
-  // Flatten analyzedInstructions into a single ordered list of step strings
   const instructionSteps = [];
+  const equipmentMap = new Map();
+
+  // Parse analyzedInstructions to get instruction steps and equipment used.
   if (Array.isArray(data.analyzedInstructions)) {
     for (const block of data.analyzedInstructions) {
       const steps = Array.isArray(block?.steps) ? block.steps : [];
       for (const step of steps) {
-        if (!step || typeof step.step !== "string" || !step.step.trim())
-          continue;
-        instructionSteps.push(step.step);
+        if (step && typeof step.step === "string" && step.step.trim()) {
+          instructionSteps.push(step.step);
+        }
+
+        // Collect a unique list of equipment used across all steps.
+        const equipments = Array.isArray(step?.equipment) ? step.equipment : [];
+        for (const eq of equipments) {
+          // Ignore empty/invalid equipment objects or equipment already added
+          if (!eq || !eq.name || equipmentMap.has(eq.name)) continue;
+
+          equipmentMap.set(eq.name, {
+            name: eq.name ?? eq.localizedName ?? null,
+            image: eq.image ?? null,
+          });
+        }
       }
     }
   }
@@ -112,6 +106,8 @@ async function buildSimplifiedPayloadFromSpoonacular(data) {
     instructionSteps.length > 0
       ? instructionSteps.join("\n")
       : (data.instructions ?? null);
+
+  const equipment = Array.from(equipmentMap.values());
 
   const price = await _computePriceForRecipe({ extendedIngredients });
 
@@ -126,7 +122,7 @@ async function buildSimplifiedPayloadFromSpoonacular(data) {
     instructions: instructionsText,
     ingredientIds: rawExtended.map((ing) => ing.id).filter(Boolean),
     extendedIngredients,
-    equipment: [],
+    equipment,
     nutrition: nutritionOnlyNutrients(nutrition) ?? null,
     calories: extractCaloriesFromSummary(data.summary) ?? null,
     price: price ?? null,
@@ -160,113 +156,104 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
 
   const EXTERNAL_SOURCE = "spoonacular";
 
-  // 1. Get cached results first
-  const cached = await ExternalRecipeModel.searchCachedByTitle(
-    EXTERNAL_SOURCE,
-    q,
-    number,
-  );
-  const cachedIds = new Set(cached.map((r) => r.id));
-  console.log("cachedIds", cachedIds);
+  // Always call Spoonacular complexSearch to get the canonical result set - result is divided into cached and new external recipes that need to be cached
+  const url = new URL("https://api.spoonacular.com/recipes/complexSearch");
+  url.searchParams.set("query", q);
+  url.searchParams.set("number", String(number));
+  url.searchParams.set("offset", String(safeOffset));
+  url.searchParams.set("addRecipeInformation", "true");
+  url.searchParams.set("addRecipeNutrition", "true");
+  url.searchParams.set("addRecipeInstructions", "true");
+  url.searchParams.set("instructionsRequired", "true");
 
-  let externalFromApi = [];
-  let totalResults = cached.length;
+  const resp = await fetch(url, {
+    headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
+  });
 
-  // 2. If limit not reached, call Spoonacular complexSearch (single rich call)
-  if (cached.length < number) {
-    const remaining = number - cached.length;
+  const data = await resp.json();
 
-    const url = new URL("https://api.spoonacular.com/recipes/complexSearch");
-    url.searchParams.set("query", q);
-    url.searchParams.set("number", String(remaining));
-    url.searchParams.set("offset", String(safeOffset));
-    url.searchParams.set("addRecipeInformation", "true");
-    url.searchParams.set("addRecipeNutrition", "true");
-    url.searchParams.set("addRecipeInstructions", "true");
-    url.searchParams.set("instructionsRequired", "true");
+  if (!resp.ok) {
+    throw new Error(data?.message || "Spoonacular request failed");
+  }
 
-    const resp = await fetch(url, {
-      headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
-    });
+  const apiResults = Array.isArray(data?.results) ? data.results : [];
+  let totalResults = data?.totalResults ?? apiResults.length;
 
-    const data = await resp.json();
+  // Hydrate from Firestore, caching any recipes we haven't seen before
+  let cachedCount = 0;
+  let newlyCachedCount = 0;
 
-    if (!resp.ok) {
-      throw new Error(data?.message || "Spoonacular request failed");
+  const resultsWithPrice = [];
+
+  for (const recipeData of apiResults) {
+    const id = recipeData.id;
+    if (id == null) continue;
+
+    // Check if the recipe is already cached in Firestore
+    let doc = await ExternalRecipeModel.findByExternal(
+      EXTERNAL_SOURCE,
+      String(id),
+    );
+
+    let wasCached = !!doc;
+
+    // If the recipe is not cached, build the simplified payload and upsert it into Firestore
+    if (!doc) {
+      try {
+        const simplified =
+          await buildSimplifiedPayloadFromSpoonacular(recipeData);
+        await ExternalRecipeModel.upsertFromExternal(
+          EXTERNAL_SOURCE,
+          id,
+          simplified,
+        );
+        // Retrieve the recipe document that was just upserted into Firestore
+        doc = await ExternalRecipeModel.findByExternal(
+          EXTERNAL_SOURCE,
+          String(id),
+        );
+        wasCached = false;
+      } catch (err) {
+        console.warn(
+          "Failed to cache/price recipe from complexSearch (external search)",
+          id,
+          err?.message || err,
+        );
+      }
     }
 
-    // Exclude results already cached
-    externalFromApi = Array.isArray(data?.results)
-      ? data.results.filter((r) => !cachedIds.has(r.id))
-      : [];
-    totalResults = data?.totalResults ?? totalResults;
+    if (wasCached) {
+      cachedCount += 1;
+    } else {
+      newlyCachedCount += 1;
+    }
 
-    // Cache any newly discovered recipes
-    if (externalFromApi.length > 0) {
-      for (const recipeData of externalFromApi) {
-        const id = recipeData.id;
-        if (id == null) continue;
-        try {
-          const simplified =
-            await buildSimplifiedPayloadFromSpoonacular(recipeData);
-          await ExternalRecipeModel.upsertFromExternal(
-            EXTERNAL_SOURCE,
-            id,
-            simplified,
-          );
-        } catch (err) {
-          console.warn(
-            "Failed to cache/price recipe from complexSearch (combined feed)",
-            id,
-            err?.message || err,
-          );
-        }
-      }
+    // Add the cached / newly cached recipe to the resultsWithPrice array
+    if (doc) {
+      resultsWithPrice.push({
+        id: Number(doc.id),
+        title: doc.title ?? recipeData.title ?? null,
+        image: doc.image ?? recipeData.image ?? null,
+        calories: doc.calories ?? null,
+        price: typeof doc.price === "number" ? doc.price : null,
+        _cached: wasCached,
+      });
+    } else {
+      // Fallback to original Spoonacular data if Firestore doc is still unavailable after upserting
+      resultsWithPrice.push({
+        id: Number(id),
+        title: recipeData.title ?? null,
+        image: recipeData.image ?? null,
+        calories: null,
+        price: null,
+        _cached: false,
+      });
     }
   }
 
-  // 3. Build candidate list (cached first, then newly discovered)
-  const candidateIds = [
-    ...cached.map((r) => r.id),
-    ...externalFromApi.map((r) => r.id),
-  ].slice(0, number);
+  let results = resultsWithPrice;
 
-  // 4. Hydrate from Firestore and attach price
-  const resultsWithPrice = await Promise.all(
-    candidateIds.map(async (id) => {
-      const doc = await ExternalRecipeModel.findByExternal(
-        EXTERNAL_SOURCE,
-        String(id),
-      );
-      const hit =
-        cached.find((r) => r.id === id) ||
-        externalFromApi.find((r) => r.id === id);
-
-      if (doc) {
-        return {
-          id: Number(doc.id),
-          title: doc.title ?? hit?.title ?? null,
-          image: doc.image ?? hit?.image ?? null,
-          calories: doc.calories ?? hit?.calories ?? null,
-          price: typeof doc.price === "number" ? doc.price : null,
-          _cached: !!cached.find((r) => r.id === id),
-        };
-      }
-      if (!hit) return null;
-      return {
-        id: hit.id,
-        title: hit.title ?? null,
-        image: hit.image ?? null,
-        calories: hit.calories ?? null,
-        price: null,
-        _cached: false,
-      };
-    }),
-  );
-
-  let results = resultsWithPrice.filter(Boolean);
-
-  // 5. Apply budget filter using the filters object (budgetMin/budgetMax)
+  // Apply filters to the results
   let hasActiveFilters = false;
   const coreFilters = {};
   if (
@@ -286,11 +273,12 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   }
 
   return {
-    results: results,
-    totalResults: hasActiveFilters ? results.length : totalResults,
+    results,
+    totalResults,
+    filteredCount: results.length,
     _meta: {
-      cachedCount: cached.length,
-      externalCount: externalFromApi.length,
+      cachedCount,
+      externalCount: newlyCachedCount,
       offset: safeOffset,
     },
   };

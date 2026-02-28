@@ -107,11 +107,27 @@ export const getFilteredFeed = async (req, res) => {
     const externalOnly =
       String(req.query.externalOnly ?? "false").toLowerCase() === "true";
 
+    const personalOffset = Number.isFinite(Number(req.query.personalOffset))
+      ? Number(req.query.personalOffset)
+      : 0;
+    const externalOffset = Number.isFinite(Number(req.query.externalOffset))
+      ? Number(req.query.externalOffset)
+      : Number.isFinite(Number(req.query.offset))
+        ? Number(req.query.offset)
+        : 0;
+
     const filters = { budgetMin, budgetMax, limit, q };
 
     let personalResults = [];
-    if (!externalOnly) {
-      const recipes = await getAllRecipes(filters);
+    let remaining = limit;
+    let personalRequested = 0;
+    let personalExhausted = false;
+    if (!externalOnly && remaining > 0) {
+      personalRequested = remaining;
+      const recipes = await getAllRecipes({
+        ...filters,
+        offset: personalOffset,
+      });
       personalResults = recipes.map((r) => {
         const calories =
           r.calories != null
@@ -132,21 +148,30 @@ export const getFilteredFeed = async (req, res) => {
           price: typeof r.price === "number" ? r.price : null,
         };
       });
+      if (personalResults.length < personalRequested) {
+        personalExhausted = true;
+      }
+      remaining = Math.max(remaining - personalResults.length, 0);
     }
 
     // External results (only when searching with q)
     let externalResults = [];
     let externalMeta = null;
-    if (q || externalOnly) {
+    let externalTotalResults = null;
+    if (remaining > 0 && (q || externalOnly)) {
       const externalRecipes = await searchExternalRecipes({
         filters,
-        limit,
-        offset: req.query.offset ?? "0",
+        limit: remaining,
+        offset: String(externalOffset),
       });
       externalResults = Array.isArray(externalRecipes?.results)
         ? externalRecipes.results
         : [];
       externalMeta = externalRecipes?._meta ?? null;
+      externalTotalResults =
+        typeof externalRecipes?.totalResults === "number"
+          ? externalRecipes.totalResults
+          : null;
     }
 
     const combinedResults = [...personalResults, ...externalResults];
@@ -158,6 +183,15 @@ export const getFilteredFeed = async (req, res) => {
       externalResults,
       totalCount: combinedResults.length,
       externalMeta,
+      meta: {
+        limit,
+        personalOffset,
+        externalOffset,
+        personalReturned: personalResults.length,
+        externalReturned: externalResults.length,
+        personalExhausted: externalOnly ? true : personalExhausted,
+        externalTotalResults,
+      },
     });
   } catch (error) {
     console.error("Error getting combined recipe feed:", error);

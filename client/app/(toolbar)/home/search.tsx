@@ -14,7 +14,7 @@ import { RecipeCard } from "@/components/recipe-card";
 import type { Filters } from "@/components/ui/filter_pop_up";
 
 type SearchResult = {
-  id: number;
+  id: number | string;
   title: string;
   image?: string;
   calories?: number | null;
@@ -27,7 +27,9 @@ const PAGE_SIZE = 10;
 type SearchCacheEntry = {
   personalResults: SearchResult[];
   externalResults: SearchResult[];
-  offset: number;
+  personalOffset: number;
+  externalOffset: number;
+  personalExhausted: boolean;
   hasMore: boolean;
 };
 
@@ -42,6 +44,7 @@ function buildSearchKey(query: string, filters: Filters): string {
   ].join("|");
 }
 
+// Locally cache search results to avoid unnecessary API calls
 const searchCache: Record<string, SearchCacheEntry> = {};
 
 function hasActiveFilters(filters: Filters): boolean {
@@ -53,6 +56,18 @@ function hasActiveFilters(filters: Filters): boolean {
   if (!sameArray(filters.foodTypes, DEFAULT_FILTERS.foodTypes)) return true;
   if (!sameArray(filters.cookware, DEFAULT_FILTERS.cookware)) return true;
   return false;
+}
+
+function isExternalId(id: SearchResult["id"]): boolean {
+  // External (Spoonacular) ids are numeric; personal recipe ids are Firestore doc ids (random strings).
+  if (typeof id === "number") return true;
+  if (typeof id !== "string") return false;
+  return /^\d+$/.test(id);
+}
+
+function getResultKey(item: SearchResult): string {
+  const id = String(item.id ?? "");
+  return isExternalId(item.id) ? `e-${id}` : `p-${id}`;
 }
 
 export default function HomeSearchScreen() {
@@ -68,16 +83,29 @@ export default function HomeSearchScreen() {
   const [personalResults, setPersonalResults] = useState<SearchResult[]>([]);
   const [externalResults, setExternalResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false); // initial load
-  const [loadingMore, setLoadingMore] = useState(false); // pagination load (external only)
+  const [loadingMore, setLoadingMore] = useState(false); // pagination load
   const [error, setError] = useState("");
 
-  const [offset, setOffset] = useState(0);
+  const [personalOffset, setPersonalOffset] = useState(0);
+  const [externalOffset, setExternalOffset] = useState(0);
+  const [personalExhausted, setPersonalExhausted] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const fetchingRef = useRef(false);
 
   // Display user-generated recipes first, then external recipes in a unified list
-  const results = useMemo(() => [...personalResults, ...externalResults], [personalResults, externalResults]);
+  const results = useMemo(() => {
+    const merged = [...personalResults, ...externalResults];
+    const seen = new Set<string>(); // Track seen results to avoid duplicates
+    const unique: SearchResult[] = []; // Unique results
+    for (const item of merged) {
+      const key = getResultKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique;
+  }, [personalResults, externalResults]);
 
   const searchKey = useMemo(
     () => buildSearchKey(queryParam, appliedFilters),
@@ -95,7 +123,9 @@ export default function HomeSearchScreen() {
       if (cached) {
         setPersonalResults(cached.personalResults);
         setExternalResults(cached.externalResults);
-        setOffset(cached.offset);
+        setPersonalOffset(cached.personalOffset);
+        setExternalOffset(cached.externalOffset);
+        setPersonalExhausted(cached.personalExhausted);
         setHasMore(cached.hasMore);
         setLoading(false);
         return;
@@ -103,7 +133,9 @@ export default function HomeSearchScreen() {
     }
 
     setLoading(true);
-    setOffset(0);
+    setPersonalOffset(0);
+    setExternalOffset(0);
+    setPersonalExhausted(false);
     setHasMore(true);
 
     let cancelled = false;
@@ -114,7 +146,8 @@ export default function HomeSearchScreen() {
       budgetMax: String(appliedFilters.budgetMax),
       limit: String(PAGE_SIZE),
       q: trimmed,
-      offset: "0",
+      personalOffset: "0",
+      externalOffset: "0",
     });
 
     fetch(`${API_BASE}/api/combined-recipes?${params}`)
@@ -125,30 +158,41 @@ export default function HomeSearchScreen() {
       .then((combinedData) => {
         if (cancelled) return;
 
-        const personal: SearchResult[] = Array.isArray(
-          combinedData?.personalResults,
-        )
-          ? combinedData.personalResults
-          : Array.isArray(combinedData?.results)
-            ? combinedData.results
-            : [];
-        const ext: SearchResult[] = Array.isArray(
-          combinedData?.externalResults,
-        )
-          ? combinedData.externalResults
-          : [];
+        const personal = combinedData?.personalResults ?? [];
+        const ext = combinedData?.externalResults ?? [];
+        const meta = combinedData?.meta ?? null;
 
         setPersonalResults(personal);
         setExternalResults(ext);
-        setHasMore(ext.length === PAGE_SIZE);
-        setOffset(PAGE_SIZE);
+        setPersonalOffset(meta?.personalOffset ?? 0);
+        setExternalOffset(meta?.externalOffset ?? 0);
+
+        const personalReturned = meta?.personalReturned ?? 0;
+        const externalReturned = meta?.externalReturned ?? 0;
+        const externalTotal = meta?.externalTotalResults as number | null | undefined;
+        const externalOffsetFromMeta = meta?.externalOffset ?? 0;
+
+        const morePersonal = !(meta?.personalExhausted ?? false);
+        const moreExternal =
+          typeof externalTotal === "number"
+            ? externalOffsetFromMeta + externalReturned < externalTotal
+            : externalReturned === PAGE_SIZE;
+        /* Fetch more if: 
+        * - there are still more personal results to fetch
+        * - the number of external results consumed so far is less than the total number of external results
+        */
+        setHasMore(morePersonal || moreExternal);
+        setPersonalExhausted(meta?.personalExhausted ?? false);
 
         // Cache the combined + external results for this query + filters
         searchCache[searchKey] = {
           personalResults: personal,
           externalResults: ext,
-          offset: PAGE_SIZE,
-          hasMore: ext.length === PAGE_SIZE,
+          personalOffset: meta?.personalOffset ?? 0,
+          externalOffset: meta?.externalOffset ?? 0,
+          personalExhausted: meta?.personalExhausted ?? false,
+          hasMore:
+            morePersonal || moreExternal,
         };
       })
       .catch((e) => {
@@ -170,55 +214,66 @@ export default function HomeSearchScreen() {
     setSearchQuery(queryParam);
   }, [queryParam]);
 
-  const fetchPage = async (q: string, nextOffset: number, append: boolean) => {
-    const trimmed = q.trim();
+  const fetchMore = async () => {
+    const trimmed = queryParam.trim();
     if (!trimmed) return;
 
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
-    if (append) setLoadingMore(true);
-
+    setLoadingMore(true);
     setError("");
 
-    const externalParams = new URLSearchParams({
-      q: trimmed,
-      limit: String(PAGE_SIZE),
-      offset: String(nextOffset),
+    const params = new URLSearchParams({
       budgetMin: String(appliedFilters.budgetMin),
       budgetMax: String(appliedFilters.budgetMax),
+      limit: String(PAGE_SIZE),
+      q: trimmed,
+      personalOffset: String(personalOffset),
+      externalOffset: String(externalOffset),
     });
+
+    // Once personal results are exhausted, skip attempt to retrieve personal recipes in the backend entirely
+    if (personalExhausted) {
+      params.set("externalOnly", "true");
+    }
+
     try {
-      const res = await fetch(
-        `${API_BASE}/api/external-recipes/search?${externalParams}`
-      );
+      const res = await fetch(`${API_BASE}/api/combined-recipes?${params}`);
       const data = await res.json();
 
       if (!res.ok) {
         setError(data?.error ?? "Search failed.");
-        if (!append) setExternalResults([]);
         setHasMore(false);
         return;
       }
 
-      const page: SearchResult[] = Array.isArray(data?.results)
-        ? data.results
-        : [];
+      const personal = data?.personalResults ?? [];
+      const ext = data?.externalResults ?? [];
+      const meta = data?.meta ?? null;
+      setPersonalExhausted(meta?.personalExhausted ?? false);
+      setPersonalResults((prev) => [...prev, ...personal]);
+      setExternalResults((prev) => [...prev, ...ext]);
 
-      // Remove duplicates from the page results
-      const existingIds = append
-        ? new Set(externalResults.map((r) => r.id))
-        : new Set<number>();
-      const deduped = append
-        ? page.filter((r) => !existingIds.has(r.id))
-        : page;
-      const nextExternal = append
-        ? [...externalResults, ...deduped]
-        : page;
+      const personalReturned = meta?.personalReturned ?? 0;
+      const externalReturned = meta?.externalReturned ?? 0;
+      const externalTotal = meta?.externalTotalResults as number | null | undefined;
+      const externalOffsetFromMeta = meta?.externalOffset ?? 0;
 
-      setExternalResults(nextExternal);
-      setHasMore(page.length === PAGE_SIZE);
-      setOffset(nextOffset + PAGE_SIZE);
+      setPersonalOffset((prev) => prev + personalReturned);
+      setExternalOffset((prev) => prev + externalReturned);
+
+      const morePersonal = !(meta?.personalExhausted ?? false);
+      const moreExternal =
+        typeof externalTotal === "number"
+          ? externalOffsetFromMeta + externalReturned < externalTotal
+          : externalReturned === PAGE_SIZE;
+
+      /* Fetch more if: 
+      * - there are still more personal results to fetch
+      * - the number of external results consumed so far is less than the total number of external results
+      */
+      setHasMore(morePersonal || moreExternal);
 
       // Update cache entry for this query + filters if it exists
       const trimmedKey = trimmed ? searchKey : null;
@@ -226,14 +281,23 @@ export default function HomeSearchScreen() {
         const cached = searchCache[trimmedKey];
         searchCache[trimmedKey] = {
           ...cached,
-          externalResults: nextExternal,
-          offset: nextOffset + PAGE_SIZE,
-          hasMore: page.length === PAGE_SIZE,
+          personalResults: [...cached.personalResults, ...personal],
+          externalResults: [...cached.externalResults, ...ext],
+          personalOffset: cached.personalOffset + (meta?.personalReturned ?? 0),
+          externalOffset: cached.externalOffset + (meta?.externalReturned ?? 0),
+          personalExhausted:
+            meta?.personalExhausted
+              ? meta.personalExhausted
+              : cached.personalExhausted || (meta?.personalReturned ?? 0) < PAGE_SIZE,
+          hasMore:
+            morePersonal ||
+            (typeof externalTotal === "number"
+              ? externalOffsetFromMeta + externalReturned < externalTotal
+              : externalReturned === PAGE_SIZE),
         };
       }
     } catch (e: any) {
       setError(e?.message ?? "Network error.");
-      if (!append) setExternalResults([]);
       setHasMore(false);
     } finally {
       setLoadingMore(false);
@@ -252,7 +316,7 @@ export default function HomeSearchScreen() {
     if (!hasMore) return;
     if (loading || loadingMore) return;
 
-    fetchPage(queryParam, offset, true);
+    fetchMore();
   };
 
   const renderItem = ({ item }: { item: SearchResult }) => {
@@ -271,18 +335,16 @@ export default function HomeSearchScreen() {
   };
 
   return (
-    <ThemedSafeView className="flex-1">
+    <ThemedSafeView className="flex-1 pt-safe-or-20">
       <FlatList
         data={results}
-        keyExtractor={(item) =>
-          typeof item.id === "string" ? `p-${item.id}` : `e-${item.id}`
-        }
+        keyExtractor={getResultKey}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
         onEndReached={queryParam ? handleLoadMore : undefined}
         onEndReachedThreshold={0.6}
         ListHeaderComponent={
-          <View className="pt-16 pb-2">
+          <View className="pb-2">
             <View className="flex-row justify-center items-center gap-2 mb-3">
               <View>
                 {hasActiveFilters(appliedFilters) && (

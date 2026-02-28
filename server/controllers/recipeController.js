@@ -392,6 +392,7 @@ export const getAllRecipes = async (filters = {}) => {
   // Limit the number of recipes to fetch between 1 and 200
   const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 200);
   const q = typeof filters.q === "string" ? filters.q.trim().toLowerCase() : "";
+  const offset = Number.isFinite(Number(filters.offset)) ? Number(filters.offset) : 0;
 
   const fetchLimit = 200;
   const snap = await db
@@ -418,7 +419,7 @@ export const getAllRecipes = async (filters = {}) => {
   });
 
   // Return a set number of recipes containing all of its information
-  return filtered.slice(0, limit);
+  return filtered.slice(offset, offset + limit);
 };
 
 /**
