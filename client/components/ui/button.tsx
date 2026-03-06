@@ -21,6 +21,11 @@ const variants = {
   primary: { background: "bg-background", text: "text-foreground" },
   // Muted theme
   muted: { background: "bg-muted-background", text: "text-muted-foreground" },
+
+  outline: {
+      background: "bg-white border border-red-secondary",
+      text: "text-red-secondary",
+    },
 };
 
 const sizes = {
@@ -71,7 +76,13 @@ const Button = ({
       >
         <Text className={twMerge(variants[variant].text, textClassName)}>{children}</Text>
         {icon && (
-          <IconSymbol name={icon.name} size={icon.size ?? 20} color={theme[icon.color as keyof typeof theme]} />
+          <IconSymbol name={icon.name} size={icon.size ?? 20}
+          color={
+            icon.color
+              ? theme[icon.color as keyof typeof theme] ?? icon.color
+              : theme.foreground
+          }
+          />
         )}
       </View>
     </TouchableOpacity>
