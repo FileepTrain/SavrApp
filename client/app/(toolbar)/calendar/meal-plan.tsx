@@ -7,8 +7,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import React, { useCallback, useState } from "react";
-import { Alert, Pressable, Text, View, Modal } from "react-native";
+import { Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
 import Button from "@/components/ui/button";
+import { RecipeCard } from "@/components/recipe-card";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
@@ -95,8 +96,33 @@ export default function MealPlanPage() {
     }
   };
 
+  const renderRecipeCard = (recipe: any) => {
+    if (!recipe) return null;
+    return (
+      <View className="mb-3 gap-2">
+        <RecipeCard
+          id={recipe.id}
+          variant="horizontal"
+          title={recipe.title}
+          calories={recipe.calories}
+          rating={recipe.rating}
+          reviewsLength={recipe.reviews?.length || 0}
+          imageUrl={recipe.image ?? undefined}
+          onPress={() => router.push(`/recipe/${recipe.id}`)}
+        />
+      </View>
+    );
+  };
+
+  const renderMealContainer = (meal:string, color:any) => {}
+
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-safe-or-20">
+    <ScrollView
+      className="flex-1 px-4"
+      contentContainerStyle={{ paddingBottom: 40 }}
+      showsVerticalScrollIndicator={false}
+    >
       <Text className="py-4"> Plan Duration </Text>
       {/* Plan Duration container */}
       <View className="flex-row gap-4 w-full">
@@ -142,7 +168,7 @@ export default function MealPlanPage() {
         </View>
 
         {breakfastRecipe && (
-          <Text className="text-base text-muted-foreground">{breakfastRecipe.title}</Text>
+          renderRecipeCard(breakfastRecipe)
         )}
         <Button
           variant="outline"
@@ -171,7 +197,7 @@ export default function MealPlanPage() {
         </View>
 
         {lunchRecipe && (
-          <Text className="text-base text-muted-foreground">{lunchRecipe.title}</Text>
+          renderRecipeCard(lunchRecipe)
         )}
       <Button
         variant="outline"
@@ -201,7 +227,7 @@ export default function MealPlanPage() {
         </View>
 
         {dinnerRecipe && (
-          <Text className="text-base text-muted-foreground">{dinnerRecipe.title}</Text>
+          renderRecipeCard(dinnerRecipe)
         )}
         <Button
           variant="outline"
@@ -281,6 +307,7 @@ export default function MealPlanPage() {
             </Pressable>
           </Pressable>
         </Modal>
+    </ScrollView>
     </ThemedSafeView>
   );
 }
