@@ -31,6 +31,10 @@ async function findByExternal(externalSource, externalId) {
 
   const data = snap.data();
 
+  const reviews = Array.isArray(data.reviews) ? data.reviews : [];
+  const reviewCount = Number.isFinite(Number(data.reviewCount)) ? Number(data.reviewCount) : reviews.length;
+  const totalStars = Number.isFinite(Number(data.totalStars)) ? Number(data.totalStars) : reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0);
+
   return {
     id: String(data.externalId ?? externalId),
     title: data.title ?? null,
@@ -48,6 +52,8 @@ async function findByExternal(externalSource, externalId) {
     diets: data.diets ?? null,
     cuisines: data.cuisines ?? null,
     price: typeof data.price === "number" ? data.price : null,
+    reviewCount,
+    totalStars,
     _docId: docId,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,

@@ -19,6 +19,8 @@ type SearchResult = {
   image?: string;
   calories?: number | null;
   price?: number | null;
+  rating?: number;
+  reviewsLength?: number;
 };
 
 const API_BASE = "http://10.0.2.2:3000";
@@ -329,6 +331,8 @@ export default function HomeSearchScreen() {
           title={item.title}
           imageUrl={item.image ?? undefined}
           calories={item.calories ?? undefined}
+          rating={item.rating ?? 0}
+          reviewsLength={item.reviewsLength ?? 0}
         />
       </View>
     );

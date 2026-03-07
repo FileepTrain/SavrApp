@@ -38,7 +38,8 @@ function passesFilters(recipe, filters) {
   if (filters.budget) {
     const { min, max } = filters.budget;
     const price = recipe.price;
-    if (typeof price !== "number" || price < min || price > max) return false;
+    // Only exclude when we have a price and it's outside the range; recipes without price still show
+    if (typeof price === "number" && (price < min || price > max)) return false;
   }
 
   // Future: if (filters.allergies?.length) { ... }
@@ -228,7 +229,11 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
       newlyCachedCount += 1;
     }
 
-    // Add the cached / newly cached recipe to the resultsWithPrice array
+    // Add the cached / newly cached recipe to the resultsWithPrice array (include rating for search screen)
+    const reviewCount = doc && Number.isFinite(Number(doc.reviewCount)) ? Number(doc.reviewCount) : 0;
+    const totalStars = doc && Number.isFinite(Number(doc.totalStars)) ? Number(doc.totalStars) : 0;
+    const rating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+
     if (doc) {
       resultsWithPrice.push({
         id: Number(doc.id),
@@ -236,6 +241,8 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
         image: doc.image ?? recipeData.image ?? null,
         calories: doc.calories ?? null,
         price: typeof doc.price === "number" ? doc.price : null,
+        rating,
+        reviewsLength: reviewCount,
         _cached: wasCached,
       });
     } else {
@@ -246,6 +253,8 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
         image: recipeData.image ?? null,
         calories: null,
         price: null,
+        rating: 0,
+        reviewsLength: 0,
         _cached: false,
       });
     }

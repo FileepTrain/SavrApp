@@ -68,6 +68,8 @@ type ExternalRecipe = {
   equipment?: EquipmentItem[];
   nutrition?: { nutrients: Nutrient[] } | null;
   price?: number;
+  reviewCount?: number;
+  totalStars?: number;
 };
 
 /** Display shape used by the UI (normalized from both personal and external) */
@@ -174,6 +176,10 @@ export default function RecipeDetailsPage() {
 
           const r = data.recipe;
 
+          const reviewCount = typeof r.reviewCount === "number" ? r.reviewCount : (Array.isArray(r.reviews) ? r.reviews.length : 0);
+          const totalStars = typeof r.totalStars === "number" ? r.totalStars : (Array.isArray(r.reviews) ? r.reviews.reduce((s: number, rev: { rating?: number }) => s + (rev?.rating ?? 0), 0) : 0);
+          const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+
           setRecipe({
             title: r.title,
             summary: r.summary,
@@ -193,8 +199,8 @@ export default function RecipeDetailsPage() {
                   )
                 ) || undefined
                 : undefined,
-            rating: r.rating,
-            reviewsLength: r.reviews?.length ?? 0,
+            rating: avgRating,
+            reviewsLength: reviewCount,
             price: r.price,
           });
 
@@ -232,6 +238,10 @@ export default function RecipeDetailsPage() {
               ? Math.round(Number(caloriesNutrient.amount))
               : undefined;
 
+          const reviewCount = typeof r.reviewCount === "number" ? r.reviewCount : 0;
+          const totalStars = typeof r.totalStars === "number" ? r.totalStars : 0;
+          const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+
           setRecipe({
             title: r.title,
             image: r.image,
@@ -241,8 +251,8 @@ export default function RecipeDetailsPage() {
             instructions: r.instructions ?? undefined,
             equipment: r.equipment ?? [],
             calories,
-            rating: 0,
-            reviewsLength: 0,
+            rating: avgRating,
+            reviewsLength: reviewCount,
             price: r.price ?? undefined,
           });
 

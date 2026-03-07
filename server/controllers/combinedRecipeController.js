@@ -140,12 +140,17 @@ export const getFilteredFeed = async (req, res) => {
                   ),
                 ) || null
               : null;
+        const count = Number.isFinite(Number(r.reviewCount)) ? Number(r.reviewCount) : (Array.isArray(r.reviews) ? r.reviews.length : 0);
+        const totalStars = Number.isFinite(Number(r.totalStars)) ? Number(r.totalStars) : (Array.isArray(r.reviews) ? r.reviews.reduce((s, rev) => s + (rev?.rating ?? 0), 0) : 0);
+        const rating = count > 0 ? Math.round((totalStars / count) * 10) / 10 : 0;
         return {
           id: r.id,
           title: r.title ?? null,
           image: r.image ?? null,
           calories: calories ?? undefined,
           price: typeof r.price === "number" ? r.price : null,
+          rating,
+          reviewsLength: count,
         };
       });
       if (personalResults.length < personalRequested) {

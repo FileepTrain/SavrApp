@@ -235,6 +235,8 @@ export const createRecipe = async (req, res) => {
       diets: [],
       cuisines: [],
       reviews: [],
+      reviewCount: 0,
+      totalStars: 0,
 
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -405,8 +407,10 @@ export const getAllRecipes = async (filters = {}) => {
 
   const filtered = docs.filter((r) => {
     const price = r.price;
-    if (price == null || typeof price !== "number") return false;
-    if (price < budgetMin || price > budgetMax) return false;
+    // Only filter by budget when recipe has a price; recipes without price are still shown
+    if (price != null && typeof price === "number") {
+      if (price < budgetMin || price > budgetMax) return false;
+    }
     if (q) {
       const title = (r.title ?? "").toLowerCase();
       const summary = (r.summary ?? "").toLowerCase();
