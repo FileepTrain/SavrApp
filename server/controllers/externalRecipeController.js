@@ -350,11 +350,25 @@ export const getExternalRecipeDetails = async (req, res) => {
   }
 };
 
-// Pulls cached recipe from Firestore
+// Pulls cached recipe from Firestore; optionally filters by budget (budgetMin, budgetMax)
 export const getExternalRecipeFeed = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
-    const results = await ExternalRecipeModel.getLatestCached(limit);
+    const budgetMin = Number.isFinite(Number(req.query.budgetMin)) ? Number(req.query.budgetMin) : 0;
+    const budgetMax = Number.isFinite(Number(req.query.budgetMax)) ? Number(req.query.budgetMax) : 100;
+    const fetchLimit = budgetMin > 0 || budgetMax < 100 ? Math.min(limit * 5, 100) : limit;
+    let results = await ExternalRecipeModel.getLatestCached(fetchLimit);
+    // Always sort by most views first so order is consistent after filter/reset
+    const viewCount = (r) => (r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0);
+    results.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
+    if (budgetMin > 0 || budgetMax < 100) {
+      results = results.filter((r) => {
+        const price = r.price;
+        if (price == null || typeof price !== "number") return true;
+        return price >= budgetMin && price <= budgetMax;
+      });
+    }
+    results = results.slice(0, limit);
     return res.json({ success: true, results });
   } catch (error) {
     console.error("Error getting external recipe feed:", error);

@@ -41,11 +41,19 @@ export default function HomeScreen() {
     router.push(`/(toolbar)/home/search?${params.toString()}`);
   };
 
-  // Fetch feed from server
+  // Fetch feed from server (with current filters so backend can filter when supported)
   const fetchFeed = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SERVER_URL}/api/external-recipes/feed?limit=20`);
+      const params = new URLSearchParams({
+        limit: "20",
+        budgetMin: String(appliedFilters.budgetMin),
+        budgetMax: String(appliedFilters.budgetMax),
+        allergies: appliedFilters.allergies.join(","),
+        foodTypes: appliedFilters.foodTypes.join(","),
+        cookware: appliedFilters.cookware.join(","),
+      });
+      const res = await fetch(`${SERVER_URL}/api/external-recipes/feed?${params}`);
       const raw = await res.text();
 
       let data: any;
@@ -67,7 +75,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchFeed();
-  }, []);
+  }, [appliedFilters]);
 
   // Keep header stable
   const Header = useMemo(() => {

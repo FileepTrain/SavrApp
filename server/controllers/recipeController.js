@@ -413,10 +413,13 @@ export const getAllRecipes = async (filters = {}) => {
   const q = typeof filters.q === "string" ? filters.q.trim().toLowerCase() : "";
   const offset = Number.isFinite(Number(filters.offset)) ? Number(filters.offset) : 0;
 
+  console.log("[getAllRecipes] filters:", { budgetMin, budgetMax, limit, q, offset });
+
   const fetchLimit = 200;
+  // Don't orderBy viewCount - Firestore excludes docs that don't have that field, which can return 0 results
   const snap = await db
     .collection(RECIPES_COLL)
-    .orderBy("viewCount", "desc")
+    .orderBy(admin.firestore.FieldPath.documentId())
     .limit(fetchLimit)
     .get();
 
@@ -424,7 +427,7 @@ export const getAllRecipes = async (filters = {}) => {
 
   const filtered = docs.filter((r) => {
     const price = r.price;
-    // Only filter by budget when recipe has a price; recipes without price are still shown
+    // Only exclude when recipe has a price and it's outside the budget range; recipes without price still show
     if (price != null && typeof price === "number") {
       if (price < budgetMin || price > budgetMax) return false;
     }
@@ -439,8 +442,14 @@ export const getAllRecipes = async (filters = {}) => {
     return true;
   });
 
+  // Sort by viewCount desc (treat missing as 0) so "most viewed first" is preserved
+  filtered.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+
+  const sliced = filtered.slice(offset, offset + limit);
+  console.log("[getAllRecipes] docs from DB:", docs.length, "| after filter:", filtered.length, "| returned (slice):", sliced.length);
+
   // Return a set number of recipes containing all of its information
-  return filtered.slice(offset, offset + limit);
+  return sliced;
 };
 
 /**

@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useState } from "react";
-import { router, usePathname } from "expo-router";
 import FilterModal, { Filters } from "@/components/ui/filter_pop_up";
 
 // Initialize default filters when no filters are modified yet
@@ -20,19 +19,7 @@ type HomeFilterContextValue = {
 
 const HomeFilterContext = createContext<HomeFilterContextValue | null>(null);
 
-function buildSearchParams(filters: Filters): string {
-  const params = new URLSearchParams({
-    budgetMin: String(filters.budgetMin),
-    budgetMax: String(filters.budgetMax),
-    allergies: filters.allergies.join(","),
-    foodTypes: filters.foodTypes.join(","),
-    cookware: filters.cookware.join(","),
-  });
-  return params.toString();
-}
-
 export function HomeFilterProvider({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const [appliedFilters, setAppliedFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -43,15 +30,10 @@ export function HomeFilterProvider({ children }: { children: React.ReactNode }) 
   }, [appliedFilters]);
 
   const handleApply = useCallback(() => {
-    const next = draftFilters;
-    setAppliedFilters(next);
+    setAppliedFilters(draftFilters);
     setIsFilterOpen(false);
-    // Move the user to the search page if they are not already on it
-    const onSearch = !pathname?.includes("search");
-    if (onSearch) {
-      router.push(`/(toolbar)/home/search?${buildSearchParams(next)}`);
-    }
-  }, [draftFilters, pathname]);
+    // Filters apply to the current page (home or search); no navigation.
+  }, [draftFilters]);
 
   const resetFilters = useCallback(() => {
     setAppliedFilters(DEFAULT_FILTERS);

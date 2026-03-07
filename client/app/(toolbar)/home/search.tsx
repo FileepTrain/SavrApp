@@ -96,7 +96,7 @@ export default function HomeSearchScreen() {
 
   const fetchingRef = useRef(false);
 
-  // Merge personal + external, dedupe, then sort by view count (most viewed first)
+  // Merge personal + external, dedupe, then sort by view count (most viewed first); stable sort by id when viewCount ties
   const results = useMemo(() => {
     const merged = [...personalResults, ...externalResults];
     const seen = new Set<string>();
@@ -107,7 +107,9 @@ export default function HomeSearchScreen() {
       seen.add(key);
       unique.push(item);
     }
-    unique.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+    const v = (x: SearchResult) => Number(x?.viewCount) || 0;
+    const id = (x: SearchResult) => String(x?.id ?? "");
+    unique.sort((a, b) => v(b) - v(a) || id(a).localeCompare(id(b)));
     return unique;
   }, [personalResults, externalResults]);
 
@@ -144,7 +146,7 @@ export default function HomeSearchScreen() {
 
     let cancelled = false;
 
-    // Search query: fetch personal and external recipes together via combined recipe API
+    // Initial search: fetch both personal (DB) and external (Spoonacular) so all results display; backend returns personal first then external.
     const params = new URLSearchParams({
       budgetMin: String(appliedFilters.budgetMin),
       budgetMax: String(appliedFilters.budgetMax),
@@ -168,35 +170,32 @@ export default function HomeSearchScreen() {
 
         setPersonalResults(personal);
         setExternalResults(ext);
-        setPersonalOffset(meta?.personalOffset ?? 0);
-        setExternalOffset(meta?.externalOffset ?? 0);
-
-        const personalReturned = meta?.personalReturned ?? 0;
-        const externalReturned = meta?.externalReturned ?? 0;
+        const personalReturned = meta?.personalReturned ?? personal.length;
+        const externalReturned = meta?.externalReturned ?? ext.length;
         const externalTotal = meta?.externalTotalResults as number | null | undefined;
-        const externalOffsetFromMeta = meta?.externalOffset ?? 0;
+        const nextPersonalOffset = (meta?.personalOffset ?? 0) + personalReturned;
+        const nextExternalOffset = (meta?.externalOffset ?? 0) + externalReturned;
 
-        const morePersonal = !(meta?.personalExhausted ?? false);
+        setPersonalOffset(nextPersonalOffset);
+        setExternalOffset(nextExternalOffset);
+
+        const personalExhausted = meta?.personalExhausted ?? personal.length < PAGE_SIZE;
+        const morePersonal = !personalExhausted;
+        // When personal is exhausted, allow loading more so fetchMore will request Spoonacular (externalOnly)
         const moreExternal =
           typeof externalTotal === "number"
-            ? externalOffsetFromMeta + externalReturned < externalTotal
-            : externalReturned === PAGE_SIZE;
-        /* Fetch more if: 
-        * - there are still more personal results to fetch
-        * - the number of external results consumed so far is less than the total number of external results
-        */
-        setHasMore(morePersonal || moreExternal);
-        setPersonalExhausted(meta?.personalExhausted ?? false);
+            ? nextExternalOffset < externalTotal
+            : true; // unknown total, so allow try
+        setHasMore(morePersonal || (personalExhausted && moreExternal));
+        setPersonalExhausted(personalExhausted);
 
-        // Cache the combined + external results for this query + filters
         searchCache[searchKey] = {
           personalResults: personal,
           externalResults: ext,
-          personalOffset: meta?.personalOffset ?? 0,
-          externalOffset: meta?.externalOffset ?? 0,
-          personalExhausted: meta?.personalExhausted ?? false,
-          hasMore:
-            morePersonal || moreExternal,
+          personalOffset: nextPersonalOffset,
+          externalOffset: nextExternalOffset,
+          personalExhausted,
+          hasMore: morePersonal || (personalExhausted && moreExternal),
         };
       })
       .catch((e) => {
@@ -237,9 +236,11 @@ export default function HomeSearchScreen() {
       externalOffset: String(externalOffset),
     });
 
-    // Once personal results are exhausted, skip attempt to retrieve personal recipes in the backend entirely
+    // Only fetch from DB until exhausted; then fetch from Spoonacular
     if (personalExhausted) {
       params.set("externalOnly", "true");
+    } else {
+      params.set("personalOnly", "true");
     }
 
     try {

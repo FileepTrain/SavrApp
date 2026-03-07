@@ -107,6 +107,66 @@ async function searchCachedByTitle(externalSource, q, limit = 10) {
   });
 }
 
+/**
+ * Search cached external_recipes by query and return items in combined-feed shape.
+ * Used by combined-recipes so external results come from cache (no Spoonacular API call).
+ * Supports budget filter and offset/limit.
+ */
+async function searchCachedForFeed(externalSource, q, limit = 10, offset = 0, budgetMin = 0, budgetMax = 100) {
+  const db = getDb();
+  const query = (q ?? "").trim().toLowerCase();
+  if (!query) return { results: [], totalResults: 0 };
+
+  const tokens = query
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 10);
+  const tokenQuery = tokens.length ? tokens : [query];
+
+  const fetchSize = Math.min(offset + Math.max(limit, 20), 100);
+  const snap = await db
+    .collection(COLL)
+    .where("externalSource", "==", externalSource)
+    .where("titleTokens", "array-contains-any", tokenQuery)
+    .limit(fetchSize)
+    .get();
+
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const budgetFilter = (r) => {
+    const price = r.price;
+    if (price != null && typeof price === "number") {
+      if (price < budgetMin || price > budgetMax) return false;
+    }
+    return true;
+  };
+  const filtered = docs.filter(budgetFilter);
+  filtered.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+  const sliced = filtered.slice(offset, offset + limit);
+
+  const results = sliced.map((data) => {
+    const reviewCount = Number.isFinite(Number(data.reviewCount)) ? Number(data.reviewCount) : (Array.isArray(data.reviews) ? data.reviews.length : 0);
+    const totalStars = Number.isFinite(Number(data.totalStars)) ? Number(data.totalStars) : (Array.isArray(data.reviews) ? data.reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0) : 0);
+    const rating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+    return {
+      id: Number(data.externalId),
+      title: data.title ?? null,
+      image: data.image ?? null,
+      calories: data.calories ?? null,
+      price: typeof data.price === "number" ? data.price : null,
+      rating,
+      reviewsLength: reviewCount,
+      viewCount: Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0,
+    };
+  });
+
+  return {
+    results,
+    totalResults: filtered.length,
+    _meta: { cachedCount: results.length, offset },
+  };
+}
+
 async function upsertFromExternal(externalSource, externalId, simplified) {
   if (!externalSource || !externalId || !simplified) {
     throw new Error("Missing args for upsertFromExternal");
@@ -181,6 +241,7 @@ async function getLatestCached(limit = 20) {
       image: data.image ?? null,
       calories: data.calories ?? null,
       price: typeof data.price === "number" ? data.price : null,
+      viewCount: Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0,
       _cached: true,
       _docId: d.id,
     };
@@ -190,6 +251,7 @@ async function getLatestCached(limit = 20) {
 export default {
   findByExternal,
   searchCachedByTitle,
+  searchCachedForFeed,
   upsertFromExternal,
   getLatestCached,
   incrementViewCount,

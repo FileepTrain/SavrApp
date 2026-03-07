@@ -29,41 +29,6 @@ type Props = {
   onReset: () => void;
 };
 
-// Filter options
-const ALLERGY_OPTIONS = ["Dairy", "Gluten", "Egg", "Peanut", "Soy", "Seafood"];
-const FOODTYPE_OPTIONS = ["Pasta", "Chicken", "Beef", "Vegetarian", "Vegan", "Dessert"];
-const COOKWARE_OPTIONS = ["Air Fryer", "Oven", "Stovetop", "Slow Cooker", "Instant Pot"];
-
-function toggleInList(list: string[], value: string) {
-  return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
-}
-
-// Filter UI
-function Chip({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`px-3 py-2 rounded-xl border ${selected
-        ? "bg-foreground border-foreground"
-        : "bg-background border-muted-background"
-        }`}
-      style={{ alignSelf: "flex-start" }}
-    >
-      <Text className={selected ? "text-background font-medium" : "text-foreground"}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 export default function FilterModal({
   visible,
   draft,
@@ -121,22 +86,9 @@ export default function FilterModal({
               <View className="flex-row items-center gap-2 mb-3">
                 <Text className="text-base font-semibold text-foreground">Allergies</Text>
               </View>
-
-              <View className="flex-row flex-wrap gap-2">
-                {ALLERGY_OPTIONS.map((a) => (
-                  <Chip
-                    key={a}
-                    label={a}
-                    selected={draft.allergies.includes(a)}
-                    onPress={() =>
-                      onChangeDraft({
-                        ...draft,
-                        allergies: toggleInList(draft.allergies, a),
-                      })
-                    }
-                  />
-                ))}
-              </View>
+              <Pressable className="rounded-xl border border-muted-background border-dashed py-3 px-4 flex-row items-center justify-center" onPress={() => {}}>
+                <Text className="text-base font-medium text-foreground">+ Add filter</Text>
+              </Pressable>
             </View>
 
             {/* Food Types */}
@@ -144,22 +96,9 @@ export default function FilterModal({
               <View className="flex-row items-center gap-2 mb-3">
                 <Text className="text-base font-semibold text-foreground">Food Types</Text>
               </View>
-
-              <View className="flex-row flex-wrap gap-2">
-                {FOODTYPE_OPTIONS.map((t) => (
-                  <Chip
-                    key={t}
-                    label={t}
-                    selected={draft.foodTypes.includes(t)}
-                    onPress={() =>
-                      onChangeDraft({
-                        ...draft,
-                        foodTypes: toggleInList(draft.foodTypes, t),
-                      })
-                    }
-                  />
-                ))}
-              </View>
+              <Pressable className="rounded-xl border border-muted-background border-dashed py-3 px-4 flex-row items-center justify-center" onPress={() => {}}>
+                <Text className="text-base font-medium text-foreground">+ Add filter</Text>
+              </Pressable>
             </View>
 
             {/* Cookware */}
@@ -167,22 +106,9 @@ export default function FilterModal({
               <View className="flex-row items-center gap-2 mb-3">
                 <Text className="text-base font-semibold text-foreground">Cookware Types</Text>
               </View>
-
-              <View className="flex-row flex-wrap gap-2">
-                {COOKWARE_OPTIONS.map((c) => (
-                  <Chip
-                    key={c}
-                    label={c}
-                    selected={draft.cookware.includes(c)}
-                    onPress={() =>
-                      onChangeDraft({
-                        ...draft,
-                        cookware: toggleInList(draft.cookware, c),
-                      })
-                    }
-                  />
-                ))}
-              </View>
+              <Pressable className="rounded-xl border border-muted-background border-dashed py-3 px-4 flex-row items-center justify-center" onPress={() => {}}>
+                <Text className="text-base font-medium text-foreground">+ Add filter</Text>
+              </Pressable>
             </View>
 
             {/* Buttons */}
