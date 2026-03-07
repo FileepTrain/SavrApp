@@ -167,6 +167,8 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   url.searchParams.set("addRecipeInstructions", "true");
   url.searchParams.set("instructionsRequired", "true");
 
+  console.log("[Spoonacular] GET /recipes/complexSearch", { query: q, number, offset: safeOffset });
+
   const resp = await fetch(url, {
     headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
   });

@@ -51,11 +51,24 @@ const RecipeSchema = z.object({
     .array(IngredientSchema)
     .min(1, "At least one ingredient is required"),
   instructions: z.string().min(1, "Instructions are required"),
+  equipment: z.array(z.string()).optional().default([]),
 });
 
 function _constructRecipeDocument(req) {
   const body = req.body || {};
-  // Multipart form data sends all fields as STRINGS; return correct types according to the schema
+  const equipmentRaw = body.equipment;
+  const equipment = Array.isArray(equipmentRaw)
+    ? equipmentRaw
+    : typeof equipmentRaw === "string"
+      ? (() => {
+          try {
+            const parsed = JSON.parse(equipmentRaw);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
   return {
     title: body.title ?? "",
     summary: body.summary ?? "",
@@ -65,6 +78,7 @@ function _constructRecipeDocument(req) {
     servings: Number(body.servings),
     extendedIngredients: JSON.parse(body.extendedIngredients),
     instructions: body.instructions ?? "",
+    equipment: equipment.filter((e) => typeof e === "string" && e.trim()),
   };
 }
 
@@ -140,6 +154,8 @@ async function _computeAndStoreNutritionForDoc(docRef, recipe) {
     // Spoonacular doesn't *need* instructions for nutrition; keep it safe:
     instructions: recipe.instructions || "",
   };
+
+  console.log("[Spoonacular] POST /recipes/analyze", { title: body.title, servings: body.servings, ingredientsCount: ingredientLines.length });
 
   const resp = await axios.post(`${SPOON_BASE}/recipes/analyze`, body, {
     params: { includeNutrition: true },
@@ -224,8 +240,8 @@ export const createRecipe = async (req, res) => {
         image: ing.image ?? null,
       })),
 
-      // Actually store instructions on create
       instructions: recipeData.instructions,
+      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
 
       nutrition: null,
       calories: null,
@@ -587,6 +603,7 @@ export const updateRecipe = async (req, res) => {
       extendedIngredients,
 
       instructions: recipeData.instructions,
+      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
 
       nutrition: ingredientsWereProvided ? null : (existing.nutrition ?? null),
       calories: ingredientsWereProvided ? null : (existing.calories ?? null),

@@ -20,6 +20,8 @@ export const autocompleteIngredients = async (req, res) => {
 
     const url = `${API_BASE}/food/ingredients/search`;
 
+    console.log("[Spoonacular] GET /food/ingredients/search", { query: q, number });
+
     const resp = await axios.get(url, {
       params: { query: q, number },
       headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
@@ -64,6 +66,8 @@ export const getIngredientInfo = async (req, res) => {
     }
 
     const url = `${API_BASE}/food/ingredients/${encodeURIComponent(id)}/information`;
+
+    console.log("[Spoonacular] GET /food/ingredients/:id/information", { id });
 
     const resp = await axios.get(url, {
       headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },

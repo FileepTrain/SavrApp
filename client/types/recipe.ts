@@ -12,6 +12,7 @@ export const RecipeSchema = z.object({
     .array(IngredientSchema)
     .min(1, "At least one ingredient is required"),
   instructions: z.string().min(1, "Instructions are required"),
+  equipment: z.array(z.string()).optional().default([]),
 });
 
 // Inferred TypeScript type from Zod schema
