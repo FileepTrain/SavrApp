@@ -229,10 +229,11 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
       newlyCachedCount += 1;
     }
 
-    // Add the cached / newly cached recipe to the resultsWithPrice array (include rating for search screen)
+    // Add the cached / newly cached recipe to the resultsWithPrice array (include rating and viewCount for search screen)
     const reviewCount = doc && Number.isFinite(Number(doc.reviewCount)) ? Number(doc.reviewCount) : 0;
     const totalStars = doc && Number.isFinite(Number(doc.totalStars)) ? Number(doc.totalStars) : 0;
     const rating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+    const viewCount = doc && Number.isFinite(Number(doc.viewCount)) ? Number(doc.viewCount) : 0;
 
     if (doc) {
       resultsWithPrice.push({
@@ -243,10 +244,10 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
         price: typeof doc.price === "number" ? doc.price : null,
         rating,
         reviewsLength: reviewCount,
+        viewCount,
         _cached: wasCached,
       });
     } else {
-      // Fallback to original Spoonacular data if Firestore doc is still unavailable after upserting
       resultsWithPrice.push({
         id: Number(id),
         title: recipeData.title ?? null,
@@ -255,6 +256,7 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
         price: null,
         rating: 0,
         reviewsLength: 0,
+        viewCount: 0,
         _cached: false,
       });
     }
@@ -280,6 +282,9 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   if (hasActiveFilters) {
     results = results.filter((r) => passesFilters(r, coreFilters));
   }
+
+  // Order by view count (most viewed first)
+  results.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
 
   return {
     results,
@@ -327,6 +332,12 @@ export const getExternalRecipeDetails = async (req, res) => {
     } else if (recipeFromDb.nutrition) {
       recipeFromDb.nutrition = nutritionOnlyNutrients(recipeFromDb.nutrition);
     }
+
+    // Track view (external recipes have no owner, so always increment)
+    ExternalRecipeModel.incrementViewCount(EXTERNAL_SOURCE, id).catch((err) =>
+      console.warn("External recipe view count increment failed:", err?.message),
+    );
+
     return res.json({ success: true, recipe: recipeFromDb });
   } catch (error) {
     console.error("Error getting recipe details:", error);

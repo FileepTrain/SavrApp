@@ -34,6 +34,7 @@ async function findByExternal(externalSource, externalId) {
   const reviews = Array.isArray(data.reviews) ? data.reviews : [];
   const reviewCount = Number.isFinite(Number(data.reviewCount)) ? Number(data.reviewCount) : reviews.length;
   const totalStars = Number.isFinite(Number(data.totalStars)) ? Number(data.totalStars) : reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0);
+  const viewCount = Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0;
 
   return {
     id: String(data.externalId ?? externalId),
@@ -54,10 +55,22 @@ async function findByExternal(externalSource, externalId) {
     price: typeof data.price === "number" ? data.price : null,
     reviewCount,
     totalStars,
+    viewCount,
     _docId: docId,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
   };
+}
+
+async function incrementViewCount(externalSource, externalId) {
+  if (!externalSource || !externalId) return;
+  const db = getDb();
+  const docId = makeDocId(externalSource, externalId);
+  const docRef = db.collection(COLL).doc(docId);
+  await docRef.set(
+    { viewCount: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true },
+  );
 }
 
 async function searchCachedByTitle(externalSource, q, limit = 10) {
@@ -179,4 +192,5 @@ export default {
   searchCachedByTitle,
   upsertFromExternal,
   getLatestCached,
+  incrementViewCount,
 };

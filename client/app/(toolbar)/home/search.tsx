@@ -21,6 +21,7 @@ type SearchResult = {
   price?: number | null;
   rating?: number;
   reviewsLength?: number;
+  viewCount?: number;
 };
 
 const API_BASE = "http://10.0.2.2:3000";
@@ -95,17 +96,18 @@ export default function HomeSearchScreen() {
 
   const fetchingRef = useRef(false);
 
-  // Display user-generated recipes first, then external recipes in a unified list
+  // Merge personal + external, dedupe, then sort by view count (most viewed first)
   const results = useMemo(() => {
     const merged = [...personalResults, ...externalResults];
-    const seen = new Set<string>(); // Track seen results to avoid duplicates
-    const unique: SearchResult[] = []; // Unique results
+    const seen = new Set<string>();
+    const unique: SearchResult[] = [];
     for (const item of merged) {
       const key = getResultKey(item);
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(item);
     }
+    unique.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
     return unique;
   }, [personalResults, externalResults]);
 

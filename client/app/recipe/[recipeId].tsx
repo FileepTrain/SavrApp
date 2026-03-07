@@ -70,6 +70,7 @@ type ExternalRecipe = {
   price?: number;
   reviewCount?: number;
   totalStars?: number;
+  viewCount?: number;
 };
 
 /** Display shape used by the UI (normalized from both personal and external) */
@@ -86,6 +87,7 @@ type DisplayRecipe = {
   calories?: number;
   rating?: number;
   reviewsLength?: number;
+  viewCount?: number;
   price?: number;
 };
 
@@ -201,6 +203,7 @@ export default function RecipeDetailsPage() {
                 : undefined,
             rating: avgRating,
             reviewsLength: reviewCount,
+            viewCount: typeof r.viewCount === "number" ? r.viewCount : 0,
             price: r.price,
           });
 
@@ -253,6 +256,7 @@ export default function RecipeDetailsPage() {
             calories,
             rating: avgRating,
             reviewsLength: reviewCount,
+            viewCount: typeof r.viewCount === "number" ? r.viewCount : 0,
             price: r.price ?? undefined,
           });
 
@@ -339,11 +343,14 @@ export default function RecipeDetailsPage() {
                 {recipe?.title || "Recipe Name"}
               </Text>
 
-              <View className="flex-row items-center justify-center gap-4">
+              <View className="flex-row items-center justify-center gap-4 flex-wrap">
                 <RecipeRating
                   rating={recipe?.rating ?? 0}
                   reviewsLength={recipe?.reviewsLength ?? 0}
                 />
+                <Text className="text-muted-foreground text-sm font-medium">
+                  {(recipe?.viewCount ?? 0).toLocaleString()} views
+                </Text>
                 <Text className="text-muted-foreground text-sm font-medium">
                   Calories: {recipe?.calories != null ? recipe.calories : "—"}
                 </Text>

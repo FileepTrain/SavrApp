@@ -143,6 +143,7 @@ export const getFilteredFeed = async (req, res) => {
         const count = Number.isFinite(Number(r.reviewCount)) ? Number(r.reviewCount) : (Array.isArray(r.reviews) ? r.reviews.length : 0);
         const totalStars = Number.isFinite(Number(r.totalStars)) ? Number(r.totalStars) : (Array.isArray(r.reviews) ? r.reviews.reduce((s, rev) => s + (rev?.rating ?? 0), 0) : 0);
         const rating = count > 0 ? Math.round((totalStars / count) * 10) / 10 : 0;
+        const viewCount = Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0;
         return {
           id: r.id,
           title: r.title ?? null,
@@ -151,6 +152,7 @@ export const getFilteredFeed = async (req, res) => {
           price: typeof r.price === "number" ? r.price : null,
           rating,
           reviewsLength: count,
+          viewCount,
         };
       });
       if (personalResults.length < personalRequested) {
@@ -179,14 +181,19 @@ export const getFilteredFeed = async (req, res) => {
           : null;
     }
 
-    const combinedResults = [...personalResults, ...externalResults];
+    // Merge and sort by view count (most viewed first); ensure every item has viewCount for sort
+    const combined = [...personalResults, ...externalResults].map((r) => ({
+      ...r,
+      viewCount: Number(r.viewCount) || 0,
+    }));
+    combined.sort((a, b) => b.viewCount - a.viewCount);
 
     return res.json({
       success: true,
-      results: combinedResults,
+      results: combined,
       personalResults,
       externalResults,
-      totalCount: combinedResults.length,
+      totalCount: combined.length,
       externalMeta,
       meta: {
         limit,

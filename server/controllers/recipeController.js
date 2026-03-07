@@ -237,6 +237,7 @@ export const createRecipe = async (req, res) => {
       reviews: [],
       reviewCount: 0,
       totalStars: 0,
+      viewCount: 0,
 
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -399,7 +400,7 @@ export const getAllRecipes = async (filters = {}) => {
   const fetchLimit = 200;
   const snap = await db
     .collection(RECIPES_COLL)
-    .orderBy("updatedAt", "desc")
+    .orderBy("viewCount", "desc")
     .limit(fetchLimit)
     .get();
 
@@ -437,23 +438,35 @@ export const getRecipeById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const docRef = await db.collection(RECIPES_COLL).doc(id).get();
+    const docRef = db.collection(RECIPES_COLL).doc(id);
+    const snap = await docRef.get();
 
-    if (!docRef.exists) {
+    if (!snap.exists) {
       return res.status(404).json({
         error: "Recipe not found",
         code: "RECIPE_NOT_FOUND",
       });
     }
 
-    const data = docRef.data();
-    // if (data?.userId !== uid) {
-    //   return res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
-    // }
+    const data = snap.data();
+    const recipePayload = { id: snap.id, ...data };
+
+    // Increment view count only when the viewer is not the recipe owner (don't track own views)
+    if (data.userId !== uid) {
+      try {
+        await docRef.update({
+          viewCount: admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (incErr) {
+        console.warn("View count increment failed:", incErr?.message);
+      }
+      recipePayload.viewCount = (Number(data.viewCount) || 0) + 1;
+    }
 
     return res.json({
       success: true,
-      recipe: { id: docRef.id, ...data },
+      recipe: recipePayload,
     });
   } catch (error) {
     console.error("Error fetching recipe:", error);
