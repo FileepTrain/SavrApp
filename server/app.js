@@ -13,8 +13,8 @@ import pantryRoutes from "./routes/pantryRoutes.js";
 import spoonacularRoutes from "./routes/spoonacular.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import combinedRecipeRoutes from "./routes/combinedRecipeRoutes.js";
+import groceryListRoutes from "./routes/groceryListRoutes.js";
 import mealPlanRoutes from "./routes/mealPlanRoutes.js";
-
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -38,6 +38,7 @@ app.use("/api/pantry", pantryRoutes);
 app.use("/api/spoonacular", spoonacularRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/combined-recipes", combinedRecipeRoutes);
+app.use("/api/grocery-list", groceryListRoutes);
 app.use("/api/meal-plans", mealPlanRoutes);
 
 app.get("/", (req, res) => {
