@@ -8,6 +8,7 @@ const DEFAULT_FILTERS: Filters = {
   allergies: [],
   foodTypes: [],
   cookware: [],
+  useMyCookwareOnly: false,
 };
 
 type HomeFilterContextValue = {

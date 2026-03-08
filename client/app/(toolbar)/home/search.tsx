@@ -2,6 +2,7 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { useHomeFilter, DEFAULT_FILTERS } from "@/contexts/home-filter-context";
+import { loadUserCookware } from "@/utils/cookware";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -41,9 +42,10 @@ function buildSearchKey(query: string, filters: Filters): string {
     query.trim().toLowerCase(),
     filters.budgetMin,
     filters.budgetMax,
-    [...filters.allergies].sort().join(","),
-    [...filters.foodTypes].sort().join(","),
-    [...filters.cookware].sort().join(","),
+    [...(filters.allergies || [])].sort().join(","),
+    [...(filters.foodTypes || [])].sort().join(","),
+    [...(filters.cookware || [])].sort().join(","),
+    filters.useMyCookwareOnly ? "1" : "0",
   ].join("|");
 }
 
@@ -57,7 +59,8 @@ function hasActiveFilters(filters: Filters): boolean {
     a.length === b.length && a.every((x) => b.includes(x));
   if (!sameArray(filters.allergies, DEFAULT_FILTERS.allergies)) return true;
   if (!sameArray(filters.foodTypes, DEFAULT_FILTERS.foodTypes)) return true;
-  if (!sameArray(filters.cookware, DEFAULT_FILTERS.cookware)) return true;
+  if (!sameArray(filters.cookware || [], DEFAULT_FILTERS.cookware)) return true;
+  if (Boolean(filters.useMyCookwareOnly) !== Boolean(DEFAULT_FILTERS.useMyCookwareOnly)) return true;
   return false;
 }
 
@@ -146,17 +149,30 @@ export default function HomeSearchScreen() {
 
     let cancelled = false;
 
-    // Initial search: fetch both personal (DB) and external (Spoonacular) so all results display; backend returns personal first then external.
-    const params = new URLSearchParams({
-      budgetMin: String(appliedFilters.budgetMin),
-      budgetMax: String(appliedFilters.budgetMax),
-      limit: String(PAGE_SIZE),
-      q: trimmed,
-      personalOffset: "0",
-      externalOffset: "0",
-    });
+    const buildParams = (userCookwareList: string[]) => {
+      const params = new URLSearchParams({
+        budgetMin: String(appliedFilters.budgetMin),
+        budgetMax: String(appliedFilters.budgetMax),
+        limit: String(PAGE_SIZE),
+        q: trimmed,
+        personalOffset: "0",
+        externalOffset: "0",
+        cookware: (appliedFilters.cookware || []).join(","),
+        useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
+      });
+      if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
+        params.set("userCookware", userCookwareList.join(","));
+      }
+      return params;
+    };
 
-    fetch(`${API_BASE}/api/combined-recipes?${params}`)
+    const runFetch = async () => {
+      const userCookwareList = appliedFilters.useMyCookwareOnly
+        ? Array.from(await loadUserCookware())
+        : [];
+      if (cancelled) return;
+      const params = buildParams(userCookwareList);
+      fetch(`${API_BASE}/api/combined-recipes?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load recipes.");
         return r.json();
@@ -208,7 +224,8 @@ export default function HomeSearchScreen() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-
+    };
+    runFetch();
     return () => { cancelled = true; };
   }, [queryParam, appliedFilters, searchKey]);
 
@@ -227,6 +244,9 @@ export default function HomeSearchScreen() {
     setLoadingMore(true);
     setError("");
 
+    const userCookwareList = appliedFilters.useMyCookwareOnly
+      ? Array.from(await loadUserCookware())
+      : [];
     const params = new URLSearchParams({
       budgetMin: String(appliedFilters.budgetMin),
       budgetMax: String(appliedFilters.budgetMax),
@@ -234,9 +254,12 @@ export default function HomeSearchScreen() {
       q: trimmed,
       personalOffset: String(personalOffset),
       externalOffset: String(externalOffset),
+      cookware: (appliedFilters.cookware || []).join(","),
+      useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
     });
-
-    // Only fetch from DB until exhausted; then fetch from Spoonacular
+    if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
+      params.set("userCookware", userCookwareList.join(","));
+    }
     if (personalExhausted) {
       params.set("externalOnly", "true");
     } else {

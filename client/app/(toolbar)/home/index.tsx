@@ -7,6 +7,7 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { useHomeFilter } from "@/contexts/home-filter-context";
+import { loadUserCookware } from "@/utils/cookware";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
@@ -45,6 +46,9 @@ export default function HomeScreen() {
   const fetchFeed = async () => {
     setLoading(true);
     try {
+      const userCookwareList = appliedFilters.useMyCookwareOnly
+        ? Array.from(await loadUserCookware())
+        : [];
       const params = new URLSearchParams({
         limit: "20",
         budgetMin: String(appliedFilters.budgetMin),
@@ -52,7 +56,11 @@ export default function HomeScreen() {
         allergies: appliedFilters.allergies.join(","),
         foodTypes: appliedFilters.foodTypes.join(","),
         cookware: appliedFilters.cookware.join(","),
+        useMyCookwareOnly: String(appliedFilters.useMyCookwareOnly),
       });
+      if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
+        params.set("userCookware", userCookwareList.join(","));
+      }
       const res = await fetch(`${SERVER_URL}/api/external-recipes/feed?${params}`);
       const raw = await res.text();
 

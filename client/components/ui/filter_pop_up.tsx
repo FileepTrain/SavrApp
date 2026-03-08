@@ -1,14 +1,16 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Modal,
   View,
   Text,
   Pressable,
   ScrollView,
+  TouchableOpacity,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { FilterCookwareModal } from "@/components/filter-cookware-modal";
 
 // Filter modal state options
 export type Filters = {
@@ -16,7 +18,10 @@ export type Filters = {
   budgetMax: number;
   allergies: string[];
   foodTypes: string[];
+  /** Cookware to exclude: recipes that use any of these are filtered out */
   cookware: string[];
+  /** When true, only show recipes whose cookware is in the user's "My cookware" list */
+  useMyCookwareOnly: boolean;
 };
 
 // Filter actions
@@ -37,15 +42,31 @@ export default function FilterModal({
   onCancel,
   onReset,
 }: Props) {
+  const [cookwareModalVisible, setCookwareModalVisible] = useState(false);
+  const [cookwareDraft, setCookwareDraft] = useState<string[]>([]);
   const budgetLabel = useMemo(
     () => `$${draft.budgetMin}-${draft.budgetMax}`,
     [draft.budgetMin, draft.budgetMax]
   );
 
+  const removeCookware = (item: string) => {
+    onChangeDraft({
+      ...draft,
+      cookware: (draft.cookware || []).filter((c) => c !== item),
+    });
+  };
+
+  const removeMyCookwareOnly = () => {
+    onChangeDraft({
+      ...draft,
+      useMyCookwareOnly: false,
+    });
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable onPress={onCancel} className="flex-1 bg-black/30 items-center justify-center px-6">
-        <Pressable onPress={() => { }} className="w-full max-w-[420px] bg-background rounded-2xl overflow-hidden">
+      <Pressable onPress={onCancel} className="flex-1 bg-black/30 items-center justify-center px-6 py-8">
+        <Pressable onPress={() => {}} className="w-full max-w-[420px] max-h-[85%] bg-background rounded-2xl overflow-hidden">
           {/* Header */}
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-muted-background">
             <Text className="text-xl font-bold text-foreground">Filter by</Text>
@@ -54,7 +75,7 @@ export default function FilterModal({
             </Pressable>
           </View>
 
-          <ScrollView className="px-5 py-4" showsVerticalScrollIndicator={false}>
+          <ScrollView className="px-5 py-4" showsVerticalScrollIndicator={true} style={{ maxHeight: "100%" }}>
             {/* Budget */}
             <View className="mb-6">
               <View className="flex-row items-center justify-between mb-2">
@@ -101,15 +122,74 @@ export default function FilterModal({
               </Pressable>
             </View>
 
-            {/* Cookware */}
+            {/* Cookware Types - chips first (My cookware + excluded cookware), then + Add filter button */}
             <View className="mb-2">
               <View className="flex-row items-center gap-2 mb-3">
                 <Text className="text-base font-semibold text-foreground">Cookware Types</Text>
               </View>
-              <Pressable className="rounded-xl border border-muted-background border-dashed py-3 px-4 flex-row items-center justify-center" onPress={() => {}}>
-                <Text className="text-base font-medium text-foreground">+ Add filter</Text>
-              </Pressable>
+              {(draft.useMyCookwareOnly || (draft.cookware && draft.cookware.length > 0)) && (
+                <View className="flex-row flex-wrap gap-2 mb-3">
+                  {draft.useMyCookwareOnly && (
+                    <View
+                      className="flex-row items-center bg-muted-background rounded-lg pl-3 pr-1 py-2 gap-1"
+                    >
+                      <Text className="text-foreground font-medium">My cookware</Text>
+                      <TouchableOpacity
+                        onPress={removeMyCookwareOnly}
+                        className="p-1"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <IconSymbol name="close" size={18} color="#666" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {(draft.cookware || []).map((item) => (
+                    <View
+                      key={item}
+                      className="flex-row items-center bg-muted-background rounded-lg pl-3 pr-1 py-2 gap-1"
+                    >
+                      <Text className="text-foreground font-medium">{item}</Text>
+                      <TouchableOpacity
+                        onPress={() => removeCookware(item)}
+                        className="p-1"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <IconSymbol name="close" size={18} color="#666" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+              <Button
+                variant="primary"
+                icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-icon" }}
+                className="bg-muted-background rounded-xl"
+                textClassName="text-lg font-medium text-icon"
+                onPress={() => setCookwareModalVisible(true)}
+              >
+                Add filter
+              </Button>
             </View>
+
+            <FilterCookwareModal
+              visible={cookwareModalVisible}
+              onClose={(draftSelection) => {
+                setCookwareModalVisible(false);
+                if (draftSelection) setCookwareDraft(draftSelection);
+              }}
+              onApply={(added, useMyCookwareOnly) => {
+                onChangeDraft({
+                  ...draft,
+                  useMyCookwareOnly: useMyCookwareOnly ?? draft.useMyCookwareOnly,
+                  cookware: [...(draft.cookware || []), ...added],
+                });
+                setCookwareDraft([]);
+                setCookwareModalVisible(false);
+              }}
+              excludeCookware={draft.cookware ?? []}
+              draftSelection={cookwareDraft}
+              initialUseMyCookwareOnly={draft.useMyCookwareOnly ?? false}
+            />
 
             {/* Buttons */}
             <View className="mt-6 gap-3 pb-2">

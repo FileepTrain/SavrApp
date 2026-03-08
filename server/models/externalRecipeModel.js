@@ -107,12 +107,28 @@ async function searchCachedByTitle(externalSource, q, limit = 10) {
   });
 }
 
+function equipmentNames(equipment) {
+  const arr = Array.isArray(equipment) ? equipment : [];
+  return arr
+    .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase().trim());
+}
+
 /**
  * Search cached external_recipes by query and return items in combined-feed shape.
- * Used by combined-recipes so external results come from cache (no Spoonacular API call).
- * Supports budget filter and offset/limit.
+ * Supports budget and cookware filters.
  */
-async function searchCachedForFeed(externalSource, q, limit = 10, offset = 0, budgetMin = 0, budgetMax = 100) {
+async function searchCachedForFeed(
+  externalSource,
+  q,
+  limit = 10,
+  offset = 0,
+  budgetMin = 0,
+  budgetMax = 100,
+  excludeCookware = [],
+  userCookware = null,
+) {
   const db = getDb();
   const query = (q ?? "").trim().toLowerCase();
   if (!query) return { results: [], totalResults: 0 };
@@ -133,6 +149,15 @@ async function searchCachedForFeed(externalSource, q, limit = 10, offset = 0, bu
     .get();
 
   const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const userSet = userCookware && userCookware.length > 0
+    ? new Set(userCookware.map((c) => String(c).toLowerCase().trim()))
+    : null;
+  // When My cookware is on, only exclude cookware the user HAS (so adding "bowl" when user doesn't have bowl does nothing extra)
+  const effectiveExclude = userSet
+    ? (excludeCookware || []).filter((c) => userSet.has(String(c).toLowerCase().trim()))
+    : (excludeCookware || []);
+  const excludeSet = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+
   const budgetFilter = (r) => {
     const price = r.price;
     if (price != null && typeof price === "number") {
@@ -140,7 +165,13 @@ async function searchCachedForFeed(externalSource, q, limit = 10, offset = 0, bu
     }
     return true;
   };
-  const filtered = docs.filter(budgetFilter);
+  const cookwareFilter = (r) => {
+    const names = equipmentNames(r.equipment);
+    if (excludeSet.size > 0 && names.some((n) => excludeSet.has(n))) return false;
+    if (userSet && names.length > 0 && names.some((n) => !userSet.has(n))) return false;
+    return true;
+  };
+  const filtered = docs.filter((r) => budgetFilter(r) && cookwareFilter(r));
   filtered.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
   const sliced = filtered.slice(offset, offset + limit);
 
@@ -242,6 +273,7 @@ async function getLatestCached(limit = 20) {
       calories: data.calories ?? null,
       price: typeof data.price === "number" ? data.price : null,
       viewCount: Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0,
+      equipment: data.equipment ?? [],
       _cached: true,
       _docId: d.id,
     };

@@ -350,15 +350,38 @@ export const getExternalRecipeDetails = async (req, res) => {
   }
 };
 
-// Pulls cached recipe from Firestore; optionally filters by budget (budgetMin, budgetMax)
+function equipmentNamesFromDoc(equipment) {
+  const arr = Array.isArray(equipment) ? equipment : [];
+  return arr
+    .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase().trim());
+}
+
+// Pulls cached recipe from Firestore; optionally filters by budget, cookware, and My cookware
 export const getExternalRecipeFeed = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
     const budgetMin = Number.isFinite(Number(req.query.budgetMin)) ? Number(req.query.budgetMin) : 0;
     const budgetMax = Number.isFinite(Number(req.query.budgetMax)) ? Number(req.query.budgetMax) : 100;
-    const fetchLimit = budgetMin > 0 || budgetMax < 100 ? Math.min(limit * 5, 100) : limit;
+    const cookwareExclude = typeof req.query.cookware === "string"
+      ? req.query.cookware.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const useMyCookwareOnly = String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
+    const userCookwareRaw = typeof req.query.userCookware === "string" ? req.query.userCookware : "";
+    const userCookware = userCookwareRaw ? userCookwareRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const userCookwareSet = useMyCookwareOnly && userCookware.length > 0
+      ? new Set(userCookware.map((c) => String(c).toLowerCase().trim()))
+      : null;
+    // When My cookware is on, only exclude cookware the user HAS (no double effect)
+    const effectiveExclude = userCookwareSet
+      ? cookwareExclude.filter((c) => userCookwareSet.has(String(c).toLowerCase().trim()))
+      : cookwareExclude;
+
+    const fetchLimit = budgetMin > 0 || budgetMax < 100 || effectiveExclude.length > 0 || userCookwareSet
+      ? Math.min(limit * 5, 100)
+      : limit;
     let results = await ExternalRecipeModel.getLatestCached(fetchLimit);
-    // Always sort by most views first so order is consistent after filter/reset
     const viewCount = (r) => (r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0);
     results.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
     if (budgetMin > 0 || budgetMax < 100) {
@@ -366,6 +389,20 @@ export const getExternalRecipeFeed = async (req, res) => {
         const price = r.price;
         if (price == null || typeof price !== "number") return true;
         return price >= budgetMin && price <= budgetMax;
+      });
+    }
+    if (effectiveExclude.length > 0) {
+      const excludeSet = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+      results = results.filter((r) => {
+        const names = equipmentNamesFromDoc(r.equipment);
+        return !names.some((n) => excludeSet.has(n));
+      });
+    }
+    if (userCookwareSet) {
+      results = results.filter((r) => {
+        const names = equipmentNamesFromDoc(r.equipment);
+        if (names.length === 0) return true;
+        return names.every((n) => userCookwareSet.has(n));
       });
     }
     results = results.slice(0, limit);

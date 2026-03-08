@@ -123,7 +123,14 @@ export const getFilteredFeed = async (req, res) => {
         ? Number(req.query.offset)
         : 0;
 
-    const filters = { budgetMin, budgetMax, limit, q };
+    const cookwareExclude = typeof req.query.cookware === "string"
+      ? req.query.cookware.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const useMyCookwareOnly = String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
+    const userCookwareRaw = typeof req.query.userCookware === "string" ? req.query.userCookware : "";
+    const userCookware = userCookwareRaw ? userCookwareRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+    const filters = { budgetMin, budgetMax, limit, q, cookware: cookwareExclude, useMyCookwareOnly, userCookware };
 
     let personalResults = [];
     let remaining = limit;
@@ -181,6 +188,8 @@ export const getFilteredFeed = async (req, res) => {
         externalOffset,
         budgetMin,
         budgetMax,
+        cookwareExclude,
+        useMyCookwareOnly ? userCookware : null,
       );
       externalResults = Array.isArray(cached?.results) ? cached.results : [];
       externalMeta = cached?._meta ?? null;
