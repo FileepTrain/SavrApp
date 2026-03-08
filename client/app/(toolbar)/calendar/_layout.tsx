@@ -18,6 +18,7 @@ export default function CalendarStackLayout() {
       <Stack.Screen name="index" options={{ title: "Calendar", headerShown: false }}/>
       {/* Meal-plan */}
       <Stack.Screen name="meal-plan" options={{ title: "Meal Plan" }}/>
+      <Stack.Screen name="meal-plan-nutrient-preview" options={{ title: "Average Daily Nutrient" }}/>
     </Stack>
   );
 }

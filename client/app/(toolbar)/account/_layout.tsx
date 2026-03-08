@@ -67,6 +67,10 @@ export default function AccountStackLayout() {
           name="cookware-settings"
           options={{ title: "My Cookware" }}
         />
+        <Stack.Screen
+          name="nutrient-display-settings"
+          options={{ title: "Nutrient Display" }}
+        />
       </Stack>
     </PersonalRecipesProvider>
   );

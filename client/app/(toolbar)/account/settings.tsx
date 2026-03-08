@@ -146,6 +146,37 @@ export default function SettingsPage() {
         </View>
       </Pressable>
 
+      {/* Nutrient Display Settings */}
+      <Pressable
+        onPress={() => router.push("/account/nutrient-display-settings")}
+        className="w-full h-[77px] bg-white rounded-[12px] flex-row items-center justify-between px-4 mb-6
+                   shadow-sm"
+        style={{
+          shadowColor: "#000",
+          shadowOpacity: 0.1,
+          shadowOffset: { width: 0, height: 1 },
+          shadowRadius: 3,
+          elevation: 3,
+        }}
+      >
+        <View className="flex-row items-center gap-4">
+          <View className="w-10 h-10 rounded-[10px] bg-[#F2F2F2] items-center justify-center">
+            <IconSymbol name="invoice-list-outline" size={20} color="#666666" />
+          </View>
+          <View className="flex-col">
+            <Text className="text-[16px] font-medium leading-6 tracking-[0.5px] text-black">
+              Nutrient Display
+            </Text>
+            <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
+              Choose which nutrients to show
+            </Text>
+          </View>
+        </View>
+        <View className="w-5 h-5 items-center justify-center">
+          <View className="w-3 h-3 border-r-[1.7px] border-b-[1.7px] border-[#666666] rotate-[-45deg]" />
+        </View>
+      </Pressable>
+
       {/* Dietary preferences button */}
       <Pressable
         onPress={() => router.push("/account/dietary-preferences")}

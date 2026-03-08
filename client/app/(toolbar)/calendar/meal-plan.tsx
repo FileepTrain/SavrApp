@@ -159,6 +159,27 @@ export default function MealPlanPage() {
         )}
       </View>
 
+      <View className="py-3">
+        <Button
+          variant="outline"
+          icon={{ name: "invoice-list-outline", position: "left", size: 18 }}
+          className="rounded-xl border-2 border-[#666]"
+          textClassName="font-semibold text-foreground"
+          onPress={() => {
+            router.push({
+              pathname: "/calendar/meal-plan-nutrient-preview",
+              params: {
+                breakfastId: breakfastRecipe?.id ?? "",
+                lunchId: lunchRecipe?.id ?? "",
+                dinnerId: dinnerRecipe?.id ?? "",
+              },
+            });
+          }}
+        >
+          Preview nutrient
+        </Button>
+      </View>
+
       {/*Breakfast container*/}
       <View className="gap-2 py-4">
         {/*header*/}
