@@ -41,6 +41,7 @@ export interface RecipePayload {
   servings: number;
   extendedIngredients: ExtendedIngredient[];
   instructions: string;
+  equipment?: string[];
 }
 
 export interface UpdateRecipeImageOptions {
@@ -141,8 +142,8 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
       formData.append("cookTime", String(data.cookTime ?? 0));
       formData.append("servings", String(data.servings ?? 1));
       formData.append("instructions", data.instructions ?? "");
-      // IMPORTANT: backend expects THIS key
       formData.append("extendedIngredients", JSON.stringify(data.extendedIngredients));
+      formData.append("equipment", JSON.stringify(Array.isArray(data.equipment) ? data.equipment : []));
 
       if (imageUri) _appendImageToFormData(formData, imageUri);
 
@@ -183,8 +184,8 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
       formData.append("cookTime", String(data.cookTime ?? 0));
       formData.append("servings", String(data.servings ?? 1));
       formData.append("instructions", data.instructions ?? "");
-      // IMPORTANT: backend expects THIS key
       formData.append("extendedIngredients", JSON.stringify(data.extendedIngredients));
+      formData.append("equipment", JSON.stringify(Array.isArray(data.equipment) ? data.equipment : []));
 
       if (imageOptions?.removeImage) formData.append("removeImage", "true");
       else if (imageOptions?.imageUri) _appendImageToFormData(formData, imageOptions.imageUri);

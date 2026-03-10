@@ -1,4 +1,5 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
+import { ALL_NUTRIENTS, loadNutrientDisplayPrefs } from "@/utils/nutrients";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -17,19 +18,15 @@ function isPersonalRecipeId(id: string): boolean {
   return !/^\d+$/.test(id);
 }
 
-/** ✅ Keep the page simple: only show these nutrients (like your UI expects) */
-const DISPLAY_NUTRIENTS = [
-  "Calories",
-  "Protein",
-  "Fat",
-  "Carbohydrates",
-  "Fiber",
-] as const;
-
-function pickDisplayNutrients(all: Nutrient[]): Nutrient[] {
-  if (!Array.isArray(all)) return [];
+function pickDisplayNutrients(
+  all: Nutrient[],
+  allowedNames: Set<string>
+): Nutrient[] {
+  if (!Array.isArray(all) || allowedNames.size === 0) return [];
   const map = new Map(all.map((n) => [String(n.name || "").toLowerCase(), n]));
-  return DISPLAY_NUTRIENTS.map((name) => map.get(name.toLowerCase()))
+  // Use ALL_NUTRIENTS order so display matches settings list order
+  return ALL_NUTRIENTS.filter((name) => allowedNames.has(name))
+    .map((name) => map.get(name.toLowerCase()))
     .filter(Boolean) as Nutrient[];
 }
 
@@ -52,6 +49,8 @@ export default function NutritionPage() {
       setLoading(true);
       setError("");
       setNutrients([]);
+
+      const displayPrefs = await loadNutrientDisplayPrefs();
 
       try {
         // =========================
@@ -98,12 +97,12 @@ export default function NutritionPage() {
                 ? computeJson.nutrition.nutrients
                 : [];
 
-            setNutrients(pickDisplayNutrients(computedNutrients));
+            setNutrients(pickDisplayNutrients(computedNutrients, displayPrefs));
             return;
           }
 
           // 3) show stored nutrition (filtered)
-          setNutrients(pickDisplayNutrients(storedNutrients));
+          setNutrients(pickDisplayNutrients(storedNutrients, displayPrefs));
           return;
         }
 
@@ -124,7 +123,7 @@ export default function NutritionPage() {
             ? r.nutrition.nutrients
             : [];
 
-        setNutrients(pickDisplayNutrients(extNutrients));
+        setNutrients(pickDisplayNutrients(extNutrients, displayPrefs));
       } catch (e: any) {
         setError(e?.message ?? "Something went wrong.");
         setNutrients([]);
@@ -152,7 +151,7 @@ export default function NutritionPage() {
         {!!error && <Text className="text-red-primary mb-3">{error}</Text>}
 
         {nutrients.length === 0 ? (
-          <Text className="opacity-70">No nutrition data available.</Text>
+          <Text className="opacity-70 text-base">No nutrition data available.</Text>
         ) : (
           <View className="bg-background rounded-xl p-4 pt-0 shadow">
             {nutrients.map((n, idx) => (

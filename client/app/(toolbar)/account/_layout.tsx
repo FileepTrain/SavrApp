@@ -79,6 +79,10 @@ export default function AccountStackLayout() {
           name="accessibility-settings"
           options={{ title: "Accessibility" }}
         />
+        <Stack.Screen
+          name="nutrient-display-settings"
+          options={{ title: "Nutrient Display" }}
+        />
       </Stack>
     </PersonalRecipesProvider>
   );

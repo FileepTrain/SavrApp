@@ -28,6 +28,8 @@ export default function ReviewsPage() {
   };
 
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [averageRating, setAverageRating] = useState(0);
+  const [reviewCount, setReviewCount] = useState(0);
   const [loadingReviews, setLoadingReviews] = useState(false);
 
   const loadReviews = async () => {
@@ -49,6 +51,8 @@ export default function ReviewsPage() {
       if (!res.ok) throw new Error(json.error || "Failed to load reviews");
 
       setReviews(Array.isArray(json.reviews) ? json.reviews : []);
+      setAverageRating(typeof json.averageRating === "number" ? json.averageRating : 0);
+      setReviewCount(typeof json.reviewCount === "number" ? json.reviewCount : json.reviews?.length ?? 0);
     } catch (e) {
       setError("Failed to load reviews");
     } finally {
@@ -116,15 +120,24 @@ export default function ReviewsPage() {
 
         {/* Rating Summary */}
         <View className="bg-background rounded-xl shadow p-6 items-center mb-6">
-          <Text className="text-5xl font-bold text-foreground">—</Text>
+          <Text className="text-5xl font-bold text-foreground">
+            {reviewCount > 0 ? averageRating.toFixed(1) : "—"}
+          </Text>
 
           <View className="flex-row mt-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <IconSymbol key={i} name="star" size={24} color="#FBCD4F" />
+              <IconSymbol
+                key={i}
+                name={i + 1 <= Math.round(averageRating) ? "star" : "star-outline"}
+                size={24}
+                color={i + 1 <= Math.round(averageRating) ? "#FBCD4F" : "#D1D5DC"}
+              />
             ))}
           </View>
 
-          <Text className="text-muted-foreground mt-2">Based on {reviews.length} reviews</Text>
+          <Text className="text-muted-foreground mt-2">
+            Based on {reviewCount} {reviewCount === 1 ? "review" : "reviews"}
+          </Text>
         </View>
 
         {/* Reviews List */}

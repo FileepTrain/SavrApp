@@ -1,6 +1,11 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { loadUserCookware, saveUserCookware, ALL_COOKWARE_SORTED } from "@/utils/cookware";
+import {
+  ALL_NUTRIENTS,
+  DEFAULT_DISPLAY_NUTRIENTS,
+  loadNutrientDisplayPrefs,
+  saveNutrientDisplayPrefs,
+} from "@/utils/nutrients";
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -10,8 +15,10 @@ import {
   TextInput,
 } from "react-native";
 
-export default function CookwareSettingsPage() {
-  const [selectedCookware, setSelectedCookware] = useState<Set<string>>(
+const ALL_NUTRIENTS_LIST = [...ALL_NUTRIENTS];
+
+export default function NutrientDisplaySettingsPage() {
+  const [selectedNutrients, setSelectedNutrients] = useState<Set<string>>(
     new Set()
   );
   const [searchQuery, setSearchQuery] = useState("");
@@ -20,26 +27,26 @@ export default function CookwareSettingsPage() {
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
-      const saved = await loadUserCookware();
-      setSelectedCookware(saved);
+      const saved = await loadNutrientDisplayPrefs();
+      setSelectedNutrients(saved);
       setIsLoading(false);
     };
     load();
   }, []);
 
-  const toggleCookware = async (item: string) => {
-    const updated = new Set(selectedCookware);
+  const toggleNutrient = async (item: string) => {
+    const updated = new Set(selectedNutrients);
     if (updated.has(item)) {
       updated.delete(item);
     } else {
       updated.add(item);
     }
-    setSelectedCookware(updated);
-    await saveUserCookware(updated);
+    setSelectedNutrients(updated);
+    await saveNutrientDisplayPrefs(updated);
   };
 
-  const filteredCookware = ALL_COOKWARE_SORTED.filter((item) =>
-    item.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredNutrients = ALL_NUTRIENTS_LIST.filter((item) =>
+    item.toLowerCase().includes(searchQuery.toLowerCase().trim())
   );
 
   return (
@@ -50,7 +57,7 @@ export default function CookwareSettingsPage() {
           <IconSymbol name="magnify" size={20} color="#666666" />
           <TextInput
             className="flex-1 ml-3 text-[16px] text-black"
-            placeholder="Search cookware..."
+            placeholder="Search nutrients..."
             placeholderTextColor="#999999"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -66,11 +73,12 @@ export default function CookwareSettingsPage() {
       {/* Stats */}
       <View className="px-4 pb-3">
         <Text className="text-[14px] text-muted-foreground">
-          {selectedCookware.size} of {ALL_COOKWARE_SORTED.length} cookware selected
+          {selectedNutrients.size} of {ALL_NUTRIENTS_LIST.length} nutrients
+          selected
         </Text>
       </View>
 
-      {/* Cookware List */}
+      {/* Nutrient List */}
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
           <Text className="text-[16px] text-muted-foreground">Loading...</Text>
@@ -78,12 +86,12 @@ export default function CookwareSettingsPage() {
       ) : (
         <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={false}>
           <View className="gap-2 pb-4">
-            {filteredCookware.map((item) => {
-              const isSelected = selectedCookware.has(item);
+            {filteredNutrients.map((item) => {
+              const isSelected = selectedNutrients.has(item);
               return (
                 <Pressable
                   key={item}
-                  onPress={() => toggleCookware(item)}
+                  onPress={() => toggleNutrient(item)}
                   className="bg-white rounded-[12px] flex-row items-center justify-between px-4 h-[56px] shadow-sm"
                 >
                   <Text className="text-[16px] font-medium text-black flex-1">
@@ -107,13 +115,13 @@ export default function CookwareSettingsPage() {
       )}
 
       {/* Quick Actions */}
-      <View className="p-4 pb-2 border-t border-white">
+      <View className="px-4 pb-4 pt-2 border-t border-[#E0E0E0]">
         <View className="flex-row gap-3">
           <Pressable
             onPress={async () => {
-              const all = new Set(ALL_COOKWARE_SORTED);
-              setSelectedCookware(all);
-              await saveUserCookware(all);
+              const all = new Set(ALL_NUTRIENTS_LIST);
+              setSelectedNutrients(all);
+              await saveNutrientDisplayPrefs(all);
             }}
             className="flex-1 bg-white rounded-[12px] h-12 items-center justify-center shadow-sm"
           >
@@ -124,13 +132,25 @@ export default function CookwareSettingsPage() {
           <Pressable
             onPress={async () => {
               const none = new Set<string>();
-              setSelectedCookware(none);
-              await saveUserCookware(none);
+              setSelectedNutrients(none);
+              await saveNutrientDisplayPrefs(none);
             }}
             className="flex-1 bg-white rounded-[12px] h-12 items-center justify-center shadow-sm"
           >
             <Text className="text-[14px] font-medium text-black">
               Clear All
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={async () => {
+              const defaultSet = new Set(DEFAULT_DISPLAY_NUTRIENTS);
+              setSelectedNutrients(defaultSet);
+              await saveNutrientDisplayPrefs(defaultSet);
+            }}
+            className="flex-1 bg-white rounded-[12px] h-12 items-center justify-center shadow-sm"
+          >
+            <Text className="text-[14px] font-medium text-black">
+              Default
             </Text>
           </Pressable>
         </View>

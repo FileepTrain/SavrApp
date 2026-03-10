@@ -38,7 +38,8 @@ function passesFilters(recipe, filters) {
   if (filters.budget) {
     const { min, max } = filters.budget;
     const price = recipe.price;
-    if (typeof price !== "number" || price < min || price > max) return false;
+    // Only exclude when we have a price and it's outside the range; recipes without price still show
+    if (typeof price === "number" && (price < min || price > max)) return false;
   }
 
   // Future: if (filters.allergies?.length) { ... }
@@ -166,6 +167,8 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   url.searchParams.set("addRecipeInstructions", "true");
   url.searchParams.set("instructionsRequired", "true");
 
+  console.log("[Spoonacular] GET /recipes/complexSearch", { query: q, number, offset: safeOffset });
+
   const resp = await fetch(url, {
     headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
   });
@@ -228,7 +231,12 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
       newlyCachedCount += 1;
     }
 
-    // Add the cached / newly cached recipe to the resultsWithPrice array
+    // Add the cached / newly cached recipe to the resultsWithPrice array (include rating and viewCount for search screen)
+    const reviewCount = doc && Number.isFinite(Number(doc.reviewCount)) ? Number(doc.reviewCount) : 0;
+    const totalStars = doc && Number.isFinite(Number(doc.totalStars)) ? Number(doc.totalStars) : 0;
+    const rating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+    const viewCount = doc && Number.isFinite(Number(doc.viewCount)) ? Number(doc.viewCount) : 0;
+
     if (doc) {
       resultsWithPrice.push({
         id: Number(doc.id),
@@ -236,16 +244,21 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
         image: doc.image ?? recipeData.image ?? null,
         calories: doc.calories ?? null,
         price: typeof doc.price === "number" ? doc.price : null,
+        rating,
+        reviewsLength: reviewCount,
+        viewCount,
         _cached: wasCached,
       });
     } else {
-      // Fallback to original Spoonacular data if Firestore doc is still unavailable after upserting
       resultsWithPrice.push({
         id: Number(id),
         title: recipeData.title ?? null,
         image: recipeData.image ?? null,
         calories: null,
         price: null,
+        rating: 0,
+        reviewsLength: 0,
+        viewCount: 0,
         _cached: false,
       });
     }
@@ -271,6 +284,9 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   if (hasActiveFilters) {
     results = results.filter((r) => passesFilters(r, coreFilters));
   }
+
+  // Order by view count (most viewed first)
+  results.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
 
   return {
     results,
@@ -318,6 +334,12 @@ export const getExternalRecipeDetails = async (req, res) => {
     } else if (recipeFromDb.nutrition) {
       recipeFromDb.nutrition = nutritionOnlyNutrients(recipeFromDb.nutrition);
     }
+
+    // Track view (external recipes have no owner, so always increment)
+    ExternalRecipeModel.incrementViewCount(EXTERNAL_SOURCE, id).catch((err) =>
+      console.warn("External recipe view count increment failed:", err?.message),
+    );
+
     return res.json({ success: true, recipe: recipeFromDb });
   } catch (error) {
     console.error("Error getting recipe details:", error);
@@ -328,11 +350,62 @@ export const getExternalRecipeDetails = async (req, res) => {
   }
 };
 
-// Pulls cached recipe from Firestore
+function equipmentNamesFromDoc(equipment) {
+  const arr = Array.isArray(equipment) ? equipment : [];
+  return arr
+    .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase().trim());
+}
+
+// Pulls cached recipe from Firestore; optionally filters by budget, cookware, and My cookware
 export const getExternalRecipeFeed = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
-    const results = await ExternalRecipeModel.getLatestCached(limit);
+    const budgetMin = Number.isFinite(Number(req.query.budgetMin)) ? Number(req.query.budgetMin) : 0;
+    const budgetMax = Number.isFinite(Number(req.query.budgetMax)) ? Number(req.query.budgetMax) : 100;
+    const cookwareExclude = typeof req.query.cookware === "string"
+      ? req.query.cookware.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const useMyCookwareOnly = String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
+    const userCookwareRaw = typeof req.query.userCookware === "string" ? req.query.userCookware : "";
+    const userCookware = userCookwareRaw ? userCookwareRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const userCookwareSet = useMyCookwareOnly && userCookware.length > 0
+      ? new Set(userCookware.map((c) => String(c).toLowerCase().trim()))
+      : null;
+    // When My cookware is on, only exclude cookware the user HAS (no double effect)
+    const effectiveExclude = userCookwareSet
+      ? cookwareExclude.filter((c) => userCookwareSet.has(String(c).toLowerCase().trim()))
+      : cookwareExclude;
+
+    const fetchLimit = budgetMin > 0 || budgetMax < 100 || effectiveExclude.length > 0 || userCookwareSet
+      ? Math.min(limit * 5, 100)
+      : limit;
+    let results = await ExternalRecipeModel.getLatestCached(fetchLimit);
+    const viewCount = (r) => (r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0);
+    results.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
+    if (budgetMin > 0 || budgetMax < 100) {
+      results = results.filter((r) => {
+        const price = r.price;
+        if (price == null || typeof price !== "number") return true;
+        return price >= budgetMin && price <= budgetMax;
+      });
+    }
+    if (effectiveExclude.length > 0) {
+      const excludeSet = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+      results = results.filter((r) => {
+        const names = equipmentNamesFromDoc(r.equipment);
+        return !names.some((n) => excludeSet.has(n));
+      });
+    }
+    if (userCookwareSet) {
+      results = results.filter((r) => {
+        const names = equipmentNamesFromDoc(r.equipment);
+        if (names.length === 0) return true;
+        return names.every((n) => userCookwareSet.has(n));
+      });
+    }
+    results = results.slice(0, limit);
     return res.json({ success: true, results });
   } catch (error) {
     console.error("Error getting external recipe feed:", error);

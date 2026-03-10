@@ -7,8 +7,9 @@
 import admin from "firebase-admin";
 import axios from "axios";
 import { getAllRecipes } from "./recipeController.js";
-import { fetchPriceForTerm, getAccessToken } from "./krogerController.js";
 import { searchExternalRecipes } from "./externalRecipeController.js";
+import { fetchPriceForTerm, getAccessToken } from "./krogerController.js";
+import ExternalRecipeModel from "../models/externalRecipeModel.js";
 
 const KROGER_API_BASE = process.env.KROGER_API_BASE;
 
@@ -95,6 +96,11 @@ async function _getStoreIdForRecipe(zip = "90713") {
  */
 export const getFilteredFeed = async (req, res) => {
   try {
+    // Log full search request so you can debug / replay in terminal
+    const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+    console.log("[combined-recipes] Full URL:", fullUrl);
+    console.log("[combined-recipes] Query params:", JSON.stringify(req.query, null, 2));
+
     // Rely on query params or default values
     const budgetMin = Number.isFinite(Number(req.query.budgetMin))
       ? Number(req.query.budgetMin)
@@ -106,6 +112,8 @@ export const getFilteredFeed = async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const externalOnly =
       String(req.query.externalOnly ?? "false").toLowerCase() === "true";
+    const personalOnly =
+      String(req.query.personalOnly ?? "false").toLowerCase() === "true";
 
     const personalOffset = Number.isFinite(Number(req.query.personalOffset))
       ? Number(req.query.personalOffset)
@@ -116,7 +124,14 @@ export const getFilteredFeed = async (req, res) => {
         ? Number(req.query.offset)
         : 0;
 
-    const filters = { budgetMin, budgetMax, limit, q };
+    const cookwareExclude = typeof req.query.cookware === "string"
+      ? req.query.cookware.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const useMyCookwareOnly = String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
+    const userCookwareRaw = typeof req.query.userCookware === "string" ? req.query.userCookware : "";
+    const userCookware = userCookwareRaw ? userCookwareRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+    const filters = { budgetMin, budgetMax, limit, q, cookware: cookwareExclude, useMyCookwareOnly, userCookware };
 
     let personalResults = [];
     let remaining = limit;
@@ -129,23 +144,24 @@ export const getFilteredFeed = async (req, res) => {
         offset: personalOffset,
       });
       personalResults = recipes.map((r) => {
-        const calories =
-          r.calories != null
-            ? r.calories
-            : Array.isArray(r.nutrition?.nutrients)
-              ? Math.round(
-                  Number(
-                    r.nutrition.nutrients.find((n) => n?.name === "Calories")
-                      ?.amount ?? 0,
-                  ),
-                ) || null
-              : null;
+        let calories = r.calories != null ? r.calories : null;
+        if (calories == null && Array.isArray(r.nutrition?.nutrients)) {
+          const cal = r.nutrition.nutrients.find((n) => String(n?.name || "").toLowerCase() === "calories");
+          if (cal?.amount != null) calories = Math.round(Number(cal.amount));
+        }
+        const count = Number.isFinite(Number(r.reviewCount)) ? Number(r.reviewCount) : (Array.isArray(r.reviews) ? r.reviews.length : 0);
+        const totalStars = Number.isFinite(Number(r.totalStars)) ? Number(r.totalStars) : (Array.isArray(r.reviews) ? r.reviews.reduce((s, rev) => s + (rev?.rating ?? 0), 0) : 0);
+        const rating = count > 0 ? Math.round((totalStars / count) * 10) / 10 : 0;
+        const viewCount = Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0;
         return {
           id: r.id,
           title: r.title ?? null,
           image: r.image ?? null,
           calories: calories ?? undefined,
           price: typeof r.price === "number" ? r.price : null,
+          rating,
+          reviewsLength: count,
+          viewCount,
         };
       });
       if (personalResults.length < personalRequested) {
@@ -154,34 +170,59 @@ export const getFilteredFeed = async (req, res) => {
       remaining = Math.max(remaining - personalResults.length, 0);
     }
 
-    // External results (only when searching with q)
+    // External results from cached external_recipes collection (no Spoonacular API call)
     let externalResults = [];
     let externalMeta = null;
     let externalTotalResults = null;
-    if (remaining > 0 && (q || externalOnly)) {
-      const externalRecipes = await searchExternalRecipes({
-        filters,
-        limit: remaining,
-        offset: String(externalOffset),
-      });
-      externalResults = Array.isArray(externalRecipes?.results)
-        ? externalRecipes.results
-        : [];
-      externalMeta = externalRecipes?._meta ?? null;
+    if (!personalOnly && (q || externalOnly)) {
+      const EXTERNAL_SOURCE = "spoonacular";
+      const cached = await ExternalRecipeModel.searchCachedForFeed(
+        EXTERNAL_SOURCE,
+        q,
+        limit,
+        externalOffset,
+        budgetMin,
+        budgetMax,
+        cookwareExclude,
+        useMyCookwareOnly ? userCookware : null,
+      );
+      externalResults = Array.isArray(cached?.results) ? cached.results : [];
+      externalMeta = cached?._meta ?? null;
       externalTotalResults =
-        typeof externalRecipes?.totalResults === "number"
-          ? externalRecipes.totalResults
-          : null;
+        typeof cached?.totalResults === "number" ? cached.totalResults : externalResults.length;
+    
+      // Fallback to live Spoonacular search when cache has no matches.
+      if (externalResults.length === 0 && q) {
+        const live = await searchExternalRecipes({
+          filters,
+          limit,
+          offset: externalOffset,
+        });
+
+        externalResults = Array.isArray(live?.results) ? live.results : [];
+        externalMeta = {
+          ...(externalMeta || {}),
+          ...(live?._meta || {}),
+          source: "spoonacular-live-fallback",
+        };
+        externalTotalResults =
+          typeof live?.totalResults === "number" ? live.totalResults : externalResults.length;
+      }
     }
 
-    const combinedResults = [...personalResults, ...externalResults];
+    // Merge and sort by view count (most viewed first); ensure every item has viewCount for sort
+    const combined = [...personalResults, ...externalResults].map((r) => ({
+      ...r,
+      viewCount: Number(r.viewCount) || 0,
+    }));
+    combined.sort((a, b) => b.viewCount - a.viewCount);
 
     return res.json({
       success: true,
-      results: combinedResults,
+      results: combined,
       personalResults,
       externalResults,
-      totalCount: combinedResults.length,
+      totalCount: combined.length,
       externalMeta,
       meta: {
         limit,

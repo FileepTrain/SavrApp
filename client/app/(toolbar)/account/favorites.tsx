@@ -1,13 +1,27 @@
+//app/(toolbar)/account/favorites.tsx
 import { ThemedSafeView } from "@/components/themed-safe-view";
-import { useState, useEffect } from "react";
+import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { View, Text, ActivityIndicator, FlatList } from "react-native";
-import { SwipeableRecipeCard } from "@/components/swipeable-recipe-card";
+import { useState, useEffect } from "react";
+import { View, Text, ActivityIndicator, FlatList, TouchableOpacity } from "react-native";
+import { RecipeCard } from "@/components/recipe-card";
 
 const SERVER_URL = "http://10.0.2.2:3000";
-const FAVORITES_KEY = "FAV_RECIPE_IDS";
 
 export default function FavoritesPage() {
+  const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const { setPendingSelectedRecipe } = useMealPlanSelection();
+  const isSelectionMode = mode === "select";
+
+  //console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
+
+  const handleSelectRecipe = (recipe: { id: string; [key: string]: unknown }) => {
+    setPendingSelectedRecipe(recipe);
+    router.back();
+    router.push(`/calendar/meal-plan`)
+  };
   const [favorites, setFavorites] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -71,6 +85,12 @@ export default function FavoritesPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
+      {isSelectionMode && (
+        <Text className="text-center text-muted-foreground mb-2">
+          Tap a recipe to add it to your meal plan
+        </Text>
+      )}
+      
       <View className="gap-4">
         {loading?
           <ActivityIndicator size="large" color="red"/>
@@ -80,15 +100,22 @@ export default function FavoritesPage() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }: {item:any}) =>(
               <View className="mb-3">
-                <SwipeableRecipeCard
+                <RecipeCard
                   id={item.id}
+                  variant="horizontal"
                   title={item.title}
                   calories={item.calories}
                   rating={item.rating}
                   reviewsLength={item.reviews?.length || 0}
-                  image={item.image}
+                  imageURL={item.image ?? undefined}
+                  onPress={() =>{
+                    if (isSelectionMode) {
+                     handleSelectRecipe(item);
+                    } else {
+                      router.push(`/recipe/${item.id}`);
+                    }
+                  }}
                 />
-
               </View>
             )}
           />

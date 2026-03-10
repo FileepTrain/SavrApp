@@ -31,6 +31,11 @@ async function findByExternal(externalSource, externalId) {
 
   const data = snap.data();
 
+  const reviews = Array.isArray(data.reviews) ? data.reviews : [];
+  const reviewCount = Number.isFinite(Number(data.reviewCount)) ? Number(data.reviewCount) : reviews.length;
+  const totalStars = Number.isFinite(Number(data.totalStars)) ? Number(data.totalStars) : reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0);
+  const viewCount = Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0;
+
   return {
     id: String(data.externalId ?? externalId),
     title: data.title ?? null,
@@ -48,10 +53,24 @@ async function findByExternal(externalSource, externalId) {
     diets: data.diets ?? null,
     cuisines: data.cuisines ?? null,
     price: typeof data.price === "number" ? data.price : null,
+    reviewCount,
+    totalStars,
+    viewCount,
     _docId: docId,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
   };
+}
+
+async function incrementViewCount(externalSource, externalId) {
+  if (!externalSource || !externalId) return;
+  const db = getDb();
+  const docId = makeDocId(externalSource, externalId);
+  const docRef = db.collection(COLL).doc(docId);
+  await docRef.set(
+    { viewCount: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true },
+  );
 }
 
 async function searchCachedByTitle(externalSource, q, limit = 10) {
@@ -86,6 +105,103 @@ async function searchCachedByTitle(externalSource, q, limit = 10) {
       _docId: d.id,
     };
   });
+}
+
+function equipmentNames(equipment) {
+  const arr = Array.isArray(equipment) ? equipment : [];
+  return arr
+    .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase().trim());
+}
+
+/**
+ * Search cached external_recipes by query and return items in combined-feed shape.
+ * Supports budget and cookware filters.
+ */
+async function searchCachedForFeed(
+  externalSource,
+  q,
+  limit = 10,
+  offset = 0,
+  budgetMin = 0,
+  budgetMax = 100,
+  excludeCookware = [],
+  userCookware = null,
+) {
+  const db = getDb();
+  const query = (q ?? "").trim().toLowerCase();
+  if (!query) return { results: [], totalResults: 0 };
+
+  const tokens = query
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 10);
+  const tokenQuery = tokens.length ? tokens : [query];
+
+  const fetchSize = Math.min(offset + Math.max(limit, 20), 100);
+  const snap = await db
+    .collection(COLL)
+    .where("externalSource", "==", externalSource)
+    .where("titleTokens", "array-contains-any", tokenQuery)
+    .limit(fetchSize)
+    .get();
+
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const userSet = userCookware && userCookware.length > 0
+    ? new Set(userCookware.map((c) => String(c).toLowerCase().trim()))
+    : null;
+  // When My cookware is on, only exclude cookware the user HAS (so adding "bowl" when user doesn't have bowl does nothing extra)
+  const effectiveExclude = userSet
+    ? (excludeCookware || []).filter((c) => userSet.has(String(c).toLowerCase().trim()))
+    : (excludeCookware || []);
+  const excludeSet = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+
+  const budgetFilter = (r) => {
+    const price = r.price;
+    if (price != null && typeof price === "number") {
+      if (price < budgetMin || price > budgetMax) return false;
+    }
+    return true;
+  };
+  const cookwareFilter = (r) => {
+    const names = equipmentNames(r.equipment);
+    if (excludeSet.size > 0 && names.some((n) => excludeSet.has(n))) return false;
+    if (userSet && names.length > 0 && names.some((n) => !userSet.has(n))) return false;
+    return true;
+  };
+  const filtered = docs.filter((r) => budgetFilter(r) && cookwareFilter(r));
+  filtered.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+  const sliced = filtered.slice(offset, offset + limit);
+
+  const results = sliced.map((data) => {
+    const reviewCount = Number.isFinite(Number(data.reviewCount)) ? Number(data.reviewCount) : (Array.isArray(data.reviews) ? data.reviews.length : 0);
+    const totalStars = Number.isFinite(Number(data.totalStars)) ? Number(data.totalStars) : (Array.isArray(data.reviews) ? data.reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0) : 0);
+    const rating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+    // Use top-level calories, or fallback to nutrition.nutrients Calories (recipe details use this)
+    let calories = data.calories != null ? data.calories : null;
+    if (calories == null && Array.isArray(data.nutrition?.nutrients)) {
+      const cal = data.nutrition.nutrients.find((n) => String(n?.name || "").toLowerCase() === "calories");
+      if (cal?.amount != null) calories = Math.round(Number(cal.amount));
+    }
+    return {
+      id: Number(data.externalId),
+      title: data.title ?? null,
+      image: data.image ?? null,
+      calories: calories ?? null,
+      price: typeof data.price === "number" ? data.price : null,
+      rating,
+      reviewsLength: reviewCount,
+      viewCount: Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0,
+    };
+  });
+
+  return {
+    results,
+    totalResults: filtered.length,
+    _meta: { cachedCount: results.length, offset },
+  };
 }
 
 async function upsertFromExternal(externalSource, externalId, simplified) {
@@ -156,12 +272,19 @@ async function getLatestCached(limit = 20) {
 
   return snap.docs.map((d) => {
     const data = d.data();
+    let calories = data.calories != null ? data.calories : null;
+    if (calories == null && Array.isArray(data.nutrition?.nutrients)) {
+      const cal = data.nutrition.nutrients.find((n) => String(n?.name || "").toLowerCase() === "calories");
+      if (cal?.amount != null) calories = Math.round(Number(cal.amount));
+    }
     return {
       id: Number(data.externalId),
       title: data.title ?? null,
       image: data.image ?? null,
-      calories: data.calories ?? null,
+      calories: calories ?? null,
       price: typeof data.price === "number" ? data.price : null,
+      viewCount: Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0,
+      equipment: data.equipment ?? [],
       _cached: true,
       _docId: d.id,
     };
@@ -171,6 +294,8 @@ async function getLatestCached(limit = 20) {
 export default {
   findByExternal,
   searchCachedByTitle,
+  searchCachedForFeed,
   upsertFromExternal,
   getLatestCached,
+  incrementViewCount,
 };

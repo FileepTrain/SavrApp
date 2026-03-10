@@ -1,6 +1,7 @@
 import { HapticTab } from "@/components/haptic-tab";
 import { useThemePalette } from "@/components/theme-provider";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { MealPlanSelectionProvider } from "@/contexts/meal-plan-selection-context";
 import { Tabs } from "expo-router";
 import React from "react";
 
@@ -8,6 +9,7 @@ export default function TabLayout() {
   const theme = useThemePalette();
 
   return (
+    <MealPlanSelectionProvider>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: theme["--color-red-primary"],
@@ -59,5 +61,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </MealPlanSelectionProvider>
   );
 }

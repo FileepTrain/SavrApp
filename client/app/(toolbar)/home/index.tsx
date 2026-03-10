@@ -7,6 +7,7 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { useHomeFilter } from "@/contexts/home-filter-context";
+import { loadUserCookware } from "@/utils/cookware";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
@@ -41,11 +42,26 @@ export default function HomeScreen() {
     router.push(`/(toolbar)/home/search?${params.toString()}`);
   };
 
-  // Fetch feed from server
+  // Fetch feed from server (with current filters so backend can filter when supported)
   const fetchFeed = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SERVER_URL}/api/external-recipes/feed?limit=20`);
+      const userCookwareList = appliedFilters.useMyCookwareOnly
+        ? Array.from(await loadUserCookware())
+        : [];
+      const params = new URLSearchParams({
+        limit: "20",
+        budgetMin: String(appliedFilters.budgetMin),
+        budgetMax: String(appliedFilters.budgetMax),
+        allergies: appliedFilters.allergies.join(","),
+        foodTypes: appliedFilters.foodTypes.join(","),
+        cookware: appliedFilters.cookware.join(","),
+        useMyCookwareOnly: String(appliedFilters.useMyCookwareOnly),
+      });
+      if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
+        params.set("userCookware", userCookwareList.join(","));
+      }
+      const res = await fetch(`${SERVER_URL}/api/external-recipes/feed?${params}`);
       const raw = await res.text();
 
       let data: any;
@@ -67,7 +83,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchFeed();
-  }, []);
+  }, [appliedFilters]);
 
   // Keep header stable
   const Header = useMemo(() => {

@@ -105,6 +105,7 @@ export default function EditRecipePage() {
       servings: Number(recipeServings),
       extendedIngredients: recipeIngredients,
       instructions: recipeInstructions,
+      equipment: [],
     });
 
     if (!recipe.success) {

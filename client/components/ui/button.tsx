@@ -25,6 +25,11 @@ const variants = {
   muted: { background: "bg-muted-background", text: "text-muted-foreground" },
   // Outline theme
   outline: { background: "bg-background border border-muted-background", text: "text-foreground" },
+  // Outline destructive theme
+  "outline-destructive": {
+    background: "bg-white border border-red-secondary",
+    text: "text-red-secondary",
+  },
 };
 
 const sizes = {
@@ -75,7 +80,13 @@ const Button = ({
       >
         <Text className={twMerge(variants[variant].text, textClassName)}>{children}</Text>
         {icon && (
-          <IconSymbol name={icon.name} size={icon.size ?? 20} color={theme[icon.color as keyof typeof theme]} />
+          <IconSymbol name={icon.name} size={icon.size ?? 20}
+            color={
+              icon.color
+                ? theme[icon.color as keyof typeof theme] ?? icon.color
+                : theme["--color-foreground"]
+            }
+          />
         )}
       </View>
     </TouchableOpacity>

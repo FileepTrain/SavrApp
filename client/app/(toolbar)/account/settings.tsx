@@ -79,18 +79,25 @@ export default function SettingsPage() {
               isLast
             />
           </View>
-        </View>
-        <View className="mt-6 gap-2">
-          <Text className="text-base font-medium text-muted-foreground">Preferences</Text>
-          {/* Accessibility Setting Item */}
-          <View className="rounded-xl shadow-sm overflow-hidden">
-            <AccountMenuItem
-              title="Accessibility"
-              subtitle="Adjust app styling"
-              iconName="human-handsup"
-              onPress={() => router.push("/account/accessibility-settings")}
-              isLast
-            />
+          <View className="mt-6 gap-2">
+            <Text className="text-base font-medium text-muted-foreground">Preferences</Text>
+            {/* Accessibility Setting Item */}
+            <View className="rounded-xl shadow-sm overflow-hidden">
+              <AccountMenuItem
+                title="Accessibility"
+                subtitle="Adjust app styling"
+                iconName="human-handsup"
+                onPress={() => router.push("/account/accessibility-settings")}
+              />
+              {/* Nutrient Display Settings */}
+              <AccountMenuItem
+                title="Nutrient Display"
+                subtitle="Choose which nutrients to show"
+                iconName="invoice-list-outline"
+                onPress={() => router.push("/account/nutrient-display-settings")}
+                isLast
+              />
+            </View>
           </View>
         </View>
         <View className="my-6 gap-2">

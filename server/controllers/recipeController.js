@@ -51,11 +51,24 @@ const RecipeSchema = z.object({
     .array(IngredientSchema)
     .min(1, "At least one ingredient is required"),
   instructions: z.string().min(1, "Instructions are required"),
+  equipment: z.array(z.string()).optional().default([]),
 });
 
 function _constructRecipeDocument(req) {
   const body = req.body || {};
-  // Multipart form data sends all fields as STRINGS; return correct types according to the schema
+  const equipmentRaw = body.equipment;
+  const equipment = Array.isArray(equipmentRaw)
+    ? equipmentRaw
+    : typeof equipmentRaw === "string"
+      ? (() => {
+          try {
+            const parsed = JSON.parse(equipmentRaw);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
   return {
     title: body.title ?? "",
     summary: body.summary ?? "",
@@ -65,6 +78,7 @@ function _constructRecipeDocument(req) {
     servings: Number(body.servings),
     extendedIngredients: JSON.parse(body.extendedIngredients),
     instructions: body.instructions ?? "",
+    equipment: equipment.filter((e) => typeof e === "string" && e.trim()),
   };
 }
 
@@ -140,6 +154,8 @@ async function _computeAndStoreNutritionForDoc(docRef, recipe) {
     // Spoonacular doesn't *need* instructions for nutrition; keep it safe:
     instructions: recipe.instructions || "",
   };
+
+  console.log("[Spoonacular] POST /recipes/analyze", { title: body.title, servings: body.servings, ingredientsCount: ingredientLines.length });
 
   const resp = await axios.post(`${SPOON_BASE}/recipes/analyze`, body, {
     params: { includeNutrition: true },
@@ -224,8 +240,8 @@ export const createRecipe = async (req, res) => {
         image: ing.image ?? null,
       })),
 
-      // Actually store instructions on create
       instructions: recipeData.instructions,
+      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
 
       nutrition: null,
       calories: null,
@@ -235,6 +251,9 @@ export const createRecipe = async (req, res) => {
       diets: [],
       cuisines: [],
       reviews: [],
+      reviewCount: 0,
+      totalStars: 0,
+      viewCount: 0,
 
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -393,11 +412,22 @@ export const getAllRecipes = async (filters = {}) => {
   const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 200);
   const q = typeof filters.q === "string" ? filters.q.trim().toLowerCase() : "";
   const offset = Number.isFinite(Number(filters.offset)) ? Number(filters.offset) : 0;
+  const cookwareExclude = Array.isArray(filters.cookware) ? filters.cookware : [];
+  const useMyCookwareOnly = Boolean(filters.useMyCookwareOnly);
+  const userCookware = Array.isArray(filters.userCookware) ? filters.userCookware : [];
+  const userCookwareLower = new Set(userCookware.map((c) => String(c).toLowerCase().trim()).filter(Boolean));
+  // When My cookware is on, only apply exclude for cookware the user HAS (so adding "bowl" when user doesn't have bowl does nothing extra)
+  const effectiveExclude = useMyCookwareOnly && userCookwareLower.size > 0
+    ? cookwareExclude.filter((c) => userCookwareLower.has(String(c).toLowerCase().trim()))
+    : cookwareExclude;
+
+  console.log("[getAllRecipes] filters:", { budgetMin, budgetMax, limit, q, offset, cookwareExclude: cookwareExclude.length, useMyCookwareOnly });
 
   const fetchLimit = 200;
+  // Don't orderBy viewCount - Firestore excludes docs that don't have that field, which can return 0 results
   const snap = await db
     .collection(RECIPES_COLL)
-    .orderBy("updatedAt", "desc")
+    .orderBy(admin.firestore.FieldPath.documentId())
     .limit(fetchLimit)
     .get();
 
@@ -405,8 +435,9 @@ export const getAllRecipes = async (filters = {}) => {
 
   const filtered = docs.filter((r) => {
     const price = r.price;
-    if (price == null || typeof price !== "number") return false;
-    if (price < budgetMin || price > budgetMax) return false;
+    if (price != null && typeof price === "number") {
+      if (price < budgetMin || price > budgetMax) return false;
+    }
     if (q) {
       const title = (r.title ?? "").toLowerCase();
       const summary = (r.summary ?? "").toLowerCase();
@@ -415,11 +446,29 @@ export const getAllRecipes = async (filters = {}) => {
       const matches = tokens.every((token) => text.includes(token));
       if (!matches) return false;
     }
+    const equipmentRaw = Array.isArray(r.equipment) ? r.equipment : Array.isArray(r.cookware) ? r.cookware : [];
+    const equipmentLower = equipmentRaw
+      .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
+      .filter(Boolean)
+      .map((s) => String(s).toLowerCase().trim());
+    if (effectiveExclude.length > 0) {
+      const excludeLower = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+      if (equipmentLower.some((e) => excludeLower.has(e))) return false;
+    }
+    if (useMyCookwareOnly && userCookwareLower.size > 0) {
+      if (equipmentLower.some((e) => !userCookwareLower.has(e))) return false;
+    }
     return true;
   });
 
+  // Sort by viewCount desc (treat missing as 0) so "most viewed first" is preserved
+  filtered.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+
+  const sliced = filtered.slice(offset, offset + limit);
+  console.log("[getAllRecipes] docs from DB:", docs.length, "| after filter:", filtered.length, "| returned (slice):", sliced.length);
+
   // Return a set number of recipes containing all of its information
-  return filtered.slice(offset, offset + limit);
+  return sliced;
 };
 
 /**
@@ -433,23 +482,35 @@ export const getRecipeById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const docRef = await db.collection(RECIPES_COLL).doc(id).get();
+    const docRef = db.collection(RECIPES_COLL).doc(id);
+    const snap = await docRef.get();
 
-    if (!docRef.exists) {
+    if (!snap.exists) {
       return res.status(404).json({
         error: "Recipe not found",
         code: "RECIPE_NOT_FOUND",
       });
     }
 
-    const data = docRef.data();
-    // if (data?.userId !== uid) {
-    //   return res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
-    // }
+    const data = snap.data();
+    const recipePayload = { id: snap.id, ...data };
+
+    // Increment view count only when the viewer is not the recipe owner (don't track own views)
+    if (data.userId !== uid) {
+      try {
+        await docRef.update({
+          viewCount: admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (incErr) {
+        console.warn("View count increment failed:", incErr?.message);
+      }
+      recipePayload.viewCount = (Number(data.viewCount) || 0) + 1;
+    }
 
     return res.json({
       success: true,
-      recipe: { id: docRef.id, ...data },
+      recipe: recipePayload,
     });
   } catch (error) {
     console.error("Error fetching recipe:", error);
@@ -570,6 +631,7 @@ export const updateRecipe = async (req, res) => {
       extendedIngredients,
 
       instructions: recipeData.instructions,
+      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
 
       nutrition: ingredientsWereProvided ? null : (existing.nutrition ?? null),
       calories: ingredientsWereProvided ? null : (existing.calories ?? null),

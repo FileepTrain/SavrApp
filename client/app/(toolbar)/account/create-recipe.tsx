@@ -8,6 +8,7 @@ import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import Input from "@/components/ui/input";
 
+import { AddCookwareModal } from "@/components/add-cookware-modal";
 import { AddIngredientModal, ExtendedIngredient } from "@/components/add-ingredient-modal";
 import { IngredientsList } from "@/components/recipe/ingredients-list";
 
@@ -26,7 +27,10 @@ export default function CreateRecipePage() {
   const [recipeServings, setRecipeServings] = useState<string>("");
 
   const [recipeIngredients, setRecipeIngredients] = useState<ExtendedIngredient[]>([]);
+  const [recipeCookware, setRecipeCookware] = useState<string[]>([]);
+  const [cookwareDraft, setCookwareDraft] = useState<string[]>([]);
   const [isIngredientModalVisible, setIsIngredientModalVisible] = useState(false);
+  const [isCookwareModalVisible, setIsCookwareModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleAddIngredient = (ingredient: ExtendedIngredient) => {
@@ -35,6 +39,15 @@ export default function CreateRecipePage() {
 
   const handleRemoveIngredient = (index: number) => {
     setRecipeIngredients((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddCookware = (selected: string[]) => {
+    setRecipeCookware((prev) => [...prev, ...selected]);
+    setCookwareDraft([]);
+  };
+
+  const handleRemoveCookware = (item: string) => {
+    setRecipeCookware((prev) => prev.filter((c) => c !== item));
   };
 
   const pickImage = async () => {
@@ -70,6 +83,7 @@ export default function CreateRecipePage() {
         unit: ing.unit,
       })),
       instructions: recipeInstructions,
+      equipment: recipeCookware,
     };
 
     const validated = validateRecipe(payloadForValidation);
@@ -185,15 +199,6 @@ export default function CreateRecipePage() {
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
             <Text className="text-lg text-foreground font-bold">Ingredients</Text>
 
-            <Button
-              variant="outline"
-              icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-muted-foreground" }}
-              textClassName="font-medium text-muted-foreground"
-              onPress={() => setIsIngredientModalVisible(true)}
-            >
-              Add Ingredient
-            </Button>
-
             {recipeIngredients.length > 0 && (
               <IngredientsList
                 list={recipeIngredients.map((ing) => ({
@@ -204,6 +209,16 @@ export default function CreateRecipePage() {
                 onRemove={handleRemoveIngredient}
               />
             )}
+
+            <Button
+              variant="primary"
+              icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-icon" }}
+              className="bg-muted-background rounded-xl"
+              textClassName="text-lg font-medium text-icon"
+              onPress={() => setIsIngredientModalVisible(true)}
+            >
+              Add Ingredient
+            </Button>
           </View>
 
           <AddIngredientModal
@@ -227,6 +242,53 @@ export default function CreateRecipePage() {
               onChangeText={setRecipeInstructions}
             />
           </View>
+
+          {/* Cookware */}
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
+            <Text className="text-lg text-foreground font-bold">Cookware</Text>
+
+            {recipeCookware.length > 0 && (
+              <View className="flex-row flex-wrap gap-2">
+                {recipeCookware.map((item) => (
+                  <View
+                    key={item}
+                    className="flex-row items-center bg-muted-background rounded-lg pl-3 pr-1 py-2 gap-1"
+                  >
+                    <Text className="text-foreground font-medium">{item}</Text>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveCookware(item)}
+                      className="p-1"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <IconSymbol name="close" size={18} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Button
+              variant="primary"
+              icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-icon" }}
+              className="bg-muted-background rounded-xl"
+              textClassName="text-lg font-medium text-icon"
+              onPress={() => setIsCookwareModalVisible(true)}
+            >
+              Add Cookware
+            </Button>
+          </View>
+
+          <AddCookwareModal
+            visible={isCookwareModalVisible}
+            onClose={(draftSelection) => {
+              setIsCookwareModalVisible(false);
+              if (draftSelection) setCookwareDraft(draftSelection);
+            }}
+            onSubmit={handleAddCookware}
+            recipeCookware={recipeCookware}
+            draftSelection={cookwareDraft}
+            summaryAndInstructions={`${recipeSummary}\n${recipeInstructions}`}
+          />
 
           <Button
             variant="default"
