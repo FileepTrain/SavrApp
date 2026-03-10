@@ -15,22 +15,22 @@ For some reason that seems to solve whatever bug causing denied location access 
 */
 async function getLocation() {
   const allowed = await isLocationEnabled();
-  if(!allowed) {
+  if (!allowed) {
     console.log("Location disabled by user");
     return;
   }
 
-  try{
-    const {status} = await Location.requestForegroundPermissionsAsync();
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       console.log("Permission denied");
       return;
     }
 
     const location = await Location.getCurrentPositionAsync();
-    const {latitude, longitude} = location.coords;
-    const [address] = await Location.reverseGeocodeAsync({ latitude, longitude});
-    const zipcode = address?.postalCode?? ''; //if no zip returns empty string
+    const { latitude, longitude } = location.coords;
+    const [address] = await Location.reverseGeocodeAsync({ latitude, longitude });
+    const zipcode = address?.postalCode ?? ''; //if no zip returns empty string
     console.log("Latitude:", latitude);
     console.log("Longitude:", longitude);
     console.log("zipcode:", zipcode)
@@ -41,13 +41,13 @@ async function getLocation() {
 
 export default function GroceryListPage() {
   return (
-    <ThemedSafeView>
-      <Text className="text-foreground text-2xl font-semibold">
+    <ThemedSafeView className="flex-1 bg-app-background">
+      <Text className="text-[24px] font-bold text-foreground">
         Grocery List
       </Text>
 
       <View className="flex-row items-center">
-        <Button title="location" onPress={getLocation}/>
+        <Button title="location" onPress={getLocation} />
       </View>
     </ThemedSafeView>
   );

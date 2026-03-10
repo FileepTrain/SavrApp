@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { AppPreferencesProvider } from "@/contexts/app-preferences-context";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 
@@ -28,12 +29,14 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider className="flex-1">
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-        </Stack>
-        <StatusBar style={colorScheme === "dark" ? "light" : "auto"} />
-      </ThemeProvider>
+      <AppPreferencesProvider>
+        <ThemeProvider className="flex-1">
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+          </Stack>
+          <StatusBar style={colorScheme === "dark" ? "light" : "auto"} />
+        </ThemeProvider>
+      </AppPreferencesProvider>
     </GestureHandlerRootView>
   );
 }

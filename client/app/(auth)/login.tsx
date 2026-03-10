@@ -55,19 +55,23 @@ const LoginPage = () => {
   };
 
   return (
-    <ThemedSafeView className="items-center justify-center">
+    <ThemedSafeView className="flex-1 bg-background">
       <ScrollView className="w-full px-4">
-        <View className="items-center justify-center gap-2">
-          <Image
-            source={images.logo}
-            resizeMode="contain"
-            className="w-[150px] h-[50px]"
-          />
+        <Image
+          source={images.logo}
+          resizeMode="contain"
+          style={{
+            width: 234,
+            height: 76,
+          }}
+        />
+        <View className="mt-4 gap-2">
           <Text className="text-foreground text-3xl font-bold">
             Welcome Back
           </Text>
           <Text className="text-foreground">Sign in to continue</Text>
         </View>
+
         <View className="mt-8 gap-5">
           <Input
             label="Email"
@@ -83,17 +87,17 @@ const LoginPage = () => {
             value={password}
             onChangeText={setPassword}
           />
-          <Text className="text-right text-foreground text-sm">
+          <Text className="text-right text-foreground font-medium">
             Forgot Password?
           </Text>
-          <Button size="lg" onPress={handleLogin} disabled={loading}>
+          <Button size="lg" onPress={handleLogin} disabled={loading} textClassName="font-medium text-lg">
             {loading ? "Signing In..." : "Sign In"}
           </Button>
         </View>
 
         <View className="items-center justify-center my-10">
           <View className="border-t border-muted-foreground opacity-30 w-full my-4" />
-          <Text className="absolute text-muted-foreground bg-app-background rounded-full px-2">
+          <Text className="absolute text-muted-foreground bg-background rounded-full px-2">
             Or
           </Text>
         </View>
@@ -101,8 +105,9 @@ const LoginPage = () => {
           <ContinueWithGoogle />
           <Button
             size="lg"
-            variant="muted"
+            variant="outline"
             onPress={() => router.push("/sign-up")}
+            textClassName="font-medium text-lg"
           >
             Create New Account
           </Button>

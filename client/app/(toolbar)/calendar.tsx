@@ -5,7 +5,9 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 export default function CalendarPage() {
   return (
     <ThemedSafeView>
-      <Text className="text-foreground text-2xl font-semibold">Calendar</Text>
+      <Text className="text-[24px] font-bold text-foreground">
+        Calendar
+      </Text>
     </ThemedSafeView>
   );
 }

@@ -7,21 +7,22 @@ const lightPalette = {
   "--color-app-background": "#f5e7e8",
   "--color-accent": "#0a7ea4",
   "--color-icon": "#687076",
-  "--color-muted-background": "#f2f2f2",
+  "--color-muted-background": "#e0e0e0",
   "--color-muted-foreground": "#49454f",
   "--color-red-primary": "#eb2d2d",
   "--color-red-secondary": "#ffb1b2",
 };
 
 const darkPalette = {
-  "--color-background": "#151718",
+  "--color-background": "#383333",
   "--color-foreground": "#ecedee",
-  "--color-app-background": "#875457",
+  // "--color-app-background": "#875457",
+  "--color-app-background": "#6B3C3C",
   "--color-accent": "#ffffff",
   "--color-icon": "#9ba1a6",
-  "--color-muted-background": "#f2f2f2",
-  "--color-muted-foreground": "#312e36",
-  "--color-red-primary": "#ab2222",
+  "--color-muted-background": "#7A6E6E",
+  "--color-muted-foreground": "#b5b3b3",
+  "--color-red-primary": "#CC4141",
   "--color-red-secondary": "#c7797a",
 };
 

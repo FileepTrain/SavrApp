@@ -9,6 +9,7 @@ import {
 import Slider from "@react-native-community/slider";
 import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useThemePalette } from "@/components/theme-provider";
 
 // Filter modal state options
 export type Filters = {
@@ -72,13 +73,14 @@ export default function FilterModal({
   onCancel,
   onReset,
 }: Props) {
+  const theme = useThemePalette();
   const budgetLabel = useMemo(
     () => `$${draft.budgetMin}-${draft.budgetMax}`,
     [draft.budgetMin, draft.budgetMax]
   );
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent={true}>
       <Pressable onPress={onCancel} className="flex-1 bg-black/30 items-center justify-center px-6">
         <Pressable onPress={() => { }} className="w-full max-w-[420px] bg-background rounded-2xl overflow-hidden">
           {/* Header */}
@@ -108,6 +110,8 @@ export default function FilterModal({
                     budgetMax: Math.max(draft.budgetMin, v),
                   })
                 }
+                minimumTrackTintColor={theme["--color-foreground"]}
+                thumbTintColor={theme["--color-foreground"]}
               />
 
               <View className="flex-row justify-between mt-1">

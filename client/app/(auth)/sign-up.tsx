@@ -102,14 +102,17 @@ const SignUpPage = () => {
   };
 
   return (
-    <ThemedSafeView className="items-center justify-center">
+    <ThemedSafeView className="flex-1 bg-background">
       <ScrollView className="w-full px-4">
-        <View className="items-center justify-center gap-2">
-          <Image
-            source={images.logo}
-            resizeMode="contain"
-            className="w-[150px] h-[50px]"
-          />
+        <Image
+          source={images.logo}
+          resizeMode="contain"
+          style={{
+            width: 234,
+            height: 76,
+          }}
+        />
+        <View className="mt-4 gap-2">
           <Text className="text-foreground text-3xl font-bold">
             Create Account
           </Text>
@@ -153,14 +156,14 @@ const SignUpPage = () => {
             onChangeText={setPassword}
           />
 
-          <Button size="lg" onPress={handleSignUp} disabled={loading}>
+          <Button size="lg" onPress={handleSignUp} disabled={loading} textClassName="font-medium text-lg">
             {loading ? "Signing Up..." : "Sign Up"}
           </Button>
         </View>
 
         <View className="items-center justify-center my-10">
           <View className="border-t border-muted-foreground opacity-30 w-full my-4" />
-          <Text className="absolute text-muted-foreground bg-app-background rounded-full px-2">
+          <Text className="absolute text-muted-foreground bg-background rounded-full px-2">
             Or
           </Text>
         </View>
@@ -169,8 +172,9 @@ const SignUpPage = () => {
           <ContinueWithGoogle />
           <Button
             size="lg"
-            variant="muted"
+            variant="outline"
             onPress={() => router.push("/login")}
+            textClassName="font-medium text-lg"
           >
             Already have an account?
           </Button>

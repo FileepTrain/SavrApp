@@ -234,7 +234,7 @@ export default function CookwareSettingsPage() {
 
       {/* Stats */}
       <View className="px-4 pb-3">
-        <Text className="text-[14px] text-[#666666]">
+        <Text className="text-[14px] text-muted-foreground">
           {selectedCookware.size} of {ALL_COOKWARE.length} cookware selected
         </Text>
       </View>
@@ -276,7 +276,7 @@ export default function CookwareSettingsPage() {
       )}
 
       {/* Quick Actions */}
-      <View className="px-4 pb-4 pt-2 border-t border-[#E0E0E0]">
+      <View className="p-4 pb-2 border-t border-white">
         <View className="flex-row gap-3">
           <Pressable
             onPress={async () => {

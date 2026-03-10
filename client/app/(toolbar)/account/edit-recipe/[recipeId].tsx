@@ -197,17 +197,16 @@ export default function EditRecipePage() {
                   <IconSymbol
                     name="camera-outline"
                     size={32}
-                    color="--color-icon"
+                    color="--color-muted-foreground"
                   />
-                  <Text className="text-icon text-lg font-medium">Add Photo</Text>
+                  <Text className="text-muted-foreground text-lg font-medium">Add Photo</Text>
                 </>
               )}
             </TouchableOpacity>
             {recipeImage ? (
               <Button
-                variant="default"
-                className="rounded-lg"
-                textClassName="text-destructive"
+                className="bg-muted-background"
+                textClassName="font-medium"
                 onPress={() => setRecipeImage(null)}
               >
                 Remove photo
@@ -243,30 +242,25 @@ export default function EditRecipePage() {
           </View>
 
           <View className="flex-row gap-4">
-            {/* Recipe Prep Time */}
-            <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">
-                Prep Time (minutes)
-              </Text>
+            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-lg">
+              <Text className="text-lg text-foreground font-bold">Prep Time (minutes)</Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
                 inputType="numeric"
                 value={recipePrepTime}
-                onChangeText={(text) => setRecipePrepTime(text)}
+                onChangeText={setRecipePrepTime}
               />
             </View>
-            {/* Recipe Cook Time */}
-            <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">
-                Cook Time (minutes)
-              </Text>
+
+            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-lg">
+              <Text className="text-lg text-foreground font-bold">Cook Time (minutes)</Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
                 inputType="numeric"
                 value={recipeCookTime}
-                onChangeText={(text) => setRecipeCookTime(text)}
+                onChangeText={setRecipeCookTime}
               />
             </View>
           </View>
@@ -288,15 +282,14 @@ export default function EditRecipePage() {
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
             <Text className="text-lg text-foreground font-bold">Ingredients</Text>
             <Button
-              variant="primary"
+              variant="outline"
               icon={{
                 name: "plus-circle-outline",
                 position: "left",
                 size: 20,
-                color: "--color-icon",
+                color: "--color-muted-foreground",
               }}
-              className="bg-muted-background rounded-xl"
-              textClassName="text-lg font-medium text-icon"
+              textClassName="font-medium text-muted-foreground"
               onPress={() => setIsIngredientModalVisible(true)}
             >
               Add Ingredient

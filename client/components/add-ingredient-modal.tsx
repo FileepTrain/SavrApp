@@ -280,7 +280,7 @@ export function AddIngredientModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent={true}>
       <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
         <Pressable onPress={() => { }} style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -289,7 +289,7 @@ export function AddIngredientModal({
             >
               {/* Header */}
               <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
-                <Text className="text-background text-lg font-bold tracking-[0.5px]">{title}</Text>
+                <Text className="text-white text-lg font-bold tracking-[0.5px]">{title}</Text>
                 <Pressable onPress={onClose}>
                   <IconSymbol name="close" size={24} color="--color-background" />
                 </Pressable>
@@ -430,7 +430,7 @@ export function AddIngredientModal({
                       opacity: selectedId && unitOptions.length > 0 && !loadingUnits ? 1 : 0.6,
                     }}
                   >
-                    <Text className="text-lg text-background font-bold">Confirm</Text>
+                    <Text className="text-lg text-white font-bold">Confirm</Text>
                   </Pressable>
                 </View>
               </View>

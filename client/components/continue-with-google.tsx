@@ -5,14 +5,14 @@ import { images } from "@/constants";
 
 const ContinueWithGoogle = () => {
   return (
-    <Button size="lg" className="bg-white">
+    <Button size="lg" className="bg-white border border-muted-background">
       <View className="flex-row items-center gap-[10px]">
         <Image
           source={images.googleIcon}
           resizeMode="contain"
           className="w-10 h-10"
         />
-        <Text className="text-black text-[14px] font-roboto-medium">
+        <Text className="text-black text-lg font-roboto-medium">
           Continue with Google
         </Text>
       </View>

@@ -17,10 +17,10 @@ export default function HomeStackLayout() {
                 onPress={() => navigation.goBack()}
                 className="mr-4"
               >
-                <IconSymbol name="chevron-left" size={30} color="black" />
+                <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
               </TouchableOpacity>
 
-              <Text className="text-2xl font-bold">{options.title}</Text>
+              <Text className="text-2xl font-bold text-foreground">{options.title}</Text>
             </SafeAreaView>
           ),
         }}

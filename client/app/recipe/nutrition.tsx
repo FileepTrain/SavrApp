@@ -94,7 +94,7 @@ export default function NutritionPage() {
 
             const computedNutrients: Nutrient[] =
               computeJson?.nutrition?.nutrients &&
-              Array.isArray(computeJson.nutrition.nutrients)
+                Array.isArray(computeJson.nutrition.nutrients)
                 ? computeJson.nutrition.nutrients
                 : [];
 
@@ -145,23 +145,23 @@ export default function NutritionPage() {
   }
 
   return (
-    <ThemedSafeView className="flex-1">
+    <ThemedSafeView className="flex-1 pt-safe-or-20">
       <ScrollView className="px-6 pt-6" showsVerticalScrollIndicator={false}>
-        <Text className="text-2xl font-bold mb-4">{title}</Text>
+        <Text className="text-2xl font-bold mb-4 text-foreground">{title}</Text>
 
-        {!!error && <Text className="text-red-600 mb-3">{error}</Text>}
+        {!!error && <Text className="text-red-primary mb-3">{error}</Text>}
 
         {nutrients.length === 0 ? (
           <Text className="opacity-70">No nutrition data available.</Text>
         ) : (
-          <View className="bg-white rounded-xl p-4 shadow">
+          <View className="bg-background rounded-xl p-4 pt-0 shadow">
             {nutrients.map((n, idx) => (
               <View
                 key={`${n.name}-${idx}`}
-                className="flex-row justify-between py-2 border-b border-gray-100"
+                className="flex-row justify-between py-2 border-b border-muted-background"
               >
-                <Text className="font-semibold">{n.name}</Text>
-                <Text className="opacity-80">
+                <Text className="font-semibold text-foreground">{n.name}</Text>
+                <Text className="opacity-80 text-foreground">
                   {Number(n.amount).toFixed(n.name === "Calories" ? 0 : 1)}{" "}
                   {n.unit}
                 </Text>

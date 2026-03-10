@@ -15,12 +15,16 @@ import { useThemePalette } from "@/components/theme-provider";
 import { twMerge } from "tailwind-merge";
 
 const variants = {
-  // Red theme
+  // Light red theme
   default: { background: "bg-red-secondary", text: "text-foreground" },
+  // Destructive red theme
+  destructive: { background: "bg-red-primary", text: "text-white" },
   // Neutral theme
   primary: { background: "bg-background", text: "text-foreground" },
   // Muted theme
   muted: { background: "bg-muted-background", text: "text-muted-foreground" },
+  // Outline theme
+  outline: { background: "bg-background border border-muted-background", text: "text-foreground" },
 };
 
 const sizes = {
@@ -56,7 +60,7 @@ const Button = ({
   return (
     <TouchableOpacity
       className={twMerge(
-        "rounded-full justify-center items-center",
+        "rounded-xl justify-center items-center",
         variants[variant].background,
         sizes[size],
         className
