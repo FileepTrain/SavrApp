@@ -179,7 +179,7 @@ export default function SettingsPage() {
 
       {/* Dietary preferences button */}
       <Pressable
-        onPress={() => router.push("/account/dietary-preferences")}
+        onPress={() => router.push("/account/diet-preference-settings")}
         className="w-full h-[77px] bg-white rounded-[12px] flex-row items-center justify-between px-4 mb-6
                    shadow-sm"
         style={{

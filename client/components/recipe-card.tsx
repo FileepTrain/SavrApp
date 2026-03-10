@@ -15,7 +15,7 @@ rating?: number;
 reviewsLength?: number;
 variant?: CardVariant;
 imageUrl?: string | null;
-onPress: () => void; //if a custom onPress is provided will use that | else default sends to recipe details
+onPress?: () => void; // if provided uses Pressable; else Link to details
 }
 
 // Recipe Card default information

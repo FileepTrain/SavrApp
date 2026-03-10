@@ -276,7 +276,7 @@ export default function MealPlanPage() {
           className="h-16 flex  px-20 bg-[#f03005] rounded-2xl shadow-sm"
           textClassName="text-xl font-bold text-white"
           onPress={() => {
-            handleSave;
+            handleSave();
             //router.back()
           }}
           disabled={saving}

@@ -157,6 +157,7 @@ export default function HomeSearchScreen() {
         q: trimmed,
         personalOffset: "0",
         externalOffset: "0",
+        allergies: (appliedFilters.allergies || []).join(","),
         cookware: (appliedFilters.cookware || []).join(","),
         useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
       });
@@ -254,6 +255,7 @@ export default function HomeSearchScreen() {
       q: trimmed,
       personalOffset: String(personalOffset),
       externalOffset: String(externalOffset),
+      allergies: (appliedFilters.allergies || []).join(","),
       cookware: (appliedFilters.cookware || []).join(","),
       useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
     });

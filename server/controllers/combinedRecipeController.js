@@ -130,8 +130,14 @@ export const getFilteredFeed = async (req, res) => {
     const useMyCookwareOnly = String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
     const userCookwareRaw = typeof req.query.userCookware === "string" ? req.query.userCookware : "";
     const userCookware = userCookwareRaw ? userCookwareRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const allergies =
+      typeof req.query.allergies === "string"
+        ? req.query.allergies.split(",").map((s) => s.trim()).filter(Boolean)
+        : Array.isArray(req.query.allergies)
+          ? req.query.allergies.map((s) => String(s).trim()).filter(Boolean)
+          : [];
 
-    const filters = { budgetMin, budgetMax, limit, q, cookware: cookwareExclude, useMyCookwareOnly, userCookware };
+    const filters = { budgetMin, budgetMax, limit, q, cookware: cookwareExclude, useMyCookwareOnly, userCookware, allergies }
 
     let personalResults = [];
     let remaining = limit;
