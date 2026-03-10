@@ -7,6 +7,7 @@
 import admin from "firebase-admin";
 import axios from "axios";
 import { getAllRecipes } from "./recipeController.js";
+import { searchExternalRecipes } from "./externalRecipeController.js";
 import { fetchPriceForTerm, getAccessToken } from "./krogerController.js";
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
 
@@ -143,17 +144,11 @@ export const getFilteredFeed = async (req, res) => {
         offset: personalOffset,
       });
       personalResults = recipes.map((r) => {
-        const calories =
-          r.calories != null
-            ? r.calories
-            : Array.isArray(r.nutrition?.nutrients)
-              ? Math.round(
-                  Number(
-                    r.nutrition.nutrients.find((n) => n?.name === "Calories")
-                      ?.amount ?? 0,
-                  ),
-                ) || null
-              : null;
+        let calories = r.calories != null ? r.calories : null;
+        if (calories == null && Array.isArray(r.nutrition?.nutrients)) {
+          const cal = r.nutrition.nutrients.find((n) => String(n?.name || "").toLowerCase() === "calories");
+          if (cal?.amount != null) calories = Math.round(Number(cal.amount));
+        }
         const count = Number.isFinite(Number(r.reviewCount)) ? Number(r.reviewCount) : (Array.isArray(r.reviews) ? r.reviews.length : 0);
         const totalStars = Number.isFinite(Number(r.totalStars)) ? Number(r.totalStars) : (Array.isArray(r.reviews) ? r.reviews.reduce((s, rev) => s + (rev?.rating ?? 0), 0) : 0);
         const rating = count > 0 ? Math.round((totalStars / count) * 10) / 10 : 0;
@@ -195,6 +190,24 @@ export const getFilteredFeed = async (req, res) => {
       externalMeta = cached?._meta ?? null;
       externalTotalResults =
         typeof cached?.totalResults === "number" ? cached.totalResults : externalResults.length;
+    
+      // Fallback to live Spoonacular search when cache has no matches.
+      if (externalResults.length === 0 && q) {
+        const live = await searchExternalRecipes({
+          filters,
+          limit,
+          offset: externalOffset,
+        });
+
+        externalResults = Array.isArray(live?.results) ? live.results : [];
+        externalMeta = {
+          ...(externalMeta || {}),
+          ...(live?._meta || {}),
+          source: "spoonacular-live-fallback",
+        };
+        externalTotalResults =
+          typeof live?.totalResults === "number" ? live.totalResults : externalResults.length;
+      }
     }
 
     // Merge and sort by view count (most viewed first); ensure every item has viewCount for sort
