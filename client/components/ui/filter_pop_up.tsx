@@ -12,6 +12,7 @@ import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useThemePalette } from "@/components/theme-provider";
 import { FilterCookwareModal } from "@/components/filter-cookware-modal";
+import { FilterAllergiesModal } from "@/components/filter-allergies-modal";
 
 // Filter modal state options
 export type Filters = {
@@ -46,10 +47,19 @@ export default function FilterModal({
   const theme = useThemePalette();
   const [cookwareModalVisible, setCookwareModalVisible] = useState(false);
   const [cookwareDraft, setCookwareDraft] = useState<string[]>([]);
+  const [allergiesModalVisible, setAllergiesModalVisible] = useState(false);
+  const [allergiesDraft, setAllergiesDraft] = useState<string[]>([]);
   const budgetLabel = useMemo(
     () => `$${draft.budgetMin}-${draft.budgetMax}`,
     [draft.budgetMin, draft.budgetMax]
   );
+
+  const removeAllergy = (item: string) => {
+    onChangeDraft({
+      ...draft,
+      allergies: (draft.allergies || []).filter((a) => a !== item),
+    });
+  };
 
   const removeCookware = (item: string) => {
     onChangeDraft({
@@ -111,10 +121,52 @@ export default function FilterModal({
               <View className="flex-row items-center gap-2 mb-3">
                 <Text className="text-base font-semibold text-foreground">Allergies</Text>
               </View>
-              <Pressable className="rounded-xl border border-muted-background border-dashed py-3 px-4 flex-row items-center justify-center" onPress={() => { }}>
-                <Text className="text-base font-medium text-foreground">+ Add filter</Text>
-              </Pressable>
+              {(draft.allergies && draft.allergies.length > 0) && (
+                <View className="flex-row flex-wrap gap-2 mb-3">
+                  {draft.allergies.map((item) => (
+                    <View
+                      key={item}
+                      className="flex-row items-center bg-muted-background rounded-lg pl-3 pr-1 py-2 gap-1"
+                    >
+                      <Text className="text-foreground font-medium">{item}</Text>
+                      <TouchableOpacity
+                        onPress={() => removeAllergy(item)}
+                        className="p-1"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <IconSymbol name="close" size={18} color="#666" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+              <Button
+                variant="primary"
+                icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-icon" }}
+                className="bg-muted-background rounded-xl"
+                textClassName="text-lg font-medium text-icon"
+                onPress={() => setAllergiesModalVisible(true)}
+              >
+                Add filter
+              </Button>
             </View>
+
+            <FilterAllergiesModal
+              visible={allergiesModalVisible}
+              onClose={(draftSelection) => {
+                setAllergiesModalVisible(false);
+                if (draftSelection) setAllergiesDraft(draftSelection);
+              }}
+              onApply={(selection) => {
+                onChangeDraft({
+                  ...draft,
+                  allergies: selection,
+                });
+                setAllergiesDraft([]);
+                setAllergiesModalVisible(false);
+              }}
+              draftSelection={allergiesDraft.length > 0 ? allergiesDraft : (draft.allergies ?? [])}
+            />
 
             {/* Food Types */}
             <View className="mb-6">
@@ -137,13 +189,13 @@ export default function FilterModal({
                     <View
                       className="flex-row items-center bg-muted-background rounded-lg pl-3 pr-1 py-2 gap-1"
                     >
-                      <Text className="text-foreground font-medium">My cookware</Text>
+                      <Text className="text-icon font-medium">My cookware</Text>
                       <TouchableOpacity
                         onPress={removeMyCookwareOnly}
                         className="p-1"
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <IconSymbol name="close" size={18} color="#666" />
+                        <IconSymbol name="close" size={18} color="--color-icon" />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -158,7 +210,7 @@ export default function FilterModal({
                         className="p-1"
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <IconSymbol name="close" size={18} color="#666" />
+                        <IconSymbol name="close" size={18} color="--color-icon" />
                       </TouchableOpacity>
                     </View>
                   ))}

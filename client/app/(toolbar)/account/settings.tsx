@@ -68,7 +68,7 @@ export default function SettingsPage() {
               title="Dietary Preferences"
               subtitle="Vegetarian, Vegan, Allergies?"
               iconName="silverware"
-              onPress={() => router.push("/account/dietary-preferences")}
+              onPress={() => router.push("/account/diet-preference-settings")}
             />
             {/* Budget Preferences Setting Item */}
             <AccountMenuItem
@@ -80,7 +80,7 @@ export default function SettingsPage() {
             />
           </View>
           <View className="mt-6 gap-2">
-            <Text className="text-base font-medium text-muted-foreground">Preferences</Text>
+            <Text className="text-base font-medium text-muted-foreground">Display</Text>
             {/* Accessibility Setting Item */}
             <View className="rounded-xl shadow-sm overflow-hidden">
               <AccountMenuItem

@@ -271,7 +271,7 @@ export default function MealPlanPage() {
             className="h-16 flex  px-20 bg-red-primary rounded-2xl shadow-sm"
             textClassName="text-xl font-bold"
             onPress={() => {
-              handleSave;
+              handleSave();
               //router.back()
             }}
             disabled={saving}
@@ -285,6 +285,7 @@ export default function MealPlanPage() {
           transparent
           visible={visible}
           animationType="fade"
+          statusBarTranslucent={true}
         >
           {/* Backdrop */}
           <Pressable
@@ -292,8 +293,8 @@ export default function MealPlanPage() {
             onPress={() => setVisible(false)}
           >
             {/* Stop press propagation */}
-            <Pressable className="w-80 bg-white rounded-2xl p-6 gap-4">
-              <Text className="text-lg font-bold text-center">Choose Recipe</Text>
+            <Pressable className="w-80 bg-background rounded-2xl p-6 gap-4">
+              <Text className="text-lg font-bold text-center text-foreground">Choose Recipe</Text>
               <Button
                 variant="outline"
                 onPress={() => {

@@ -15,7 +15,7 @@ interface RecipeCardProps {
   reviewsLength?: number;
   variant?: CardVariant;
   imageUrl?: string | null;
-  onPress?: () => void; //if a custom onPress is provided will use that | else default sends to recipe details
+  onPress?: () => void; // if provided uses Pressable; else Link to details
 }
 
 // Recipe Card default information
@@ -54,33 +54,33 @@ export const RecipeCard = ({
   } else {
     // Horizontal variant
     cardContent = (
-    <View className="bg-background flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
-      {imageUrl ? (
-        <Image
-          source={{ uri: imageUrl }}
-          className="h-full w-32 rounded-xl rounded-r-none"
-          resizeMode="cover"
-        />
-      ) : (
-        <Image
-          source={require("@/assets/images/SAVR-logo.png")}
-          className="h-full w-32 rounded-xl rounded-r-none"
-          resizeMode="contain"
-        />
-      )}
-      <View className="flex-1 justify-center">
-        <View>
-          <Text className="text-red-primary font-medium" numberOfLines={1}>
-            {title}
-          </Text>
-          <Text className="text-muted-foreground text-sm">
-            {calories} calories
-          </Text>
+      <View className="bg-background flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
+        {imageUrl ? (
+          <Image
+            source={{ uri: imageUrl }}
+            className="h-full w-32 rounded-xl rounded-r-none"
+            resizeMode="cover"
+          />
+        ) : (
+          <Image
+            source={require("@/assets/images/SAVR-logo.png")}
+            className="h-full w-32 rounded-xl rounded-r-none"
+            resizeMode="contain"
+          />
+        )}
+        <View className="flex-1 justify-center">
+          <View>
+            <Text className="text-red-primary font-medium" numberOfLines={1}>
+              {title}
+            </Text>
+            <Text className="text-muted-foreground text-sm">
+              {calories} calories
+            </Text>
+          </View>
+          <RecipeRating rating={rating} reviewsLength={reviewsLength} />
         </View>
-        <RecipeRating rating={rating} reviewsLength={reviewsLength} />
       </View>
-    </View>
-  );
+    );
   }
 
   return (

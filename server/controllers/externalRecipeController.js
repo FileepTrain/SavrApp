@@ -2,6 +2,52 @@
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
 import { _computePriceForRecipe } from "./combinedRecipeController.js";
 
+// Whitelist of Spoonacular-supported intolerance values (all lowercase)
+const SPOONACULAR_INTOLERANCES = new Set([
+  "dairy",
+  "egg",
+  "gluten",
+  "grain",
+  "peanut",
+  "seafood",
+  "sesame",
+  "shellfish",
+  "soy",
+  "sulfite",
+  "tree nut",
+  "wheat",
+]);
+
+/**
+ * Normalize allergy values (coming from the client) into
+ * Spoonacular-compatible intolerance strings.
+ *
+ * Accepts an array of strings or a comma-separated string.
+ */
+function normalizeAllergiesToIntolerances(allergiesValue) {
+  const rawList = Array.isArray(allergiesValue)
+    ? allergiesValue
+    : typeof allergiesValue === "string"
+      ? allergiesValue.split(",")
+      : [];
+
+  const seen = new Set();
+  const result = [];
+
+  for (const item of rawList) {
+    if (!item) continue;
+    let v = String(item).toLowerCase().trim();
+    if (!v) continue;
+
+    if (SPOONACULAR_INTOLERANCES.has(v) && !seen.has(v)) {
+      seen.add(v);
+      result.push(v);
+    }
+  }
+
+  return result;
+}
+
 /**
  * Extract only the nutrients array from Spoonacular's nutrition object.
  * Spoonacular returns nutrition with nutrients, properties, flavonoids, ingredient nutrition, etc.
@@ -146,6 +192,7 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   const q = (filters?.q ?? "").trim();
   const number = Math.min(parseInt(limit ?? "10", 10), 20);
   const safeOffset = Math.max(parseInt(offset ?? "0", 10), 0);
+  const intolerances = normalizeAllergiesToIntolerances(filters?.allergies);
 
   if (!q || !number) {
     return {
@@ -166,8 +213,11 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   url.searchParams.set("addRecipeNutrition", "true");
   url.searchParams.set("addRecipeInstructions", "true");
   url.searchParams.set("instructionsRequired", "true");
+  if (intolerances.length > 0) { //could have multiple at once
+    url.searchParams.set("intolerances", intolerances.join(","));
+  }
 
-  console.log("[Spoonacular] GET /recipes/complexSearch", { query: q, number, offset: safeOffset });
+  console.log("[Spoonacular] GET /recipes/complexSearch", { query: q, number, offset: safeOffset, intolerances: intolerances.join(",") || undefined,});
 
   const resp = await fetch(url, {
     headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },

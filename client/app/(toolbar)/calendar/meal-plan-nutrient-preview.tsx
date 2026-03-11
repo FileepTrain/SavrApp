@@ -193,15 +193,15 @@ export default function MealPlanNutrientPreviewPage() {
     const prefsLower =
       displayPrefs.size > 0
         ? new Set(
-            Array.from(displayPrefs).map((s) => s.toLowerCase().trim())
-          )
+          Array.from(displayPrefs).map((s) => s.toLowerCase().trim())
+        )
         : null;
     const filtered =
       prefsLower == null
         ? merged
         : merged.filter((m) =>
-            prefsLower.has((m.name || "").toLowerCase().trim())
-          );
+          prefsLower.has((m.name || "").toLowerCase().trim())
+        );
     const orderIdx = new Map(
       ALL_NUTRIENTS.map((name, i) => [name.toLowerCase().trim(), i])
     );
@@ -228,9 +228,9 @@ export default function MealPlanNutrientPreviewPage() {
         showsVerticalScrollIndicator={false}
       >
         {error ? (
-          <Text className="text-red-600 mb-3 text-base">{error}</Text>
+          <Text className="text-red-primary mb-3 text-base">{error}</Text>
         ) : toShow.length === 0 ? (
-          <Text className="opacity-70 text-base">
+          <Text className="opacity-70 text-base text-foreground">
             Add breakfast, lunch, and dinner to your meal plan to see totals.
           </Text>
         ) : (

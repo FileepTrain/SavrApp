@@ -151,12 +151,9 @@ export default function GroceryListPage() {
    * UI
    */
   return (
-    <ThemedSafeView className="flex-1 pt-safe-or-20">
+    <ThemedSafeView>
       <View className="gap-4 flex-1 px-4">
-        {/* Title */}
-        <Text className="text-foreground text-2xl font-semibold">
-          Grocery List
-        </Text>
+        <Text className="text-foreground text-2xl font-semibold">Grocery List</Text>
 
         {/* Location Button */}
         <View className="flex-row items-center">

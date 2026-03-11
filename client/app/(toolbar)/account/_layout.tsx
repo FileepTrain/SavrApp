@@ -68,7 +68,7 @@ export default function AccountStackLayout() {
           options={{ title: "My Cookware" }}
         />
         <Stack.Screen
-          name="dietary-preferences"
+          name="diet-preference-settings"
           options={{ title: "Dietary Preferences" }}
         />
         <Stack.Screen

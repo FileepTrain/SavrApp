@@ -29,7 +29,7 @@ export default function AccountPage() {
     <ThemedSafeView className="flex-1 bg-app-background">
       {/* Title */}
       <View className="px-4">
-        <Text className="text-[24px] font-bold text-foreground">
+        <Text className="text-foreground text-2xl font-semibold">
           Account
         </Text>
       </View>

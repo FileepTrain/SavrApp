@@ -8,11 +8,14 @@ import { usePathname, useSegments } from "expo-router";
 export default function CalendarPage() {
   return (
     <ThemedSafeView>
-      <Text className="text-foreground text-2xl font-semibold">Calendar</Text>
+      <View className="gap-4 flex-1 px-4">
 
-      {/* temp button */}
-      <View className="flex-row items-center">
-        <Button title="Meal Plan" onPress={() => router.push("calendar/meal-plan")}/>
+        <Text className="text-foreground text-2xl font-semibold">Calendar</Text>
+
+        {/* temp button */}
+        <View className="flex-row items-center">
+          <Button title="Meal Plan" onPress={() => router.push("/calendar/meal-plan")} />
+        </View>
       </View>
     </ThemedSafeView>
   );
