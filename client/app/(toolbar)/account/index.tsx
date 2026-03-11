@@ -26,10 +26,10 @@ export default function AccountPage() {
   );
 
   return (
-    <ThemedSafeView className="flex-1 bg-[#F5E7E8]">
+    <ThemedSafeView className="flex-1 bg-app-background">
       {/* Title */}
-      <View className="mt-6 px-4">
-        <Text className="text-[24px] font-bold tracking-[0.5px] text-black">
+      <View className="px-4">
+        <Text className="text-foreground text-2xl font-semibold">
           Account
         </Text>
       </View>
@@ -41,7 +41,7 @@ export default function AccountPage() {
       />
 
       {/* Menu */}
-      <View className="mt-6 mx-4 bg-white rounded-xl shadow-sm overflow-hidden">
+      <View className="mt-6 mx-4 rounded-xl shadow-sm overflow-hidden">
         <AccountMenuItem
           title="My Pantry"
           subtitle="Manage your ingredients"

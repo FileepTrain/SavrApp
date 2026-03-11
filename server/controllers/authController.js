@@ -124,10 +124,11 @@ export const login = async (req, res) => {
   try {
     const firebaseResponse = await axios.post(
       `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
-      { email, password, returnSecureToken: true }
+      { email, password, returnSecureToken: true },
     );
 
-    const { idToken, refreshToken, localId, displayName } = firebaseResponse.data;
+    const { idToken, refreshToken, localId, displayName } =
+      firebaseResponse.data;
 
     return res.json({
       success: true,
@@ -268,7 +269,7 @@ export const updateFavorites = async (req, res) => {
   try {
     const db = admin.firestore();
     const userDocRef = db.collection("users").doc(uid);
-    
+
     // Check if document exists first
     const userDoc = await userDocRef.get();
     if (!userDoc.exists) {
@@ -322,7 +323,7 @@ export const getFavorites = async (req, res) => {
       });
     }
 
-    const {favoriteIds} = userDoc.data();
+    const { favoriteIds } = userDoc.data();
     const list = Array.isArray(favoriteIds) ? favoriteIds : [];
 
     return res.json({
@@ -336,7 +337,6 @@ export const getFavorites = async (req, res) => {
       code: error.code || "FAVORITES_FETCH_FAILED",
     });
   }
-
 };
 
 /**
@@ -364,7 +364,7 @@ export const updateCookware = async (req, res) => {
   try {
     const db = admin.firestore();
     const userDocRef = db.collection("users").doc(uid);
-    
+
     // Check if document exists first
     const userDoc = await userDocRef.get();
     if (!userDoc.exists) {
@@ -514,7 +514,7 @@ export const getAllergies = async (req, res) => {
       });
     }
 
-    const {allergies} = userDoc.data();
+    const { allergies } = userDoc.data();
     const list = Array.isArray(allergies) ? allergies : [];
 
     return res.json({
@@ -528,8 +528,7 @@ export const getAllergies = async (req, res) => {
       code: error.code || "ALLERGIES_FETCH_FAILED",
     });
   }
-}
-
+};
 
 /**
  * Update user allergies
@@ -581,7 +580,7 @@ export const updateAllergies = async (req, res) => {
       code: error.code || "UPDATE_FAILED",
     });
   }
-}
+};
 
 /**
  * Get user Diets
@@ -609,7 +608,7 @@ export const getDiets = async (req, res) => {
       });
     }
 
-    const {diets} = userDoc.data();
+    const { diets } = userDoc.data();
     const list = Array.isArray(diets) ? diets : [];
 
     return res.json({
@@ -623,7 +622,7 @@ export const getDiets = async (req, res) => {
       code: error.code || "DIETS_FETCH_FAILED",
     });
   }
-}
+};
 
 /**
  * Update user diets
@@ -675,4 +674,96 @@ export const updateDiets = async (req, res) => {
       code: error.code || "UPDATE_FAILED",
     });
   }
-}
+};
+
+/**
+ * Get user budget
+ * GET /api/auth/get-budget
+ */
+export const getBudget = async (req, res) => {
+  const uid = req.user?.uid;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User document not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+
+    // Extract budget from user document or default to 0 if column does not exist
+    const { budget = 0 } = userDoc.data();
+
+    return res.status(200).json({
+      budget: budget,
+    });
+  } catch (error) {
+    console.error("Error fetching budget:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "BUDGET_FETCH_FAILED",
+    });
+  }
+};
+
+/**
+ * Update user budget
+ * PUT /api/auth/update-budget
+ */
+export const updateBudget = async (req, res) => {
+  const uid = req.user?.uid;
+  const { budget } = req.body;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Error updating budget",
+      code: "UPDATE_FAILED",
+    });
+  }
+
+  if (typeof budget !== "number" || isNaN(budget)) {
+    return res.status(400).json({
+      error: "Budget must be a number",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User document not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+
+    await userDocRef.update({
+      budget,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.status(200).json({
+      message: "Budget updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating budget:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "UPDATE_FAILED",
+    });
+  }
+};

@@ -66,65 +66,46 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <ThemedSafeView className="flex-1 pt-safe-or-20">
-      {/* Form container */}
-      <View className="px-4 gap-6">
-        {/* Current password (for UX only) */}
-        <View className="gap-2">
-          <Text className="text-[14px] text-[#1E1E1E]">Current Password</Text>
-          <View className="bg-[#F2F2F2] rounded-[28px] px-5">
-            <Input
-              label=""
-              placeholder="Enter current password"
-              inputType="password"
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-            />
-          </View>
-        </View>
+    <ThemedSafeView className="flex-1 pt-safe-or-20 app-background">
+      <View className="gap-5 px-4">
+
+        {/* Current password (For UX only) */}
+        <Input
+          label="Current Password"
+          placeholder="Enter current password"
+          inputType="password"
+          value={currentPassword}
+          onChangeText={setCurrentPassword}
+        />
 
         {/* New password */}
-        <View className="gap-2">
-          <Text className="text-[14px] text-[#1E1E1E]">New Password</Text>
-          <View className="bg-[#F2F2F2] rounded-[28px] px-5">
-            <Input
-              label=""
-              placeholder="Enter new password"
-              inputType="password"
-              value={newPassword}
-              onChangeText={setNewPassword}
-            />
-          </View>
-        </View>
+        <Input
+          label="New Password"
+          placeholder="Enter new password"
+          inputType="password"
+          value={newPassword}
+          onChangeText={setNewPassword}
+        />
 
         {/* Confirm new password */}
-        <View className="gap-2">
-          <Text className="text-[14px] text-[#1E1E1E]">
-            Confirm New Password
-          </Text>
-          <View className="bg-[#F2F2F2] rounded-[28px] px-5">
-            <Input
-              label=""
-              placeholder="Confirm new password"
-              inputType="password"
-              value={confirmNewPassword}
-              onChangeText={setConfirmNewPassword}
-            />
-          </View>
-        </View>
-
-        {/* Change Password button */}
-        <View className="mt-4">
-          <Button
-            size="lg"
-            onPress={handleChangePassword}
-            disabled={loading}
-            className="rounded-full bg-[#FFB0B2]"
-          >
-            {loading ? "Changing Password..." : "Change Password"}
-          </Button>
-        </View>
+        <Input
+          label="Confirm New Password"
+          placeholder="Confirm new password"
+          inputType="password"
+          value={confirmNewPassword}
+          onChangeText={setConfirmNewPassword}
+        />
+        <Button
+          size="lg"
+          onPress={handleChangePassword}
+          disabled={loading}
+          textClassName="font-medium text-lg"
+        >
+          {loading ? "Changing Password..." : "Change Password"}
+        </Button>
       </View>
-    </ThemedSafeView>
+
+      {/* Change Password button */}
+    </ThemedSafeView >
   );
 }

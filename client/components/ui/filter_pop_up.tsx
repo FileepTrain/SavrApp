@@ -10,6 +10,7 @@ import {
 import Slider from "@react-native-community/slider";
 import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useThemePalette } from "@/components/theme-provider";
 import { FilterCookwareModal } from "@/components/filter-cookware-modal";
 import { FilterAllergiesModal } from "@/components/filter-allergies-modal";
 
@@ -43,6 +44,7 @@ export default function FilterModal({
   onCancel,
   onReset,
 }: Props) {
+  const theme = useThemePalette();
   const [cookwareModalVisible, setCookwareModalVisible] = useState(false);
   const [cookwareDraft, setCookwareDraft] = useState<string[]>([]);
   const [allergiesModalVisible, setAllergiesModalVisible] = useState(false);
@@ -74,9 +76,9 @@ export default function FilterModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent={true}>
       <Pressable onPress={onCancel} className="flex-1 bg-black/30 items-center justify-center px-6 py-8">
-        <Pressable onPress={() => {}} className="w-full max-w-[420px] max-h-[85%] bg-background rounded-2xl overflow-hidden">
+        <Pressable onPress={() => { }} className="w-full max-w-[420px] max-h-[85%] bg-background rounded-2xl overflow-hidden">
           {/* Header */}
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-muted-background">
             <Text className="text-xl font-bold text-foreground">Filter by</Text>
@@ -104,6 +106,8 @@ export default function FilterModal({
                     budgetMax: Math.max(draft.budgetMin, v),
                   })
                 }
+                minimumTrackTintColor={theme["--color-foreground"]}
+                thumbTintColor={theme["--color-foreground"]}
               />
 
               <View className="flex-row justify-between mt-1">
@@ -169,7 +173,7 @@ export default function FilterModal({
               <View className="flex-row items-center gap-2 mb-3">
                 <Text className="text-base font-semibold text-foreground">Food Types</Text>
               </View>
-              <Pressable className="rounded-xl border border-muted-background border-dashed py-3 px-4 flex-row items-center justify-center" onPress={() => {}}>
+              <Pressable className="rounded-xl border border-muted-background border-dashed py-3 px-4 flex-row items-center justify-center" onPress={() => { }}>
                 <Text className="text-base font-medium text-foreground">+ Add filter</Text>
               </Pressable>
             </View>
@@ -185,13 +189,13 @@ export default function FilterModal({
                     <View
                       className="flex-row items-center bg-muted-background rounded-lg pl-3 pr-1 py-2 gap-1"
                     >
-                      <Text className="text-foreground font-medium">My cookware</Text>
+                      <Text className="text-icon font-medium">My cookware</Text>
                       <TouchableOpacity
                         onPress={removeMyCookwareOnly}
                         className="p-1"
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <IconSymbol name="close" size={18} color="#666" />
+                        <IconSymbol name="close" size={18} color="--color-icon" />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -206,7 +210,7 @@ export default function FilterModal({
                         className="p-1"
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <IconSymbol name="close" size={18} color="#666" />
+                        <IconSymbol name="close" size={18} color="--color-icon" />
                       </TouchableOpacity>
                     </View>
                   ))}

@@ -311,7 +311,7 @@ export default function RecipeDetailsPage() {
           onPress={() => router.back()}
           className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
         >
-          <IconSymbol name="chevron-left" size={24} color="#EB2D2D" />
+          <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
         </TouchableOpacity>
 
         {/* Favorite Button */}
@@ -322,7 +322,9 @@ export default function RecipeDetailsPage() {
           <IconSymbol
             name={isFavorited ? "cards-heart" : "cards-heart-outline"}
             size={24}
-            color="#EB2D2D"
+            color="--color-red-primary"
+            // fix slight misalignment
+            style={{ transform: [{ translateY: 1 }, { translateX: 0.5 }] }}
           />
         </TouchableOpacity>
       </View>
@@ -390,7 +392,7 @@ export default function RecipeDetailsPage() {
             </View>
 
             {/* Description */}
-            <Text className="font-medium text-sm">
+            <Text className="text-foreground">
               {stripHtml(recipe?.summary ?? "") || "No description available"}
             </Text>
 
@@ -408,9 +410,9 @@ export default function RecipeDetailsPage() {
                 <IconSymbol
                   name="invoice-list-outline"
                   size={18}
-                  color="--color-secondary"
+                  color="--color-foreground"
                 />
-                <Text className="font-medium">Nutrition</Text>
+                <Text className="font-medium text-foreground">Nutrition</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -422,8 +424,8 @@ export default function RecipeDetailsPage() {
                   })
                 }
               >
-                <IconSymbol name="chat-outline" size={18} color="--color-secondary" />
-                <Text className="font-medium">Reviews</Text>
+                <IconSymbol name="chat-outline" size={18} color="--color-foreground" />
+                <Text className="font-medium text-foreground">Reviews</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -438,9 +440,9 @@ export default function RecipeDetailsPage() {
                 <IconSymbol
                   name="share-variant-outline"
                   size={18}
-                  color="--color-secondary"
+                  color="--color-foreground"
                 />
-                <Text className="font-medium">Share</Text>
+                <Text className="font-medium text-foreground">Share</Text>
               </TouchableOpacity>
             </View>
 
@@ -452,7 +454,7 @@ export default function RecipeDetailsPage() {
                 onPress={() => setIsIngredientsOpen(true)}
               >
                 <Text
-                  className={`text-center ${isIngredientsOpen ? "text-background" : "text-foreground"
+                  className={`text-center ${isIngredientsOpen ? "text-white" : "text-foreground"
                     }`}
                 >
                   Ingredients
@@ -465,7 +467,7 @@ export default function RecipeDetailsPage() {
                 onPress={() => setIsIngredientsOpen(false)}
               >
                 <Text
-                  className={`text-center ${!isIngredientsOpen ? "text-background" : "text-foreground"
+                  className={`text-center ${!isIngredientsOpen ? "text-white" : "text-foreground"
                     }`}
                 >
                   Instructions
@@ -476,7 +478,7 @@ export default function RecipeDetailsPage() {
             {/* CONTENT SECTIONS */}
             <View className="gap-2">
               {isIngredientsOpen ? (
-                <View className="bg-white rounded-xl p-4 shadow gap-2">
+                <View className="bg-background rounded-xl p-4 shadow gap-2">
                   {ingredients.length > 0 ? (
                     <IngredientsList list={ingredients} />
                   ) : (
@@ -486,7 +488,7 @@ export default function RecipeDetailsPage() {
                   )}
                 </View>
               ) : (
-                <View className="bg-white rounded-xl p-4 shadow gap-2">
+                <View className="bg-background rounded-xl p-4 shadow gap-2">
                   <Text className="text-foreground font-medium">
                     {stripHtml(recipe?.instructions) || "No instructions available"}
                   </Text>
@@ -503,7 +505,7 @@ export default function RecipeDetailsPage() {
                     {recipe.equipment.map((item, idx) => (
                       <View
                         key={idx}
-                        className="flex-row items-center gap-2 bg-muted-background rounded-lg px-3 py-2"
+                        className="flex-row items-center gap-2 bg-background border border-muted-background rounded-xl px-3 py-2"
                       >
                         {item.image ? (
                           <Image
@@ -528,7 +530,7 @@ export default function RecipeDetailsPage() {
               )}
 
               <View className="bg-background rounded-xl p-4 shadow gap-2">
-                <Text className="text-lg font-semibold">Similar Recipes Placeholder</Text>
+                <Text className="text-lg font-semibold text-foreground">Similar Recipes Placeholder</Text>
                 <Text className="text-muted-foreground">
                   This area will display similar recipe items.
                 </Text>

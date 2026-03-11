@@ -90,9 +90,9 @@ export default function HomeScreen() {
     return (
       <View className="flex-row justify-center items-center gap-2 mb-4">
         <Button
-          variant="muted"
+          variant="outline"
           icon={{ name: "filter-outline", color: "--color-icon" }}
-          className="w-14 h-14"
+          className="w-14 h-14 rounded-full"
           onPress={openFilterModal}
         />
         <Input
@@ -130,6 +130,8 @@ export default function HomeScreen() {
               imageUrl={item.image ?? undefined}
             />
           )}
+          onRefresh={fetchFeed}
+          refreshing={loading}
           numColumns={2}
           columnWrapperStyle={{ gap: 16, justifyContent: "center" }}
           contentContainerStyle={{

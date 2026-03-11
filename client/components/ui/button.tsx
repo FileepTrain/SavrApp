@@ -15,17 +15,21 @@ import { useThemePalette } from "@/components/theme-provider";
 import { twMerge } from "tailwind-merge";
 
 const variants = {
-  // Red theme
+  // Light red theme
   default: { background: "bg-red-secondary", text: "text-foreground" },
+  // Destructive red theme
+  destructive: { background: "bg-red-primary", text: "text-white" },
   // Neutral theme
   primary: { background: "bg-background", text: "text-foreground" },
   // Muted theme
   muted: { background: "bg-muted-background", text: "text-muted-foreground" },
-
-  outline: {
-      background: "bg-white border border-red-secondary",
-      text: "text-red-secondary",
-    },
+  // Outline theme
+  outline: { background: "bg-background border border-muted-background", text: "text-foreground" },
+  // Outline destructive theme
+  "outline-destructive": {
+    background: "bg-white border border-red-secondary",
+    text: "text-red-secondary",
+  },
 };
 
 const sizes = {
@@ -61,7 +65,7 @@ const Button = ({
   return (
     <TouchableOpacity
       className={twMerge(
-        "rounded-full justify-center items-center",
+        "rounded-xl justify-center items-center",
         variants[variant].background,
         sizes[size],
         className
@@ -77,11 +81,11 @@ const Button = ({
         <Text className={twMerge(variants[variant].text, textClassName)}>{children}</Text>
         {icon && (
           <IconSymbol name={icon.name} size={icon.size ?? 20}
-          color={
-            icon.color
-              ? theme[icon.color as keyof typeof theme] ?? icon.color
-              : theme.foreground
-          }
+            color={
+              icon.color
+                ? theme[icon.color as keyof typeof theme] ?? icon.color
+                : theme["--color-foreground"]
+            }
           />
         )}
       </View>

@@ -22,17 +22,16 @@ export function Collapsible({
         style={styles.heading}
         onPress={() => setIsOpen((value) => !value)}
         activeOpacity={0.8}
-        className="bg-white rounded-[12px] flex-row items-center justify-between px-4 h-[56px] shadow-sm mb-2"
+        className="bg-background rounded-xl flex-row items-center justify-between px-4 h-[56px] shadow-sm mb-2"
       >
         <View className="flex-row items-center gap-2">
           <IconSymbol
             name="chevron-right"
             size={18}
-            weight="medium"
             color="--color-icon"
             style={{ transform: [{ rotate: isOpen ? "90deg" : "0deg" }] }}
           />
-          <Text className="text-[16px] font-semibold text-black">
+          <Text className="text-base font-semibold text-foreground">
             {title}
           </Text>
         </View>

@@ -97,30 +97,30 @@ export function FilterAllergiesModal({
         onPress={handleBackdropClose}
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}
       >
-        <Pressable onPress={() => {}} style={{ flex: 1, marginHorizontal: 16, marginVertical: 24 }}>
+        <Pressable onPress={() => { }} style={{ flex: 1, marginHorizontal: 16, marginVertical: 24 }}>
           <View
             style={{ flex: 1, maxWidth: 400, alignSelf: "center", width: "100%" }}
             className="bg-background rounded-xl overflow-hidden shadow-xl"
           >
             {/* Header */}
             <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
-              <Text className="text-background text-lg font-bold tracking-[0.5px]">Filter by allergies</Text>
+              <Text className="text-white text-lg font-bold tracking-[0.5px]">Filter by allergies</Text>
               <Pressable onPress={handleBackdropClose}>
                 <IconSymbol name="close" size={24} color="--color-background" />
               </Pressable>
             </View>
 
-            <View className="px-4 pb-3 flex-row items-center justify-between">
-              <Text className="text-[14px] text-[#666666]">
+            <View className="px-4 py-3 flex-row items-center justify-between">
+              <Text className="text-sm text-muted-foreground">
                 {selected.size} selected · {sortedAllergies.length} allergies
               </Text>
               {loadingProfile ? (
                 <View className="flex-row items-center gap-2">
                   <ActivityIndicator size="small" />
-                  <Text className="text-[12px] text-[#666666]">Loading profile…</Text>
+                  <Text className="text-sm text-muted-foreground">Loading profile…</Text>
                 </View>
               ) : disabledCount > 0 ? (
-                <Text className="text-[12px] text-[#666666]">{disabledCount} from profile (locked)</Text>
+                <Text className="text-sm text-muted-foreground">{disabledCount} from profile (locked)</Text>
               ) : null}
             </View>
 
@@ -133,7 +133,7 @@ export function FilterAllergiesModal({
             >
               {filteredList.length === 0 ? (
                 <View className="py-6 px-2">
-                  <Text className="text-center text-[#666666]">No allergies match your search.</Text>
+                  <Text className="text-center text-muted-foreground">No allergies match your search.</Text>
                 </View>
               ) : (
                 <View className="gap-2 pb-4">
@@ -145,17 +145,15 @@ export function FilterAllergiesModal({
                         key={item}
                         onPress={() => toggle(item)}
                         disabled={isDisabled}
-                        className={`bg-white rounded-[12px] flex-row items-center justify-between px-4 h-[56px] shadow-sm ${
-                          isDisabled ? "opacity-50" : ""
-                        }`}
+                        className={`border border-muted-background rounded-xl flex-row items-center justify-between px-4 h-[56px] ${isDisabled ? "opacity-50" : ""
+                          }`}
                       >
-                        <Text className={`text-[16px] font-medium flex-1 ${isDisabled ? "text-[#666666]" : "text-black"}`}>
+                        <Text className={`text-base font-medium flex-1 ${isDisabled ? "text-muted-foreground" : "text-foreground"}`}>
                           {item}
                         </Text>
                         <View
-                          className={`w-8 h-8 rounded-full items-center justify-center ${
-                            isSelected ? "bg-red-primary" : "border-2 border-[#CCCCCC] bg-white"
-                          }`}
+                          className={`w-8 h-8 rounded-full items-center justify-center ${isSelected ? "bg-red-primary" : "border-2 border-muted-background bg-background"
+                            }`}
                         >
                           {isSelected && <Text className="text-white text-base font-bold">✓</Text>}
                         </View>

@@ -14,6 +14,7 @@ import {
   Pressable,
   TextInput,
 } from "react-native";
+import Input from "@/components/ui/input";
 
 const ALL_NUTRIENTS_LIST = [...ALL_NUTRIENTS];
 
@@ -52,27 +53,25 @@ export default function NutrientDisplaySettingsPage() {
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       {/* Search Bar */}
-      <View className="px-4 pt-4 pb-2">
-        <View className="bg-white rounded-[12px] flex-row items-center px-4 h-12 shadow-sm">
-          <IconSymbol name="magnify" size={20} color="#666666" />
-          <TextInput
-            className="flex-1 ml-3 text-[16px] text-black"
-            placeholder="Search nutrients..."
-            placeholderTextColor="#999999"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery("")}>
-              <IconSymbol name="close" size={18} color="#666666" />
-            </Pressable>
-          )}
-        </View>
+      <View className="px-4 pt-4 pb-2 flex-row items-center gap-2">
+        <Input
+          className="flex-1"
+          inputClassName="text-base"
+          placeholder="Search nutrients"
+          iconName="magnify"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <Pressable onPress={() => setSearchQuery("")} className="p-2 rounded-full bg-muted-background">
+            <IconSymbol name="close" size={18} color="--color-icon" />
+          </Pressable>
+        )}
       </View>
 
       {/* Stats */}
       <View className="px-4 pb-3">
-        <Text className="text-[14px] text-[#666666]">
+        <Text className="text-[14px] text-muted-foreground">
           {selectedNutrients.size} of {ALL_NUTRIENTS_LIST.length} nutrients
           selected
         </Text>
@@ -81,7 +80,7 @@ export default function NutrientDisplaySettingsPage() {
       {/* Nutrient List */}
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <Text className="text-[16px] text-[#666666]">Loading...</Text>
+          <Text className="text-[16px] text-muted-foreground">Loading...</Text>
         </View>
       ) : (
         <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={false}>
@@ -92,20 +91,19 @@ export default function NutrientDisplaySettingsPage() {
                 <Pressable
                   key={item}
                   onPress={() => toggleNutrient(item)}
-                  className="bg-white rounded-[12px] flex-row items-center justify-between px-4 h-[56px] shadow-sm"
+                  className="bg-background rounded-xl flex-row items-center justify-between px-4 h-[56px] shadow-sm"
                 >
-                  <Text className="text-[16px] font-medium text-black flex-1">
+                  <Text className="text-foreground font-medium flex-1">
                     {item}
                   </Text>
                   <View
-                    className={`w-6 h-6 rounded-[6px] border-2 items-center justify-center ${
-                      isSelected
-                        ? "bg-red-primary border-red-primary"
-                        : "border-[#CCCCCC] bg-white"
-                    }`}
+                    className={`w-6 h-6 rounded-[6px] border-2 items-center justify-center ${isSelected
+                      ? "bg-red-primary border-red-primary"
+                      : "border-muted-background bg-background"
+                      }`}
                   >
                     {isSelected && (
-                      <Text className="text-white text-xs font-bold">✓</Text>
+                      <Text className="text-foreground text-xs font-bold">✓</Text>
                     )}
                   </View>
                 </Pressable>
@@ -116,7 +114,7 @@ export default function NutrientDisplaySettingsPage() {
       )}
 
       {/* Quick Actions */}
-      <View className="px-4 pb-4 pt-2 border-t border-[#E0E0E0]">
+      <View className="px-4 pb-4 pt-2 border-t border-background">
         <View className="flex-row gap-3">
           <Pressable
             onPress={async () => {
@@ -124,9 +122,9 @@ export default function NutrientDisplaySettingsPage() {
               setSelectedNutrients(all);
               await saveNutrientDisplayPrefs(all);
             }}
-            className="flex-1 bg-white rounded-[12px] h-12 items-center justify-center shadow-sm"
+            className="flex-1 bg-background rounded-xl h-12 items-center justify-center shadow-sm"
           >
-            <Text className="text-[14px] font-medium text-black">
+            <Text className="text-foreground font-medium">
               Select All
             </Text>
           </Pressable>
@@ -136,9 +134,9 @@ export default function NutrientDisplaySettingsPage() {
               setSelectedNutrients(none);
               await saveNutrientDisplayPrefs(none);
             }}
-            className="flex-1 bg-white rounded-[12px] h-12 items-center justify-center shadow-sm"
+            className="flex-1 bg-background rounded-xl h-12 items-center justify-center shadow-sm"
           >
-            <Text className="text-[14px] font-medium text-black">
+            <Text className="text-foreground font-medium">
               Clear All
             </Text>
           </Pressable>
@@ -148,9 +146,9 @@ export default function NutrientDisplaySettingsPage() {
               setSelectedNutrients(defaultSet);
               await saveNutrientDisplayPrefs(defaultSet);
             }}
-            className="flex-1 bg-white rounded-[12px] h-12 items-center justify-center shadow-sm"
+            className="flex-1 bg-background rounded-xl h-12 items-center justify-center shadow-sm"
           >
-            <Text className="text-[14px] font-medium text-black">
+            <Text className="text-foreground font-medium">
               Default
             </Text>
           </Pressable>

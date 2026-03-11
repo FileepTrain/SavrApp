@@ -61,7 +61,7 @@ const Input = React.forwardRef<TextInput, InputProps>(
       <View className={`${label ? "gap-2" : "gap-0"} ${className ?? ""}`}>
         <View className="flex-row justify-between">
           {label && (
-            <Text className="text-foreground text-sm font-medium">{label}</Text>
+            <Text className="text-foreground font-medium">{label}</Text>
           )}
           {error && <Text className="text-red-primary text-sm">{error}</Text>}
         </View>
@@ -69,7 +69,7 @@ const Input = React.forwardRef<TextInput, InputProps>(
           <TextInput
             ref={ref}
             className={twMerge(
-              "rounded-full px-5 text-foreground bg-muted-background",
+              "rounded-xl px-5 text-foreground bg-background border border-muted-background",
               error && "border border-red-primary box-border",
               (inputType === "password" || iconName) && "pr-16",
               inputClassName

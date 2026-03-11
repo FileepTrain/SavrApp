@@ -69,11 +69,11 @@ export function FilterCookwareModal({
   return (
     <Modal visible={visible} transparent animationType="fade">
       <Pressable onPress={handleBackdropClose} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
-        <Pressable onPress={() => {}} style={{ flex: 1, marginHorizontal: 16, marginVertical: 24 }}>
+        <Pressable onPress={() => { }} style={{ flex: 1, marginHorizontal: 16, marginVertical: 24 }}>
           <View style={{ flex: 1, maxWidth: 400, alignSelf: "center", width: "100%" }} className="bg-background rounded-xl overflow-hidden shadow-xl">
             {/* Header - match Add Cookware */}
             <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
-              <Text className="text-background text-lg font-bold tracking-[0.5px]">Filter by cookware</Text>
+              <Text className="text-white text-lg font-bold tracking-[0.5px]">Filter by cookware</Text>
               <Pressable onPress={handleBackdropClose}>
                 <IconSymbol name="close" size={24} color="--color-background" />
               </Pressable>
@@ -81,10 +81,10 @@ export function FilterCookwareModal({
 
             {/* Search - match Add Cookware / My Cookware page */}
             <View className="px-4 pt-4 pb-2">
-              <View className="bg-white rounded-[12px] flex-row items-center px-4 h-12 shadow-sm">
-                <IconSymbol name="magnify" size={20} color="#666666" />
+              <View className="border border-muted-background rounded-xl flex-row items-center px-4 h-12 shadow-sm">
+                <IconSymbol name="magnify" size={20} color="--color-icon" />
                 <TextInput
-                  className="flex-1 ml-3 text-[16px] text-black"
+                  className="flex-1 ml-3 text-base text-foreground"
                   placeholder="Search cookware..."
                   placeholderTextColor="#999999"
                   value={searchQuery}
@@ -92,7 +92,7 @@ export function FilterCookwareModal({
                 />
                 {searchQuery.length > 0 && (
                   <Pressable onPress={() => setSearchQuery("")}>
-                    <IconSymbol name="close" size={18} color="#666666" />
+                    <IconSymbol name="close" size={18} color="--color-icon" />
                   </Pressable>
                 )}
               </View>
@@ -100,7 +100,7 @@ export function FilterCookwareModal({
 
             {/* Stats - like Add Cookware */}
             <View className="px-4 pb-3">
-              <Text className="text-[14px] text-[#666666]">
+              <Text className="text-sm text-muted-foreground">
                 {selected.size} selected · {availableList.length} cookware
               </Text>
             </View>
@@ -108,10 +108,10 @@ export function FilterCookwareModal({
             {/* My cookware - same row/checkbox style as list items below */}
             <Pressable
               onPress={() => setUseMyCookwareOnly((v) => !v)}
-              className="mx-4 mb-2 bg-white rounded-[12px] flex-row items-center justify-between px-4 h-[56px] shadow-sm"
+              className="mx-4 mb-2 border border-muted-background rounded-xl flex-row items-center justify-between px-4 h-[56px] shadow-sm"
             >
-              <Text className="text-[16px] font-medium text-black flex-1">My cookware</Text>
-              <View className={`w-8 h-8 rounded-full items-center justify-center ${useMyCookwareOnly ? "bg-red-primary" : "border-2 border-[#CCCCCC] bg-white"}`}>
+              <Text className="text-base font-medium text-foreground flex-1">My cookware</Text>
+              <View className={`w-8 h-8 rounded-full items-center justify-center ${useMyCookwareOnly ? "bg-red-primary" : "border-2 border-muted-background bg-background"}`}>
                 {useMyCookwareOnly && <Text className="text-white text-base font-bold">✓</Text>}
               </View>
             </Pressable>
@@ -120,7 +120,7 @@ export function FilterCookwareModal({
             <ScrollView className="px-4 flex-1" style={{ flex: 1 }} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
               {filteredList.length === 0 ? (
                 <View className="py-6 px-2">
-                  <Text className="text-center text-[#666666]">
+                  <Text className="text-center text-muted-foreground">
                     {availableList.length === 0 ? "All cookware added to filter." : "No cookware match your search."}
                   </Text>
                 </View>
@@ -132,10 +132,10 @@ export function FilterCookwareModal({
                       <Pressable
                         key={item}
                         onPress={() => toggle(item)}
-                        className="bg-white rounded-[12px] flex-row items-center justify-between px-4 h-[56px] shadow-sm"
+                        className="border border-muted-background rounded-xl flex-row items-center justify-between px-4 h-[56px]"
                       >
-                        <Text className="text-[16px] font-medium text-black flex-1">{item}</Text>
-                        <View className={`w-8 h-8 rounded-full items-center justify-center ${isSelected ? "bg-red-primary" : "border-2 border-[#CCCCCC] bg-white"}`}>
+                        <Text className="text-base font-medium text-foreground flex-1">{item}</Text>
+                        <View className={`w-8 h-8 rounded-full items-center justify-center ${isSelected ? "bg-red-primary" : "border-2 border-muted-background bg-background"}`}>
                           {isSelected && <Text className="text-white text-base font-bold">✕</Text>}
                         </View>
                       </Pressable>
@@ -150,9 +150,9 @@ export function FilterCookwareModal({
               <Pressable
                 onPress={handleAdd}
                 disabled={selected.size === 0 && !useMyCookwareOnly}
-                className={`rounded-xl h-14 items-center justify-center ${selected.size === 0 && !useMyCookwareOnly ? "bg-gray-300" : "bg-red-primary"}`}
+                className={`rounded-xl h-14 items-center justify-center ${selected.size === 0 && !useMyCookwareOnly ? "bg-muted-background" : "bg-red-primary"}`}
               >
-                <Text className={`text-lg font-semibold ${selected.size === 0 && !useMyCookwareOnly ? "text-gray-500" : "text-white"}`}>
+                <Text className={`text-lg font-semibold ${selected.size === 0 && !useMyCookwareOnly ? "text-muted-foreground" : "text-white"}`}>
                   {selected.size > 0 ? `Add ${selected.size} cookware` : useMyCookwareOnly ? "Apply" : "Add cookware"}
                 </Text>
               </Pressable>

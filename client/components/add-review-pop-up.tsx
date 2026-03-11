@@ -36,7 +36,7 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent={true}>
       {/* Dark Background Overlay */}
       <Pressable
         onPress={onClose}
@@ -44,17 +44,17 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
       />
 
       {/* MODAL CARD */}
-      <View className="absolute top-[92px] left-[16px] w-[361px] bg-white rounded-2xl shadow-2xl">
+      <View className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[361px] bg-background rounded-2xl shadow-2xl">
 
         {/* HEADER */}
-        <View className="flex-row justify-between items-center px-6 h-[81px] border-b border-gray-200">
-          <Text className="text-[20px] font-bold text-[#EB2D2D]">Write a Review</Text>
+        <View className="flex-row justify-between items-center px-6 h-[81px] border-b border-muted-background">
+          <Text className="text-[20px] font-bold text-red-primary">Write a Review</Text>
 
           <TouchableOpacity
             onPress={onClose}
             className="w-8 h-8 items-center justify-center"
           >
-            <IconSymbol name="close" size={22} color="#4A5565" />
+            <IconSymbol name="close" size={22} color="--color-icon" />
           </TouchableOpacity>
         </View>
 
@@ -62,7 +62,7 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
         <View className="px-6 pt-6 pb-4">
 
           {/* Rating Section */}
-          <Text className="text-[14px] font-medium mb-2">Your Rating</Text>
+          <Text className="text-[14px] font-medium mb-2 text-foreground">Your Rating</Text>
 
           <View className="flex-row gap-2 mb-6">
             {Array.from({ length: 5 }).map((_, i) => {
@@ -83,12 +83,12 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
           </View>
 
           {/* Review Input */}
-          <Text className="text-[14px] font-medium mb-2">Your Review</Text>
+          <Text className="text-sm font-medium mb-2 text-foreground">Your Review</Text>
 
           <TextInput
             multiline
             placeholder="Share your experience with this recipe..."
-            className="border border-gray-300 rounded-xl p-4 h-[128px] text-[14px]"
+            className="border border-muted-background rounded-xl p-4 h-[128px] text-sm text-foreground"
             value={review}
             onChangeText={setReview}
           />
@@ -96,9 +96,9 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
           {/* Submit Button */}
           <TouchableOpacity
             onPress={handleSubmit}
-            className="bg-[#EB2D2D] rounded-xl h-[48px] items-center justify-center mt-6 shadow"
+            className="bg-red-primary rounded-xl h-[48px] items-center justify-center mt-6 shadow"
           >
-            <Text className="text-white text-[16px] font-medium">
+            <Text className="text-foreground text-base font-medium">
               Submit Review
             </Text>
           </TouchableOpacity>

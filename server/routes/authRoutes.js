@@ -14,6 +14,8 @@ import {
   updateAllergies,
   getDiets,
   updateDiets,
+  getBudget,
+  updateBudget,
 } from "../controllers/authController.js";
 
 const router = express.Router();
@@ -56,5 +58,11 @@ router.get("/get-diets", verifyToken, getDiets);
 
 // PUT /api/auth/update-allergies - Update array of user diets
 router.put("/update-diets", verifyToken, updateDiets);
+
+// GET /api/auth/get-budget - Get user budget
+router.get("/get-budget", verifyToken, getBudget);
+
+// PUT /api/auth/update-budget - Update user budget
+router.put("/update-budget", verifyToken, updateBudget);
 
 export default router;

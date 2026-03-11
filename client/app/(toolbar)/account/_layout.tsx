@@ -15,9 +15,9 @@ export default function AccountStackLayout() {
           header: ({ options, navigation }) => (
             <SafeAreaView className="px-4 pt-7 flex-row items-center">
               <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-                <IconSymbol name="chevron-left" size={30} color="black" />
+                <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
               </TouchableOpacity>
-              <Text className="text-2xl font-bold">{options.title}</Text>
+              <Text className="text-2xl font-bold text-foreground">{options.title}</Text>
             </SafeAreaView>
           ),
         }}
@@ -66,6 +66,18 @@ export default function AccountStackLayout() {
         <Stack.Screen
           name="cookware-settings"
           options={{ title: "My Cookware" }}
+        />
+        <Stack.Screen
+          name="diet-preference-settings"
+          options={{ title: "Dietary Preferences" }}
+        />
+        <Stack.Screen
+          name="budget-preferences"
+          options={{ title: "Budget Preferences" }}
+        />
+        <Stack.Screen
+          name="accessibility-settings"
+          options={{ title: "Accessibility" }}
         />
         <Stack.Screen
           name="nutrient-display-settings"

@@ -1,6 +1,6 @@
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View, Pressable, FlatList } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useEffect, useState} from "react";
+import React, { useEffect, useState } from "react";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -35,22 +35,22 @@ export default function GroceryListPage() {
   */
   async function getLocation() {
     const allowed = await isLocationEnabled();
-    if(!allowed) {
+    if (!allowed) {
       console.log("Location disabled by user");
       return;
     }
 
-    try{
-      const {status} = await Location.requestForegroundPermissionsAsync();
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         console.log("Permission denied");
         return;
       }
 
       const location = await Location.getCurrentPositionAsync();
-      const {latitude, longitude} = location.coords;
-      const [address] = await Location.reverseGeocodeAsync({ latitude, longitude});
-      const zipcode = address?.postalCode?? ''; //if no zip returns empty string
+      const { latitude, longitude } = location.coords;
+      const [address] = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const zipcode = address?.postalCode ?? ''; //if no zip returns empty string
       console.log("Latitude:", latitude);
       console.log("Longitude:", longitude);
       console.log("zipcode:", zipcode)
@@ -151,12 +151,9 @@ export default function GroceryListPage() {
    * UI
    */
   return (
-    <ThemedSafeView className="flex-1 pt-safe-or-20">
+    <ThemedSafeView>
       <View className="gap-4 flex-1 px-4">
-        {/* Title */}
-        <Text className="text-foreground text-2xl font-semibold">
-          Grocery List
-        </Text>
+        <Text className="text-foreground text-2xl font-semibold">Grocery List</Text>
 
         {/* Location Button */}
         <View className="flex-row items-center">
@@ -171,12 +168,12 @@ export default function GroceryListPage() {
 
         {/* Add Item Button */}
         <Button
-          variant="primary"
+          variant="outline"
           icon={{
             name: "plus-circle-outline",
             position: "left",
             size: 20,
-            color: "--color-icon",
+            color: "--color-red-primary",
           }}
           className="h-14 rounded-xl shadow-lg"
           textClassName="text-lg font-bold text-red-primary"
@@ -190,13 +187,13 @@ export default function GroceryListPage() {
           {/* Store Header */}
           <View className="bg-muted-background rounded-xl p-3 mb-3 flex-row items-center justify-between">
             <View className="flex-row items-center gap-2">
-              <IconSymbol name="cart-outline" size={22} color="--color-icon" />
-              <Text className="text-lg font-bold text-red-primary">
+              <IconSymbol name="cart-outline" size={22} color="--color-foreground" />
+              <Text className="text-lg font-bold text-foreground">
                 Kroger
               </Text>
             </View>
 
-            <Text className="text-lg font-semibold text-red-primary">
+            <Text className="text-lg font-semibold text-foreground">
               Total: ${totalCost ?? "0.00"}
             </Text>
           </View>
@@ -210,7 +207,7 @@ export default function GroceryListPage() {
               keyExtractor={(item) => item.id}
               ListEmptyComponent={
                 <View className="flex-1 items-center justify-center mt-8">
-                  <Text className="opacity-60">
+                  <Text className="opacity-60 text-foreground">
                     Your grocery list is empty.
                   </Text>
                 </View>

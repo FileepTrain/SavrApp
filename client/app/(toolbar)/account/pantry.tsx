@@ -154,7 +154,7 @@ export default function PantryPage() {
             size: 20,
             color: "--color-red-primary",
           }}
-          className="h-24 rounded-xl shadow-lg"
+          className="h-24"
           textClassName="text-xl font-bold text-red-primary"
           onPress={() => setIsAddOpen(true)}
         >

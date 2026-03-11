@@ -8,14 +8,14 @@ type CardVariant = "horizontal" | "default";
 
 
 interface RecipeCardProps {
-id: string;
-title: string;
-calories?: number;
-rating?: number;
-reviewsLength?: number;
-variant?: CardVariant;
-imageUrl?: string | null;
-onPress?: () => void; // if provided uses Pressable; else Link to details
+  id: string;
+  title: string;
+  calories?: number;
+  rating?: number;
+  reviewsLength?: number;
+  variant?: CardVariant;
+  imageUrl?: string | null;
+  onPress?: () => void; // if provided uses Pressable; else Link to details
 }
 
 // Recipe Card default information
@@ -38,7 +38,7 @@ export const RecipeCard = ({
   // Recipe card default layout
   if (variant === "default") {
     cardContent = (
-      <View className="bg-white rounded-2xl overflow-hidden flex-col w-48 h-56 drop-shadow-xl">
+      <View className="bg-background rounded-2xl overflow-hidden flex-col w-48 h-56 drop-shadow-xl">
         <Image source={imgSource} className="w-full h-28" resizeMode="cover" />
         <View className="p-4 gap-2">
           <Text className="text-red-primary font-medium text-base" numberOfLines={1}>
@@ -51,10 +51,10 @@ export const RecipeCard = ({
         </View>
       </View>
     );
-  } else if (variant === "horizontal") {
+  } else {
     // Horizontal variant
     cardContent = (
-      <View className="bg-white flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
+      <View className="bg-background flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
         {imageUrl ? (
           <Image
             source={{ uri: imageUrl }}
@@ -81,10 +81,6 @@ export const RecipeCard = ({
         </View>
       </View>
     );
-  } //other variants go here
-
-  if (onPress) {
-    return <Pressable onPress={onPress}>{cardContent}</Pressable>;
   }
 
   return (

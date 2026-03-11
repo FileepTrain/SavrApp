@@ -135,28 +135,22 @@ export default function EditProfilesPage() {
 
     return (
         <ThemedSafeView className="flex-1 pt-safe-or-20">
-            <View className="flex-1">
+            <View className="gap-5 px-4 h-full">
                 {/*Username bubble*/}
-                <Text className="text-[14px] text-[#1E1E1E]">Current Username</Text>
-                <View className="bg-[#F2F2F2] rounded-[28px] px-5">
-                    <Input
-                        value={username}
-                        onChangeText={setUsername}
-                        placeholder="Username"
-                        autoCapitalize="none"
-                    />
-                </View>
+                <Input
+                    label="Current Username"
+                    value={username}
+                    onChangeText={setUsername}
+                    placeholder="Username"
+                />
 
                 {/*Email bubble*/}
-                <Text className="text-[14px] text-[#1E1E1E]">Current Email</Text>
-                <View className="bg-[#F2F2F2] rounded-[28px] px-5">
-                    <Input
-                        value={email}
-                        onChangeText={setEmail}
-                        placeholder="Email"
-                        autoCapitalize="none"
-                    />
-                </View>
+                <Input
+                    label="Current Email"
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="Email"
+                />
 
                 {/*Save button*/}
                 <View className="mt-4">
@@ -164,40 +158,36 @@ export default function EditProfilesPage() {
                         size="lg"
                         onPress={handleSave}
                         disabled={loading}
-                        className="rounded-full bg-[#FFB0B2]"
+                        textClassName="font-medium text-lg"
                     >
-                        {loading ? "Saving..." : "Save"}
+                        {loading ? "Saving..." : "Save Changes"}
                     </Button>
                 </View>
 
                 {/*Delete button*/}
-                <Pressable
-                    onPress={() =>
-                        Alert.alert(
-                            "Permanently Delete Account?",
-                            "This can't be undone!",
-                            [
-                                { text: "Cancel", style: "cancel" },
-                                { text: "Delete", style: "destructive", onPress: handleDelete },
-                            ]
-                        )
-                    }
-                    className="mt-auto mb-6 w-full h-[50px] bg-[#EB2D2D] rounded-[12px]"
-                    style={{
-                        shadowColor: "#000",
-                        shadowOpacity: 0.15,
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowRadius: 4,
-                        elevation: 5,
-                    }}
-                >
-                    <View className="flex-1 items-center justify-center">
-                        <Text className="text-white font-semibold text-[16px]">Delete Account</Text>
-                    </View>
-                </Pressable>
+                <View className="mt-auto">
 
+                    <Button
+                        size="lg"
+                        variant="destructive"
+                        className="mb-6"
+                        textClassName="font-medium text-lg"
+                        onPress={() =>
+                            Alert.alert(
+                                "Permanently Delete Account?",
+                                "This can't be undone!",
+                                [
+                                    { text: "Cancel", style: "cancel" },
+                                    { text: "Delete", style: "destructive", onPress: handleDelete },
+                                ]
+                            )
+                        }
+                        disabled={loading}
+                    >
+                        {loading ? "Deleting..." : "Delete Account"}
+                    </Button>
+                </View>
             </View>
-
         </ThemedSafeView>
     );
 }

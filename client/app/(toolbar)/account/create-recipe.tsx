@@ -121,15 +121,15 @@ export default function CreateRecipePage() {
           <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
             <Text className="text-lg text-foreground font-bold">Recipe Photo</Text>
             <TouchableOpacity
-              className="bg-muted-background h-36 items-center justify-center rounded-xl gap-2"
+              className="bg-muted-background border border-muted-background h-36 items-center justify-center rounded-xl gap-2"
               onPress={pickImage}
             >
               {recipeImage ? (
                 <Image source={{ uri: recipeImage }} className="w-full h-full" resizeMode="contain" />
               ) : (
                 <>
-                  <IconSymbol name="camera-outline" size={32} color="--color-icon" />
-                  <Text className="text-icon text-lg font-medium">Add Photo</Text>
+                  <IconSymbol name="camera-outline" size={32} color="--color-muted-foreground" />
+                  <Text className="text-muted-foreground text-lg font-medium">Add Photo</Text>
                 </>
               )}
             </TouchableOpacity>

@@ -383,9 +383,9 @@ export default function HomeSearchScreen() {
                   <View className="absolute w-3 h-3 top-0 right-0 bg-red-primary z-10 rounded-full" />
                 )}
                 <Button
-                  variant="muted"
+                  variant="outline"
                   icon={{ name: "filter-outline", color: "--color-icon" }}
-                  className="w-14 h-14"
+                  className="w-14 h-14 rounded-full"
                   onPress={openFilterModal}
                 />
               </View>
@@ -404,7 +404,7 @@ export default function HomeSearchScreen() {
             </View>
 
             {!!queryParam && (
-              <Text className="opacity-70">
+              <Text className="text-muted-foreground">
                 Results for: <Text className="font-bold">{queryParam}</Text>
               </Text>
             )}
