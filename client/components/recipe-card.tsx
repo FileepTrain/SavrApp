@@ -84,9 +84,16 @@ export const RecipeCard = ({
   }
 
   return (
-    <Link href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}>
-      {cardContent}
-    </Link>
+    onPress ? (
+      <Pressable onPress={onPress}>{cardContent}</Pressable>
+    ) : (
+      <Link
+        href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}
+        asChild
+      >
+        <Pressable>{cardContent}</Pressable>
+      </Link>
+    )
   );
 };
 
