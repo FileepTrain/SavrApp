@@ -2,6 +2,7 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import type { Recipe } from "@/contexts/meal-plan-selection-context";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
+import { useMealPlans } from "@/contexts/meal-plans-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
@@ -30,6 +31,7 @@ export default function MealPlanPage() {
   const [saving, setSaving] = useState(false);
 
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
+  const { refetch: refetchMealPlans } = useMealPlans();
 
   const handleSave = useCallback(async () => {
     const idToken = await AsyncStorage.getItem("idToken");
@@ -58,6 +60,7 @@ export default function MealPlanPage() {
         throw new Error(data.error ?? "Failed to save meal plan");
       }
       Alert.alert("Saved", "Your meal plan has been saved.");
+      await refetchMealPlans();
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to save meal plan.");
     } finally {
@@ -267,8 +270,8 @@ export default function MealPlanPage() {
         {/*Save button*/}
         <View className="flex items-center">
           <Button
-            variant="default"
-            className="h-16 flex  px-20 bg-red-primary rounded-2xl shadow-sm"
+            variant="destructive"
+            className="h-16 flex px-20 rounded-2xl shadow-sm"
             textClassName="text-xl font-bold"
             onPress={() => {
               handleSave();

@@ -15,12 +15,12 @@ export default function FavoritesPage() {
   const { setPendingSelectedRecipe } = useMealPlanSelection();
   const isSelectionMode = mode === "select";
 
-  //console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
+  console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
 
-  const handleSelectRecipe = (recipe: { id: string; [key: string]: unknown }) => {
+  const handleSelectRecipe = (recipe: { id: string;[key: string]: unknown }) => {
     setPendingSelectedRecipe(recipe);
     router.back();
-    router.push(`/calendar/meal-plan`)
+    router.push(`/calendar/meal-plan`);
   };
   const [favorites, setFavorites] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ export default function FavoritesPage() {
       try {
         setLoading(true);
         const idToken = await AsyncStorage.getItem("idToken");
-        if (!idToken){
+        if (!idToken) {
           setFavorites([]);
           return;
         }
@@ -41,7 +41,7 @@ export default function FavoritesPage() {
           },
           method: "GET",
         });
-        
+
         if (!response.ok) {
           setFavorites([]);
           return;
@@ -53,7 +53,7 @@ export default function FavoritesPage() {
           try {
             // Determine if personal or external recipe
             const isPersonal = !/^\d+$/.test(id);
-            
+
             if (isPersonal) {
               const res = await fetch(`${SERVER_URL}/api/recipes/${id}`);
               if (!res.ok) return null;
@@ -73,8 +73,8 @@ export default function FavoritesPage() {
         const recipes = await Promise.all(recipePromises);
         const validRecipes = recipes.filter(r => r !== null);
         setFavorites(validRecipes)
-        
-      } catch(error) {
+
+      } catch (error) {
         console.error("Error fetching favorite recipes:", error);
       } finally {
         setLoading(false);
@@ -90,15 +90,15 @@ export default function FavoritesPage() {
           Tap a recipe to add it to your meal plan
         </Text>
       )}
-      
+
       <View className="gap-4">
-        {loading?
-          <ActivityIndicator size="large" color="red"/>
+        {loading ?
+          <ActivityIndicator size="large" color="red" />
           :
           <FlatList
-            data= {favorites}
+            data={favorites}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }: {item:any}) =>(
+            renderItem={({ item }: { item: any }) => (
               <View className="mb-3">
                 <RecipeCard
                   id={item.id}
@@ -107,10 +107,10 @@ export default function FavoritesPage() {
                   calories={item.calories}
                   rating={item.rating}
                   reviewsLength={item.reviews?.length || 0}
-                  imageURL={item.image ?? undefined}
-                  onPress={() =>{
+                  imageUrl={item.image ?? undefined}
+                  onPress={() => {
                     if (isSelectionMode) {
-                     handleSelectRecipe(item);
+                      handleSelectRecipe(item);
                     } else {
                       router.push(`/recipe/${item.id}`);
                     }
