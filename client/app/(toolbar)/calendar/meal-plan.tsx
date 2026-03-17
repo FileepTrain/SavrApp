@@ -14,7 +14,7 @@ import { RecipeCard } from "@/components/recipe-card";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
-type MealSlot = "breakfast" | "lunch" | "dinner";
+type MealSlot = "Breakfast" | "Lunch" | "Dinner";
 
 export default function MealPlanPage() {
   const [start_date, setStartDate] = useState(new Date());
@@ -25,9 +25,9 @@ export default function MealPlanPage() {
 
   const [visible, setVisible] = useState(false);
   const [pendingMealSlot, setPendingMealSlot] = useState<MealSlot | null>(null);
-  const [breakfastRecipe, setBreakfastRecipe] = useState<Recipe | null>(null);
-  const [lunchRecipe, setLunchRecipe] = useState<Recipe | null>(null);
-  const [dinnerRecipe, setDinnerRecipe] = useState<Recipe | null>(null);
+  const [breakfastRecipe, setBreakfastRecipe] = useState<Recipe[]>([]);
+  const [lunchRecipe, setLunchRecipe] = useState<Recipe[]>([]);
+  const [dinnerRecipe, setDinnerRecipe] = useState<Recipe[]>([]);
   const [saving, setSaving] = useState(false);
 
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
@@ -48,9 +48,9 @@ export default function MealPlanPage() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          breakfast: breakfastRecipe?.id ?? null,
-          lunch: lunchRecipe?.id ?? null,
-          dinner: dinnerRecipe?.id ?? null,
+          breakfast: breakfastRecipe.map(r => r.id),
+          lunch: lunchRecipe?.map(r => r.id),
+          dinner: dinnerRecipe?.map(r => r.id),
           start_date: start_date.toISOString(),
           end_date: end_date.toISOString(),
         }),
@@ -66,14 +66,18 @@ export default function MealPlanPage() {
     } finally {
       setSaving(false);
     }
-  }, [start_date, end_date, breakfastRecipe?.id, lunchRecipe?.id, dinnerRecipe?.id]);
+  }, [start_date, end_date, breakfastRecipe, lunchRecipe, dinnerRecipe]);
 
   useFocusEffect(
     useCallback(() => {
       if (pendingSelectedRecipe && pendingMealSlot) {
-        if (pendingMealSlot === "breakfast") setBreakfastRecipe(pendingSelectedRecipe);
-        else if (pendingMealSlot === "lunch") setLunchRecipe(pendingSelectedRecipe);
-        else if (pendingMealSlot === "dinner") setDinnerRecipe(pendingSelectedRecipe);
+        if (pendingMealSlot === "Breakfast") {
+          setBreakfastRecipe(prev => [...prev, pendingSelectedRecipe]);
+        } else if (pendingMealSlot === "Lunch") {
+          setLunchRecipe(prev => [...prev, pendingSelectedRecipe]);
+        } else if (pendingMealSlot === "Dinner") {
+          setDinnerRecipe(prev => [...prev, pendingSelectedRecipe]);
+        }
         setPendingSelectedRecipe(null);
         setPendingMealSlot(null);
       }
@@ -117,217 +121,183 @@ export default function MealPlanPage() {
     );
   };
 
-  const renderMealContainer = (meal: string, color: any) => { }
+  const renderMealContainer = (meal:MealSlot, color:string, recipeData:Recipe[]) => {
+    return(
+    <View className="gap-2 py-4">
+      {/*header*/}
+      <View className="flex-row items-center">
+        <View
+          className="h-4 w-4 rounded-full"
+          style={{backgroundColor: color}}
+        />
+        <Text className="font-bold text-xl"> {meal} </Text>
+      </View>
+
+      {recipeData.map((recipe: Recipe) => (
+        <View key={recipe.id}>
+          {renderRecipeCard(recipe)}
+        </View>
+      ))}
+      <Button
+        variant="outline"
+        icon={{
+          name: "plus",
+          position: "left",
+          size: 16,
+          color: color,
+        }}
+        className="h-14 flex px-20 rounded-2xl shadow-sm border-2"
+        style={{borderColor: color}}
+        color="white"
+        onPress={() => openAddRecipeModal(meal)}
+      >
+        <Text className="text-xl font-bold" style={{color: color}}>
+          Add {meal}
+        </Text>
+      </Button>
+
+    </View>
+    )
+  }
 
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-safe-or-20">
-      <ScrollView
-        className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text className="py-4 text-foreground font-bold"> Plan Duration </Text>
-        {/* Plan Duration container */}
-        <View className="flex-row gap-4 w-full">
+    <ScrollView
+      className="flex-1 px-4"
+      contentContainerStyle={{ paddingBottom: 40 }}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text className="py-4"> Plan Duration </Text>
+      {/* Plan Duration container */}
+      <View className="flex-row gap-4 w-full">
 
-          {/* start */}
-          <Pressable className="flex-1 bg-background p-4 rounded-lg shadow-sm"
-            onPress={() => {
-              setActiveField("start");
-              setShowPicker(true);
-            }}
-          >
-            <Text className="text-foreground font-medium"> Start Date </Text>
-            <Text className="text-foreground"> {start_date.toDateString()} </Text>
-          </Pressable>
-
-          {/* End */}
-          <Pressable className="flex-1 bg-background p-4 rounded-lg shadow-sm"
-            onPress={() => {
-              setActiveField("end");
-              setShowPicker(true);
-            }}
-          >
-            <Text className="text-foreground font-medium"> End Date </Text>
-            <Text className="text-foreground"> {end_date.toDateString()} </Text>
-          </Pressable>
-
-          {showPicker && (
-            <DateTimePicker
-              value={activeField === "start" ? start_date : end_date}
-              mode="date"
-              display="calendar"
-              onChange={onChange}
-            />
-          )}
-        </View>
-
-        <View className="py-3">
-          <Button
-            variant="outline"
-            icon={{ name: "invoice-list-outline", position: "left", size: 18 }}
-            className="rounded-xl border-2 border-[#666]"
-            textClassName="font-semibold text-foreground"
-            onPress={() => {
-              router.push({
-                pathname: "/calendar/meal-plan-nutrient-preview",
-                params: {
-                  breakfastId: breakfastRecipe?.id ?? "",
-                  lunchId: lunchRecipe?.id ?? "",
-                  dinnerId: dinnerRecipe?.id ?? "",
-                },
-              });
-            }}
-          >
-            Preview nutrient
-          </Button>
-        </View>
-
-        {/*Breakfast container*/}
-        <View className="gap-2 py-4">
-          {/*header*/}
-          <View className="flex-row items-center">
-            <View className="h-4 w-4 rounded-full bg-[#f0a030]"></View>
-            <Text className="font-bold text-xl text-foreground"> Breakfast </Text>
-          </View>
-
-          {breakfastRecipe && (
-            renderRecipeCard(breakfastRecipe)
-          )}
-          <Button
-            variant="outline"
-            icon={{
-              name: "plus",
-              position: "left",
-              size: 16,
-              color: "#f0a030",
-            }}
-            className="h-14 flex px-20 rounded-2xl shadow-sm border-[#f0a030] border-2"
-            textClassName="text-xl font-bold text-[#f0a030]"
-            onPress={() => openAddRecipeModal("breakfast")}
-          >
-            Add Breakfast
-          </Button>
-
-        </View>
-
-        {/*Lunch container*/}
-        <View className="gap-2 py-4">
-          {/*header*/}
-          <View className="flex-row items-center">
-            <View className="h-4 w-4 rounded-full bg-[#14cc0a]" />
-            <Text className="font-bold text-xl text-foreground"> Lunch </Text>
-          </View>
-
-          {lunchRecipe && (
-            renderRecipeCard(lunchRecipe)
-          )}
-          <Button
-            variant="outline"
-            icon={{
-              name: "plus",
-              position: "left",
-              size: 16,
-              color: "#14cc0a",
-            }}
-            className="h-14 flex px-20 rounded-2xl shadow-sm border-[#14cc0a] border-2"
-            textClassName="text-xl font-bold text-[#14cc0a]"
-            onPress={() => openAddRecipeModal("lunch")}
-          >
-            Add Lunch
-          </Button>
-
-        </View>
-
-        {/*dinner container*/}
-        <View className="gap-2 py-4">
-          {/*header*/}
-          <View className="flex-row items-center">
-            <View className="h-4 w-4 rounded-full bg-[#bd9b64]" />
-            <Text className="font-bold text-xl text-foreground"> Dinner </Text>
-          </View>
-
-          {dinnerRecipe && (
-            renderRecipeCard(dinnerRecipe)
-          )}
-          <Button
-            variant="outline"
-            icon={{
-              name: "plus",
-              position: "left",
-              size: 16,
-              color: "#bd9b64",
-            }}
-            className="h-14 flex px-20 rounded-2xl shadow-sm border-[#bd9b64] border-2"
-            textClassName="text-xl font-bold text-[#bd9b64]"
-            onPress={() => openAddRecipeModal("dinner")}
-          >
-            Add Dinner
-          </Button>
-
-        </View>
-
-        {/*Save button*/}
-        <View className="flex items-center">
-          <Button
-            variant="destructive"
-            className="h-16 flex px-20 rounded-2xl shadow-sm"
-            textClassName="text-xl font-bold"
-            onPress={() => {
-              handleSave();
-              //router.back()
-            }}
-            disabled={saving}
-          >
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </View>
-
-        {/* recipe select pop up */}
-        <Modal
-          transparent
-          visible={visible}
-          animationType="fade"
-          statusBarTranslucent={true}
+        {/* start */}
+        <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
+          onPress={() => {
+            setActiveField("start");
+            setShowPicker(true);
+          }}
         >
-          {/* Backdrop */}
-          <Pressable
-            className="flex-1 bg-black/50 justify-center items-center"
-            onPress={() => setVisible(false)}
-          >
-            {/* Stop press propagation */}
-            <Pressable className="w-80 bg-background rounded-2xl p-6 gap-4">
-              <Text className="text-lg font-bold text-center text-foreground">Choose Recipe</Text>
-              <Button
-                variant="outline"
-                onPress={() => {
-                  setVisible(false);
-                  console.log("Favorites selected");
-                  router.push({
-                    pathname: "/account/favorites",
-                    params: { mode: "select" },
-                  });
-                }}
-                icon={{ name: "heart-outline", position: "left" }}
-              >
-                From Favorites
-              </Button>
+          <Text> Start Date </Text>
+          <Text> {start_date.toDateString()} </Text>
+        </Pressable>
 
-              <Button
-                variant="outline"
-                onPress={() => {
-                  setVisible(false);
-                  console.log("Search selected");
-                }}
-                icon={{ name: "magnify", position: "left" }}
-              >
-                Search Recipes
-              </Button>
+        {/* End */}
+        <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
+          onPress={() => {
+            setActiveField("end");
+            setShowPicker(true);
+          }}
+        >
+          <Text> End Date </Text>
+          <Text> {end_date.toDateString()} </Text>
+        </Pressable>
+
+        {showPicker && (
+          <DateTimePicker
+            value={activeField === "start" ? start_date : end_date}
+            mode="date"
+            display="calendar"
+            onChange={onChange}
+          />
+        )}
+      </View>
+
+      <View className="py-3">
+        <Button
+          variant="outline"
+          icon={{ name: "invoice-list-outline", position: "left", size: 18 }}
+          className="rounded-xl border-2 border-[#666]"
+          textClassName="font-semibold text-foreground"
+          onPress={() => {
+            router.push({
+              pathname: "/calendar/meal-plan-nutrient-preview",
+              params: {
+                breakfastIds: JSON.stringify(breakfastRecipe.map(r => r.id)),
+                lunchIds: JSON.stringify(lunchRecipe.map(r => r.id)),
+                dinnerIds: JSON.stringify(dinnerRecipe.map(r => r.id)),
+              },
+            });
+          }}
+        >
+          Preview nutrient
+        </Button>
+      </View>
+
+      {/*Breakfast container*/}
+      <View>{renderMealContainer("Breakfast", "#fcba03", breakfastRecipe)}</View>
+
+      {/*Lunch container*/}
+      <View>{renderMealContainer("Lunch", "#14cc0a", lunchRecipe)}</View>
+
+      {/*dinner container*/}
+      <View>{renderMealContainer("Dinner", "#bd9b64", dinnerRecipe)}</View>
+
+      {/*Save button*/}
+      <View className="flex items-center">
+        <Button
+          variant="default"
+          className="h-16 flex  px-20 bg-red-primary rounded-2xl shadow-sm"
+          textClassName="text-xl font-bold text-white"
+          onPress={() => {
+            handleSave();
+            //router.back()
+          }}
+          disabled={saving}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </View>
+
+      {/* recipe select pop up */}
+      <Modal
+        transparent
+        visible={visible}
+        animationType="fade"
+        statusBarTranslucent={true}
+      >
+        {/* Backdrop */}
+        <Pressable
+          className="flex-1 bg-black/50 justify-center items-center"
+          onPress={() => setVisible(false)}
+        >
+          {/* Stop press propagation */}
+          <Pressable className="w-80 bg-background rounded-2xl p-6 gap-4">
+            <Text className="text-lg font-bold text-center text-foreground">Choose Recipe</Text>
+            <Button
+              variant="outline"
+              onPress={() => {
+                setVisible(false);
+                //console.log("Favorites selected");
+                router.push({
+                  pathname: "/account/favorites",
+                  params: { mode: "select" },
+                });
+              }}
+              icon={{ name: "heart-outline", position: "left" }}
+            >
+              From Favorites
+            </Button>
+
+            <Button
+              variant="outline"
+              onPress={() => {
+                setVisible(false);
+                //console.log("Search selected");
+                router.push({
+                  pathname: "/home/search",
+                  params: { mode: "select" },
+                })
+              }}
+              icon={{ name: "magnify", position: "left" }}
+            >
+              Search Recipes
+            </Button>
 
             </Pressable>
           </Pressable>
         </Modal>
-      </ScrollView>
+    </ScrollView>
     </ThemedSafeView>
   );
 }

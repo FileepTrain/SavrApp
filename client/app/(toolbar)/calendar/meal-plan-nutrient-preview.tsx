@@ -134,19 +134,31 @@ function mergeNutrients(
 
 export default function MealPlanNutrientPreviewPage() {
   const params = useLocalSearchParams<{
-    breakfastId?: string;
-    lunchId?: string;
-    dinnerId?: string;
+    breakfastIds?: string;
+    lunchIds?: string;
+    dinnerIds?: string;
   }>();
-  const breakfastId = Array.isArray(params.breakfastId)
-    ? params.breakfastId[0]
-    : params.breakfastId ?? "";
-  const lunchId = Array.isArray(params.lunchId)
-    ? params.lunchId[0]
-    : params.lunchId ?? "";
-  const dinnerId = Array.isArray(params.dinnerId)
-    ? params.dinnerId[0]
-    : params.dinnerId ?? "";
+
+  function parseIds(value?: string | string[]): string[] {
+    if (!value) return [];
+    const v = Array.isArray(value) ? value[0] : value;
+
+    try {
+      const parsed = JSON.parse(v);
+      if (!Array.isArray(parsed)) return [];
+
+      return parsed
+        .map((x) => (x != null ? String(x) : null))
+        .filter((x): x is string => x !== null);
+    } catch {
+      return [];
+    }
+  }
+  const breakfastIds = parseIds(params.breakfastIds);
+  const lunchIds = parseIds(params.lunchIds);
+  const dinnerIds = parseIds(params.dinnerIds);
+
+  console.log("BreakfastIds:", breakfastIds);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -163,10 +175,16 @@ export default function MealPlanNutrientPreviewPage() {
       setDisplayPrefs(prefs);
 
       const ids = [
-        breakfastId,
-        lunchId,
-        dinnerId,
-      ].filter((id) => id != null && String(id).trim() !== "");
+        ...breakfastIds,
+        ...lunchIds,
+        ...dinnerIds,
+      ]
+        .filter(id => id !== undefined && id !== null)
+        .map(id => String(id).trim())
+        .filter(id => id.length > 0);
+
+      console.log("Fetching nutrients for:", ids);
+
 
       if (ids.length === 0) {
         setLoading(false);
@@ -175,7 +193,7 @@ export default function MealPlanNutrientPreviewPage() {
 
       try {
         const results = await Promise.all(
-          ids.map((id) => fetchRecipeNutritionAndServings(String(id)))
+          ids.map(id => fetchRecipeNutritionAndServings(id))
         );
         const all = mergeNutrients(results);
         setMerged(all);
@@ -187,7 +205,7 @@ export default function MealPlanNutrientPreviewPage() {
     };
 
     run();
-  }, [breakfastId, lunchId, dinnerId]);
+  }, [params.breakfastIds, params.lunchIds, params.dinnerIds]);
 
   const toShow = useMemo(() => {
     const prefsLower =

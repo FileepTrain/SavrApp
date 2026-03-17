@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 import type { Filters } from "@/components/ui/filter_pop_up";
+import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 
 type SearchResult = {
   id: number | string;
@@ -77,6 +78,17 @@ function getResultKey(item: SearchResult): string {
 }
 
 export default function HomeSearchScreen() {
+  const {mode} = useLocalSearchParams<{mode?: string}>();
+  const {setPendingSelectedRecipe} = useMealPlanSelection();
+  const isSelectionMode = mode === "select";
+  //console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
+
+  const handleSelectRecipe = (recipe: { id: string; [key: string]: unknown }) => {
+    setPendingSelectedRecipe(recipe);
+    router.back();
+    router.push(`/calendar/meal-plan`)
+  };
+
   const { appliedFilters, openFilterModal } = useHomeFilter();
   const params = useLocalSearchParams<{ q?: string }>();
   const queryParam = useMemo(
@@ -361,6 +373,11 @@ export default function HomeSearchScreen() {
           calories={item.calories ?? undefined}
           rating={item.rating ?? 0}
           reviewsLength={item.reviewsLength ?? 0}
+          onPress={
+            isSelectionMode
+              ? () => handleSelectRecipe({id})
+              :undefined
+          }
         />
       </View>
     );
