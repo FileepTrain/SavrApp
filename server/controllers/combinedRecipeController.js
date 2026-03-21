@@ -6,7 +6,11 @@
 
 import admin from "firebase-admin";
 import axios from "axios";
-import { getAllRecipes } from "./recipeController.js";
+import {
+  getAllRecipes,
+  getAllPersonalRecipesForSimilarity,
+  getAllExternalRecipesForSimilarity,
+} from "./recipeController.js";
 import { searchExternalRecipes } from "./externalRecipeController.js";
 import { fetchPriceForTerm, getAccessToken } from "./krogerController.js";
 import ExternalRecipeModel from "../models/externalRecipeModel.js";
@@ -143,12 +147,14 @@ export const getFilteredFeed = async (req, res) => {
     let remaining = limit;
     let personalRequested = 0;
     let personalExhausted = false;
+
     if (!externalOnly && remaining > 0) {
       personalRequested = remaining;
       const recipes = await getAllRecipes({
         ...filters,
         offset: personalOffset,
       });
+
       personalResults = recipes.map((r) => {
         let calories = r.calories != null ? r.calories : null;
         if (calories == null && Array.isArray(r.nutrition?.nutrients)) {
@@ -196,7 +202,7 @@ export const getFilteredFeed = async (req, res) => {
       externalMeta = cached?._meta ?? null;
       externalTotalResults =
         typeof cached?.totalResults === "number" ? cached.totalResults : externalResults.length;
-    
+
       // Fallback to live Spoonacular search when cache has no matches.
       if (externalResults.length === 0 && q) {
         const live = await searchExternalRecipes({
@@ -245,6 +251,145 @@ export const getFilteredFeed = async (req, res) => {
     return res.status(500).json({
       error: error.message || "Internal server error",
       code: "COMBINED_FEED_FAILED",
+    });
+  }
+};
+
+// Determine Similar Recipe in Firestore
+function isExternalFirestoreRecipeId(id) {
+  return String(id).startsWith("spoonacular_");
+}
+
+// Grabs the raw recipe id
+function isRawExternalRecipeId(id) {
+  return /^\d+$/.test(String(id));
+}
+
+// Makes text easier to read
+function normalizeText(text = "") {
+  return String(text).trim().toLowerCase();
+}
+
+// Tokenizes text into words
+function tokenize(text = "") {
+  return normalizeText(text)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      if (word.endsWith("ies")) return word.slice(0, -3) + "y";
+      if (word.endsWith("s") && word.length > 1) return word.slice(0, -1);
+      return word;
+    });
+}
+
+// Grab ingredients from recipe to compare
+function getIngredientNames(recipe) {
+  return (recipe?.extendedIngredients || [])
+    .map((ing) => normalizeText(ing.name))
+    .filter(Boolean)
+    .map((word) => {
+      if (word.endsWith("ies")) return word.slice(0, -3) + "y";
+      if (word.endsWith("s") && word.length > 1) return word.slice(0, -1);
+      return word;
+    });
+}
+
+// Rate the recipes based on similarity
+function getSimilarityScore(currentRecipe, candidateRecipe) {
+  const currentIngredients = getIngredientNames(currentRecipe);
+  const candidateIngredients = getIngredientNames(candidateRecipe);
+  const currentIngredientSet = new Set(currentIngredients);
+  const candidateIngredientSet = new Set(candidateIngredients);
+  let ingredientOverlap = 0;
+  for (const ing of candidateIngredientSet) {
+    if (currentIngredientSet.has(ing)) {
+      ingredientOverlap++;
+    }
+  }
+  const currentWords = new Set([
+    ...tokenize(currentRecipe?.title),
+    ...tokenize(currentRecipe?.summary),
+  ]);
+  const candidateWords = new Set([
+    ...tokenize(candidateRecipe?.title),
+    ...tokenize(candidateRecipe?.summary),
+  ]);
+  let textOverlap = 0;
+  for (const word of candidateWords) {
+    if (currentWords.has(word)) {
+      textOverlap++;
+    }
+  }
+  const strongIngredientBonus = ingredientOverlap >= 2 ? 3 : 0;
+  const titleWordBonus =
+    tokenize(candidateRecipe?.title).some((word) => currentWords.has(word)) ? 2 : 0;
+  return ingredientOverlap * 4 + textOverlap + strongIngredientBonus + titleWordBonus;
+}
+
+// Get similar recipes from Firestore
+export const getSimilarRecipes = async (req, res) => {
+  try {
+    const { recipeId } = req.params;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 3, 1), 10);
+
+    let doc;
+
+    if (isExternalFirestoreRecipeId(recipeId)) {
+      doc = await admin
+        .firestore()
+        .collection("external_recipes")
+        .doc(recipeId)
+        .get();
+    } else if (!isRawExternalRecipeId(recipeId)) {
+      doc = await admin
+        .firestore()
+        .collection("personal_recipes")
+        .doc(recipeId)
+        .get();
+    } else {
+      return res.status(400).json({
+        error: "Raw numeric Spoonacular IDs are not supported for similar recipes yet",
+        code: "UNSUPPORTED_RECIPE_TYPE",
+      });
+    }
+    if (!doc.exists) {
+      return res.status(404).json({
+        error: "Recipe not found",
+        code: "RECIPE_NOT_FOUND",
+      });
+    }
+
+    const currentRecipe = { id: doc.id, ...doc.data() };
+    const personalCandidates = await getAllPersonalRecipesForSimilarity(100);
+    const externalCandidates = await getAllExternalRecipesForSimilarity(100);
+    const candidates = [...personalCandidates, ...externalCandidates];
+    const ranked = candidates
+      .filter((recipe) => String(recipe.id) !== String(recipeId))
+      .map((recipe) => {
+        const similarityScore = getSimilarityScore(currentRecipe, recipe);
+        return {
+          id: recipe.id,
+          title: recipe.title ?? null,
+          image: recipe.image ?? null,
+          calories: recipe.calories ?? null,
+          similarityScore,
+        };
+      })
+      .filter((recipe) => recipe.similarityScore > 0)
+      .sort((a, b) => b.similarityScore - a.similarityScore)
+      .slice(0, limit);
+
+    return res.json({
+      success: true,
+      recipeId,
+      results: ranked,
+    });
+  } catch (error) {
+    console.error("Error getting similar recipes:", error);
+    return res.status(500).json({
+      error: error.message || "Internal server error",
+      code: "SIMILAR_RECIPES_FAILED",
     });
   }
 };

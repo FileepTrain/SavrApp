@@ -4,12 +4,12 @@ import axios from "axios";
 import { z } from "zod";
 import { _computeAndStorePriceForDoc } from "./combinedRecipeController.js";
 
-// ✅ Store personal recipes in their own collection
+//  Store personal recipes in their own collection
 const RECIPES_COLL = "personal_recipes";
 const SPOON_BASE = "https://api.spoonacular.com";
 
 /**
- * ✅ Zod helper: coerce "string/number" -> number (works on older Zod)
+ *  Zod helper: coerce "string/number" -> number (works on older Zod)
  */
 const NumberFromAny = (minValue, msg) =>
   z.preprocess(
@@ -731,7 +731,7 @@ export const deleteRecipe = async (req, res) => {
 };
 
 /**
- * ✅ POST /api/recipes/:id/nutrition
+ * POST /api/recipes/:id/nutrition
  * Computes nutrition if missing (nutrition is null), unless forced via ?force=true
  */
 export const computeRecipeNutrition = async (req, res) => {
@@ -756,7 +756,7 @@ export const computeRecipeNutrition = async (req, res) => {
       return res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
     }
 
-    // ✅ If nutrition exists and not forcing, return cached
+    //  If nutrition exists and not forcing, return cached
     if (!force && recipe.nutrition) {
       return res.json({
         success: true,
@@ -766,7 +766,7 @@ export const computeRecipeNutrition = async (req, res) => {
       });
     }
 
-    // ✅ Otherwise compute + store
+    //  Otherwise compute + store
     const { nutrition, calories, skipped, reason } =
       await _computeAndStoreNutritionForDoc(docRef, recipe);
 
@@ -795,4 +795,28 @@ export const computeRecipeNutrition = async (req, res) => {
       code: "NUTRITION_ANALYSIS_FAILED",
     });
   }
+};
+
+export const getAllPersonalRecipesForSimilarity = async (limit = 100) => {
+  const db = admin.firestore();
+
+  const snap = await db
+    .collection(RECIPES_COLL)
+    .orderBy("updatedAt", "desc")
+    .limit(limit)
+    .get();
+
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+
+export const getAllExternalRecipesForSimilarity = async (limit = 100) => {
+  const db = admin.firestore();
+
+  const snap = await db
+    .collection("external_recipes")
+    .orderBy("createdAt", "desc")
+    .limit(limit)
+    .get();
+
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
