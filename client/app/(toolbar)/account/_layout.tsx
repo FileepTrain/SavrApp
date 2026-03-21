@@ -83,6 +83,10 @@ export default function AccountStackLayout() {
           name="nutrient-display-settings"
           options={{ title: "Nutrient Display" }}
         />
+        <Stack.Screen
+          name="notifications"
+          options={{ title: "Notifications" }}
+        />
       </Stack>
     </PersonalRecipesProvider>
   );
