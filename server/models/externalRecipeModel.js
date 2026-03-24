@@ -291,10 +291,78 @@ async function getLatestCached(limit = 20) {
   });
 }
 
+/**
+ * Search cached external recipes by dishTypes.
+ * Uses Firestore array-contains-any to compare against normalized dish type values
+ * Returns all recipe details needed to display a recipe card
+ */
+async function searchCachedByDishTypes(
+  externalSource,
+  dishTypes = [],
+  limit = 20,
+) {
+  const db = getDb();
+  const normalizedDishTypes = Array.isArray(dishTypes)
+    ? dishTypes
+      .map((s) => String(s).toLowerCase().trim())
+      .filter(Boolean)
+    : [];
+
+  if (!externalSource || normalizedDishTypes.length === 0) {
+    return [];
+  }
+
+  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const snap = await db
+    .collection(COLL)
+    .where("externalSource", "==", externalSource)
+    .where("dishTypes", "array-contains-any", normalizedDishTypes.slice(0, 10))
+    .limit(safeLimit)
+    .get();
+
+  return snap.docs.map((d) => {
+    const data = d.data();
+    const reviewCount = Number.isFinite(Number(data.reviewCount))
+      ? Number(data.reviewCount)
+      : (Array.isArray(data.reviews) ? data.reviews.length : 0);
+    const totalStars = Number.isFinite(Number(data.totalStars))
+      ? Number(data.totalStars)
+      : (Array.isArray(data.reviews)
+        ? data.reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0)
+        : 0);
+    const rating = reviewCount > 0
+      ? Math.round((totalStars / reviewCount) * 10) / 10
+      : 0;
+
+    let calories = data.calories != null ? data.calories : null;
+    if (calories == null && Array.isArray(data.nutrition?.nutrients)) {
+      const cal = data.nutrition.nutrients.find(
+        (n) => String(n?.name || "").toLowerCase() === "calories",
+      );
+      if (cal?.amount != null) calories = Math.round(Number(cal.amount));
+    }
+
+    return {
+      id: Number(data.externalId),
+      title: data.title ?? null,
+      image: data.image ?? null,
+      calories: calories ?? null,
+      //price: typeof data.price === "number" ? data.price : null,
+      rating,
+      reviewsLength: reviewCount,
+      viewCount: Number.isFinite(Number(data.viewCount))
+        ? Number(data.viewCount)
+        : 0,
+      dishTypes: Array.isArray(data.dishTypes) ? data.dishTypes : [],
+    };
+  });
+}
+
 export default {
   findByExternal,
   searchCachedByTitle,
   searchCachedForFeed,
+  searchCachedByDishTypes,
   upsertFromExternal,
   getLatestCached,
   incrementViewCount,

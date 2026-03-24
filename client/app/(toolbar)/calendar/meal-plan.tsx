@@ -4,15 +4,21 @@ import type { Recipe } from "@/contexts/meal-plan-selection-context";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { useMealPlans } from "@/contexts/meal-plans-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import Slider from "@react-native-community/slider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
 import Button from "@/components/ui/button";
-import { RecipeCard } from "@/components/recipe-card";
+import { SwipeableRecipeCardRemovable } from "@/components/swipeable-recipe-card";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 
 const SERVER_URL = "http://10.0.2.2:3000";
+
+const CAL_SLIDER_MIN = 100;
+const CAL_SLIDER_MAX = 1200;
+const CAL_SLIDER_STEP = 25;
 
 type MealSlot = "Breakfast" | "Lunch" | "Dinner";
 
@@ -25,13 +31,36 @@ export default function MealPlanPage() {
 
   const [visible, setVisible] = useState(false);
   const [pendingMealSlot, setPendingMealSlot] = useState<MealSlot | null>(null);
+  //Meal state arrays
   const [breakfastRecipe, setBreakfastRecipe] = useState<Recipe[]>([]);
   const [lunchRecipe, setLunchRecipe] = useState<Recipe[]>([]);
   const [dinnerRecipe, setDinnerRecipe] = useState<Recipe[]>([]);
+
+  //button states
   const [saving, setSaving] = useState(false);
+  const [autoGenerating, setAutoGenerating] = useState(false);
+
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [calorieMin, setCalorieMin] = useState(400);
+  const [calorieMax, setCalorieMax] = useState(700);
+
+  const [count, setCount] = useState<Record<string, number>>({});
 
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
   const { refetch: refetchMealPlans } = useMealPlans();
+
+  const increment = (id: string) => {
+    setCount((prev) => ({
+      ...prev,
+      [id]: (prev[id] || 0) + 1,
+    }));
+  };
+  const decrement = (id: string) => {
+    setCount((prev) => ({
+      ...prev,
+      [id]: Math.max(0, (prev[id] || 0) - 1),
+    }));
+  };
 
   const handleSave = useCallback(async () => {
     const idToken = await AsyncStorage.getItem("idToken");
@@ -103,19 +132,83 @@ export default function MealPlanPage() {
     }
   };
 
-  const renderRecipeCard = (recipe: any) => {
+  const handleDelete = (recipeId: string, meal: MealSlot) => {
+    //delete from meals array
+    if (meal === "Breakfast") {
+      setBreakfastRecipe(prev => prev.filter(recipe => recipe.id !== recipeId));
+    } else if (meal === "Lunch") {
+      setLunchRecipe(prev => prev.filter(recipe => recipe.id !== recipeId));
+    } else if (meal === "Dinner") {
+      setDinnerRecipe(prev => prev.filter(recipe => recipe.id !== recipeId));
+    }
+  };
+
+  const handleAutoMealPlan = useCallback(async () => {
+    setAutoGenerating(true);
+    try {
+      const params = new URLSearchParams({
+        calorieMin: String(Math.min(calorieMin, calorieMax)),
+        calorieMax: String(Math.max(calorieMin, calorieMax)),
+      });
+      const res = await fetch(
+        `${SERVER_URL}/api/external-recipes/auto-meal-plan?${params.toString()}`,
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to auto generate meal plan");
+      }
+
+      const meals = data?.meals ?? {};
+      const toRecipe = (r: any): Recipe => ({
+        id: String(r?.id ?? ""),
+        title: r?.title ?? undefined,
+        calories: typeof r?.calories === "number" ? r.calories : undefined,
+        rating: typeof r?.rating === "number" ? r.rating : undefined,
+        image: r?.image ?? undefined,
+      });
+
+      console.log(meals.breakfast, meals.lunch, meals.dinner);
+
+      setBreakfastRecipe(
+        Array.isArray(meals.breakfast)
+          ? meals.breakfast.filter((r: any) => r?.id != null).map(toRecipe)
+          : [],
+      );
+      setLunchRecipe(
+        Array.isArray(meals.lunch)
+          ? meals.lunch.filter((r: any) => r?.id != null).map(toRecipe)
+          : [],
+      );
+      setDinnerRecipe(
+        Array.isArray(meals.dinner)
+          ? meals.dinner.filter((r: any) => r?.id != null).map(toRecipe)
+          : [],
+      );
+    } catch (err) {
+      Alert.alert(
+        "Error",
+        err instanceof Error ? err.message : "Failed to auto generate meal plan.",
+      );
+    } finally {
+      setAutoGenerating(false);
+    }
+  }, [calorieMin, calorieMax]);
+
+  const renderRecipeCard = (recipe: any, mealslot: MealSlot) => {
     if (!recipe) return null;
     return (
       <View className="mb-3 gap-2">
-        <RecipeCard
+        <SwipeableRecipeCardRemovable
           id={recipe.id}
-          variant="horizontal"
           title={recipe.title}
           calories={recipe.calories}
           rating={recipe.rating}
           reviewsLength={recipe.reviews?.length || 0}
-          imageUrl={recipe.image ?? undefined}
+          image={recipe.image ?? undefined}
           onPress={() => router.push(`/recipe/${recipe.id}`)}
+          onActionPress={() => {
+            handleDelete(recipe.id, mealslot);
+          }}
         />
       </View>
     );
@@ -135,7 +228,31 @@ export default function MealPlanPage() {
 
       {recipeData.map((recipe: Recipe) => (
         <View key={recipe.id}>
-          {renderRecipeCard(recipe)}
+          {renderRecipeCard(recipe, meal)}
+          <View className="flex-row">
+            <Text className="flex-1 text-base">Servings per day:</Text>
+
+            <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-2">
+              {/*decrease*/}
+              <Pressable
+                onPress={() => decrement(recipe.id)}
+                className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+              >
+                <Text className="text-lg">&lt;</Text>
+              </Pressable>
+              <Text className="min-w-[24px] text-center font-medium text-gray-800">
+                {count[recipe.id] || 1}
+              </Text>
+              {/*increase*/}
+              <Pressable
+                onPress={() => increment(recipe.id)}
+                className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+              >
+                <Text className="text-lg">&gt;</Text>
+              </Pressable>
+            </View>
+
+          </View>
         </View>
       ))}
       <Button
@@ -167,6 +284,26 @@ export default function MealPlanPage() {
       contentContainerStyle={{ paddingBottom: 40 }}
       showsVerticalScrollIndicator={false}
     >
+      <View className="flex-row gap-2">
+        {/*auto meal plan button*/}
+        <Pressable className="flex-1 h-12 bg-white rounded-lg shadow-sm items-center justify-center"
+          onPress={handleAutoMealPlan}
+          disabled={autoGenerating}
+        >
+          <Text>{autoGenerating ? "Generating..." : "Auto Meal Plan"}</Text>
+        </Pressable>
+
+        {/* meal plan settings — opens calorie range modal */}
+        <Pressable
+          className="h-12 w-12 bg-white rounded-lg shadow-sm items-center justify-center"
+          onPress={() => setSettingsModalVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Meal plan settings"
+        >
+          <IconSymbol name="cog" size={22} color="--color-foreground" />
+        </Pressable>
+      </View>
+      
       <Text className="py-4"> Plan Duration </Text>
       {/* Plan Duration container */}
       <View className="flex-row gap-4 w-full">
@@ -249,7 +386,7 @@ export default function MealPlanPage() {
         </Button>
       </View>
 
-      {/* recipe select pop up */}
+      {/* recipe select modal pop up */}
       <Modal
         transparent
         visible={visible}
@@ -294,9 +431,80 @@ export default function MealPlanPage() {
               Search Recipes
             </Button>
 
-            </Pressable>
           </Pressable>
-        </Modal>
+        </Pressable>
+      </Modal>
+
+      {/* meal plan settings — target calories per meal for auto generator */}
+      <Modal
+        transparent
+        visible={settingsModalVisible}
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <View className="flex-1 justify-center items-center">
+          <Pressable
+            className="absolute inset-0 bg-black/50"
+            onPress={() => setSettingsModalVisible(false)}
+          />
+          <View className="mx-4 w-[90%] max-w-sm rounded-2xl bg-background p-6 gap-5 shadow-lg">
+            <Text className="text-lg font-bold text-center text-foreground">
+              Meal plan settings
+            </Text>
+            <Text className="text-center text-sm text-muted-foreground">
+              Auto meal plan will prefer recipes between these calories (per meal)
+            </Text>
+
+            <View className="gap-2">
+              <Text className="font-semibold text-foreground">
+                Minimum: {Math.min(calorieMin, calorieMax)} cal
+              </Text>
+              <Slider
+                minimumValue={CAL_SLIDER_MIN}
+                maximumValue={CAL_SLIDER_MAX}
+                step={CAL_SLIDER_STEP}
+                value={calorieMin}
+                onValueChange={(v) => {
+                  const next = Math.round(v / CAL_SLIDER_STEP) * CAL_SLIDER_STEP;
+                  setCalorieMin(next);
+                  if (next > calorieMax) setCalorieMax(next);
+                }}
+                minimumTrackTintColor="#bd9b64"
+                maximumTrackTintColor="#e5e5e5"
+                thumbTintColor="#bd9b64"
+              />
+            </View>
+
+            <View className="gap-2">
+              <Text className="font-semibold text-foreground">
+                Maximum: {Math.max(calorieMin, calorieMax)} cal
+              </Text>
+              <Slider
+                minimumValue={CAL_SLIDER_MIN}
+                maximumValue={CAL_SLIDER_MAX}
+                step={CAL_SLIDER_STEP}
+                value={calorieMax}
+                onValueChange={(v) => {
+                  const next = Math.round(v / CAL_SLIDER_STEP) * CAL_SLIDER_STEP;
+                  setCalorieMax(next);
+                  if (next < calorieMin) setCalorieMin(next);
+                }}
+                minimumTrackTintColor="#bd9b64"
+                maximumTrackTintColor="#e5e5e5"
+                thumbTintColor="#bd9b64"
+              />
+            </View>
+
+            <Button
+              variant="default"
+              className="rounded-xl"
+              onPress={() => setSettingsModalVisible(false)}
+            >
+              Done
+            </Button>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
     </ThemedSafeView>
   );
