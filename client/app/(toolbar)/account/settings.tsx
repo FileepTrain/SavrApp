@@ -3,7 +3,7 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Text, View, Switch, ScrollView } from "react-native";
+import { Image, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AccountMenuItem } from "@/components/account/account-menu-item";
 import Button from "@/components/ui/button";
@@ -79,7 +79,7 @@ export default function SettingsPage() {
               isLast
             />
           </View>
-          <View className="mt-6 gap-2">
+          <View className="mt-4 gap-1">
             <Text className="text-base font-medium text-muted-foreground">Display</Text>
             {/* Accessibility Setting Item */}
             <View className="rounded-xl shadow-sm overflow-hidden">
@@ -100,7 +100,7 @@ export default function SettingsPage() {
             </View>
           </View>
         </View>
-        <View className="my-6 gap-2">
+        <View className="my-0 gap-2">
           <Text className="text-base font-medium text-muted-foreground">Location</Text>
           {/* Location Button*/}
           <View
@@ -130,6 +130,40 @@ export default function SettingsPage() {
               onValueChange={toggleSwitch}
             />
           </View>
+        </View>
+        <View className="my-4 gap-1">
+          <Text className="text-base font-medium text-muted-foreground">Notifications</Text>
+
+          <Pressable
+            onPress={() => router.push("/account/notifications")}
+            className="w-full h-[77px] bg-white rounded-[12px] flex-row items-center justify-between px-4 shadow-sm"
+            style={{
+              shadowColor: "#000",
+              shadowOpacity: 0.1,
+              shadowOffset: { width: 0, height: 1 },
+              shadowRadius: 3,
+              elevation: 3,
+            }}
+          >
+            <View className="flex-row items-center gap-4">
+              <View className="w-10 h-10 rounded-[10px] bg-[#F2F2F2] items-center justify-center">
+                <IconSymbol name="bell-outline" size={20} color="#666666" />
+              </View>
+
+              <View className="flex-col">
+                <Text className="text-[16px] font-medium leading-6 tracking-[0.5px] text-black">
+                  Notifications
+                </Text>
+                <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
+                  Meal plan and calendar reminders
+                </Text>
+              </View>
+            </View>
+
+            <View className="w-5 h-5 items-center justify-center">
+              <View className="w-3 h-3 border-r-[1.7px] border-b-[1.7px] border-[#666666] rotate-[-45deg]" />
+            </View>
+          </Pressable>
         </View>
 
         {/* Logout Button */}

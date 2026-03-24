@@ -91,14 +91,30 @@ type DisplayRecipe = {
   price?: number;
 };
 
+type SimilarRecipe = {
+  id: string;
+  title: string;
+  image?: string | null;
+  calories?: number | null;
+  similarityScore?: number;
+};
+
 function stripHtml(html?: string) {
   if (!html) return "";
   return html.replace(/<[^>]*>/g, "").trim();
 }
 
+function isExternalFirestoreRecipeId(id: string): boolean {
+  return id.startsWith("spoonacular_");
+}
+
+function isRawExternalRecipeId(id: string): boolean {
+  return /^\d+$/.test(id);
+}
+
 /* Personal recipes use Firestore IDs (alphanumeric); external use Spoonacular IDs (numeric only) */
 function isPersonalRecipeId(id: string): boolean {
-  return !/^\d+$/.test(id);
+  return !isExternalFirestoreRecipeId(id) && !isRawExternalRecipeId(id);
 }
 
 export default function RecipeDetailsPage() {
@@ -117,6 +133,8 @@ export default function RecipeDetailsPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [isIngredientsOpen, setIsIngredientsOpen] = useState(true);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [similarRecipes, setSimilarRecipes] = useState<SimilarRecipe[]>([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
 
   const toggleFavorite = async () => {
     if (!id) return;
@@ -135,23 +153,53 @@ export default function RecipeDetailsPage() {
     await syncFavorites();
   };
 
+  /* SIMILAR RECIPES FETCH */
+  const fetchSimilarRecipes = async (recipeIdValue: string) => {
+    if (!recipeIdValue) {
+      setSimilarRecipes([]);
+      return;
+    }
+
+    const similarityId = /^\d+$/.test(recipeIdValue)
+      ? `spoonacular_${recipeIdValue}`
+      : recipeIdValue;
+
+    try {
+      setSimilarLoading(true);
+
+      const response = await fetch(
+        `${SERVER_URL}/api/combined-recipes/similar/${similarityId}`
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setSimilarRecipes([]);
+        return;
+      }
+
+      const results: SimilarRecipe[] = Array.isArray(data?.results)
+        ? data.results
+        : [];
+
+      setSimilarRecipes(results);
+    } catch (error) {
+      setSimilarRecipes([]);
+    } finally {
+      setSimilarLoading(false);
+    }
+  };
+
   useEffect(() => {
     const fetchRecipe = async () => {
       if (!id) return;
-
       setLoading(true);
+
       try {
         const saved = await AsyncStorage.getItem(FAVORITES_KEY);
         const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
         setIsFavorited(favoriteIds.includes(id));
 
         if (isPersonalRecipeId(id)) {
-          // ✅ Personal recipe: requires auth token
           const idToken = await AsyncStorage.getItem("idToken");
-          if (!idToken) {
-            router.replace("/login");
-            return;
-          }
 
           const response = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
             method: "GET",
@@ -162,20 +210,6 @@ export default function RecipeDetailsPage() {
           });
 
           const data = await response.json();
-
-          if (!response.ok) {
-            const msg = data?.error || "Failed to fetch recipe";
-            // if token expired / invalid -> send to login
-            if (
-              typeof msg === "string" &&
-              msg.toLowerCase().includes("token")
-            ) {
-              router.replace("/login");
-              return;
-            }
-            throw new Error(msg);
-          }
-
           const r = data.recipe;
 
           const reviewCount = typeof r.reviewCount === "number" ? r.reviewCount : (Array.isArray(r.reviews) ? r.reviews.length : 0);
@@ -191,7 +225,6 @@ export default function RecipeDetailsPage() {
             readyInMinutes: (r.prepTime ?? 0) + (r.cookTime ?? 0),
             servings: r.servings,
             instructions: r.instructions,
-            // your schema stores nutrition under nutrition.nutrients
             calories:
               Array.isArray(r?.nutrition?.nutrients)
                 ? Math.round(
@@ -207,7 +240,6 @@ export default function RecipeDetailsPage() {
             price: r.price,
           });
 
-          // ✅ IMPORTANT: personal recipes store ingredients as extendedIngredients
           const ext = Array.isArray(r?.extendedIngredients)
             ? r.extendedIngredients
             : [];
@@ -219,11 +251,57 @@ export default function RecipeDetailsPage() {
               unit: ing.unit ?? "",
             }))
           );
+
+          await fetchSimilarRecipes(id);
+        }
+
+        /* EXTERNAL FIRESTORE RECIPE */
+        else if (isExternalFirestoreRecipeId(id)) {
+          const idToken = await AsyncStorage.getItem("idToken");
+
+          const response = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+          });
+          const data = await response.json();
+          const r = data.recipe;
+
+          setRecipe({
+            title: r.title,
+            summary: r.summary,
+            image: r.image,
+            readyInMinutes: r.readyInMinutes,
+            servings: r.servings,
+            instructions: r.instructions,
+            equipment: r.equipment ?? [],
+            calories: r.calories,
+            rating: r.rating ?? 0,
+            reviewsLength: r.reviews?.length ?? 0,
+            price: r.price,
+          });
+
+          const ext = Array.isArray(r?.extendedIngredients)
+            ? r.extendedIngredients
+            : [];
+
+          setIngredients(
+            ext.map((ing: any) => ({
+              name: ing.name,
+              quantity: Number(ing.amount ?? 0),
+              unit: ing.unit ?? "",
+            }))
+          );
+
+          await fetchSimilarRecipes(id);
+
+        // External recipe: include nutrition so we can show calories on this page
         } else {
-          // External recipe: include nutrition so we can show calories on this page
           const response = await fetch(
             `${SERVER_URL}/api/external-recipes/${id}/details?includeNutrition=true`,
-            { method: "GET" }
+            { method: "GET" },
           );
           const data = await response.json();
 
@@ -234,7 +312,7 @@ export default function RecipeDetailsPage() {
           const r: ExternalRecipe = data.recipe;
 
           const caloriesNutrient = r.nutrition?.nutrients?.find(
-            (n) => n.name === "Calories"
+            (n) => n.name === "Calories",
           );
           const calories =
             caloriesNutrient?.amount != null
@@ -265,8 +343,10 @@ export default function RecipeDetailsPage() {
               name: ing.name,
               amount: Number((ing.amount ?? 1).toFixed(2)),
               unit: ing.unit ?? "serving",
-            }))
+            })),
           );
+
+          await fetchSimilarRecipes(id);
         }
       } catch (error) {
         console.error("Error fetching recipe:", error);
@@ -529,11 +609,60 @@ export default function RecipeDetailsPage() {
                 </View>
               )}
 
-              <View className="bg-background rounded-xl p-4 shadow gap-2">
-                <Text className="text-lg font-semibold text-foreground">Similar Recipes Placeholder</Text>
-                <Text className="text-muted-foreground">
-                  This area will display similar recipe items.
+              <View className="bg-background rounded-xl p-4 shadow gap-3">
+                <Text className="text-lg font-semibold text-foreground">
+                  Similar Recipes
                 </Text>
+
+                {similarLoading ? (
+                  <View className="py-4 items-center justify-center">
+                    <ActivityIndicator size="small" color="red" />
+                  </View>
+                ) : similarRecipes.length > 0 ? (
+                  similarRecipes.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      className="flex-row items-center bg-white rounded-xl p-3 shadow"
+                      onPress={() =>
+                        router.push({
+                          pathname: "/recipe/[recipeId]",
+                          params: { recipeId: String(item.id) },
+                        })
+                      }
+                    >
+                      {item.image ? (
+                        <Image
+                          source={{ uri: item.image }}
+                          className="w-20 h-20 rounded-xl mr-3"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="w-20 h-20 rounded-xl mr-3 bg-muted-background items-center justify-center">
+                          <IconSymbol
+                            name="image-outline"
+                            size={24}
+                            color="--color-icon"
+                          />
+                        </View>
+                      )}
+
+                      <View className="flex-1">
+                        <Text className="text-red-primary font-bold text-base">
+                          {item.title}
+                        </Text>
+                        <Text className="text-foreground mt-1">
+                          {item.calories != null
+                            ? `${item.calories} calories`
+                            : "Calories unavailable"}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <Text className="text-muted-foreground">
+                    No similar recipes found.
+                  </Text>
+                )}
               </View>
             </View>
           </View>
