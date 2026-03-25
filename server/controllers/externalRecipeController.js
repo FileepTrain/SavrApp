@@ -350,6 +350,139 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   };
 };
 
+function toDishTypeSet(value) {
+  //using a set so each recipe is unique and no duplicates
+  return new Set(
+    (Array.isArray(value) ? value : [])
+      .map((s) => String(s).toLowerCase().trim())
+      .filter(Boolean),
+  );
+}
+
+//this determines what recipes are chosen and how
+function pickRecipeForSlot(candidates, slotDishTypes, usedIds, calorieRange = null) {
+  const slotSet = new Set(slotDishTypes.map((s) => String(s).toLowerCase().trim()));
+  const unique = candidates.filter((r) => !usedIds.has(String(r.id)));
+  if (unique.length === 0) return null;
+
+  const directMatches = unique.filter((r) => {
+    const recipeSet = toDishTypeSet(r.dishTypes);
+    for (const dishType of slotSet) {
+      if (recipeSet.has(dishType)) return true;
+    }
+    return false;
+  });
+
+  let pool = directMatches.length > 0 ? directMatches : unique;
+
+  // prefer recipes whose calories fall in the selected range (per meal)
+  if (
+    calorieRange &&
+    Number.isFinite(calorieRange.min) &&
+    Number.isFinite(calorieRange.max) &&
+    calorieRange.min <= calorieRange.max
+  ) {
+    const { min, max } = calorieRange;
+    const inRange = pool.filter((r) => {
+      const c = r.calories;
+      return typeof c === "number" && Number.isFinite(c) && c >= min && c <= max;
+    });
+    if (inRange.length > 0) {
+      pool = inRange;
+    }
+    // If none match the range, keep the unfiltered pool so we still return a pick
+  }
+  //keep top 10, those recipes usually fit range. If pool is too big you get weird picks
+  const TOP_N = 10;
+  const trimmedPool = pool.slice(0, TOP_N);
+  //randomly choose from top ten
+  const randomIndex = Math.floor(Math.random() * trimmedPool.length);
+  return trimmedPool[randomIndex] ?? null;
+}
+
+// Builds a meal plan from cached external recipes, searches by dishTypes
+export const getAutoMealPlanByDishTypes = async (req, res) => {
+  try {
+    const EXTERNAL_SOURCE = "spoonacular";
+    //Some dishes don't have a meal type, they're excluded unless we manually give them one
+    //also not all dish types accounted for
+    const SLOT_DISH_TYPES = {
+      breakfast: ["breakfast"],
+      lunch: ["lunch", "main course", "antipasti", "antipasto"],
+      dinner: ["dinner", "main course", "antipasti", "antipasto"],
+    };
+
+    const [breakfastCandidates, lunchCandidates, dinnerCandidates] = await Promise.all([
+      ExternalRecipeModel.searchCachedByDishTypes(
+        EXTERNAL_SOURCE,
+        SLOT_DISH_TYPES.breakfast,
+        50,
+      ),
+      ExternalRecipeModel.searchCachedByDishTypes(
+        EXTERNAL_SOURCE,
+        SLOT_DISH_TYPES.lunch,
+        50,
+      ),
+      ExternalRecipeModel.searchCachedByDishTypes(
+        EXTERNAL_SOURCE,
+        SLOT_DISH_TYPES.dinner,
+        50,
+      ),
+    ]);
+
+    const qMin = Number(req.query.calorieMin);
+    const qMax = Number(req.query.calorieMax);
+    const calorieRange =
+      Number.isFinite(qMin) && Number.isFinite(qMax) && qMin <= qMax
+        ? { min: qMin, max: qMax }
+        : null;
+
+    const usedIds = new Set();
+    const breakfast = pickRecipeForSlot(
+      breakfastCandidates,
+      SLOT_DISH_TYPES.breakfast,
+      usedIds,
+      calorieRange,
+    );
+    if (breakfast) usedIds.add(String(breakfast.id));
+
+    const lunch = pickRecipeForSlot(
+      lunchCandidates,
+      SLOT_DISH_TYPES.lunch,
+      usedIds,
+      calorieRange,
+    );
+    if (lunch) usedIds.add(String(lunch.id));
+
+    const dinner = pickRecipeForSlot(
+      dinnerCandidates,
+      SLOT_DISH_TYPES.dinner,
+      usedIds,
+      calorieRange,
+    );
+
+    return res.json({
+      success: true,
+      meals: {
+        breakfast: breakfast ? [breakfast] : [],
+        lunch: lunch ? [lunch] : [],
+        dinner: dinner ? [dinner] : [],
+      },
+      meta: {
+        source: "external-cache",
+        slotDishTypes: SLOT_DISH_TYPES,
+        calorieRange,
+      },
+    });
+  } catch (error) {
+    console.error("Error generating auto meal plan from dishTypes:", error);
+    return res.status(500).json({
+      error: error.message || "Internal server error",
+      code: "AUTO_MEAL_PLAN_BY_DISH_TYPES_FAILED",
+    });
+  }
+};
+
 // Acquire Recipe Details from Firestore
 export const getExternalRecipeDetails = async (req, res) => {
   try {

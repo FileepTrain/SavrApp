@@ -4,7 +4,6 @@ import {
   FlatList,
   Text,
   View,
-  TouchableOpacity,
   Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -13,6 +12,7 @@ import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { Ingredient } from "@/types/ingredient";
+import { SwipeablePantryItemCard } from "@/components/pantry-card";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
@@ -26,6 +26,7 @@ type PantryItem = {
 export default function PantryPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [pantryItems, setPantryItems] = useState<PantryItem[]>([]);
+  const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -69,7 +70,7 @@ export default function PantryPage() {
 
       const payload = {
         name: item.name,
-        quantity: item.quantity ?? 1,
+        quantity: item.amount ?? 1,
         unit: item.unit ?? "each",
       };
 
@@ -91,8 +92,53 @@ export default function PantryPage() {
       console.error("Error adding pantry item:", err);
     }
   };
+/* Handles the submission of an edited pantry item */
+  const handleSubmitEditedItem = async (item: Ingredient) => {
+    try {
+      if (!editingItem) return;
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) return;
+      const payload = {
+        name: item.name,
+        quantity: item.amount ?? 1,
+        unit: item.unit ?? "each",
+      };
+      const res = await fetch(`${SERVER_URL}/api/pantry/${editingItem.id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const raw = await res.text();
+      let data: any = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new Error(`Failed to parse update response (status ${res.status})`);
+      }
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to update pantry item");
+      }
+      setPantryItems((prev) =>
+        prev.map((p) =>
+          p.id === editingItem.id
+            ? {
+                ...p,
+                name: payload.name,
+                quantity: payload.quantity,
+                unit: payload.unit,
+              } : p
+        )
+      );
+      setIsAddOpen(false);
+      setEditingItem(null);
+    } catch (err) {
+      console.error("Error updating pantry item:", err);
+    }
+  };
 
-  // Safe delete that doesn't assume JSON response
   const deletePantryItem = async (id: string) => {
     try {
       setDeletingId(id);
@@ -113,7 +159,7 @@ export default function PantryPage() {
       try {
         data = raw ? JSON.parse(raw) : null;
       } catch {
-        // not JSON (could be HTML or empty)
+        // not JSON
       }
 
       if (!res.ok) {
@@ -122,7 +168,6 @@ export default function PantryPage() {
         throw new Error(msg);
       }
 
-      // Update UI immediately
       setPantryItems((prev) => prev.filter((x) => x.id !== id));
     } catch (err) {
       console.error("Error deleting pantry item:", err);
@@ -142,10 +187,14 @@ export default function PantryPage() {
     ]);
   };
 
+  const startEdit = (item: PantryItem) => {
+    setEditingItem(item);
+    setIsAddOpen(true);
+  };
+
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       <View className="gap-4">
-        {/* Add Pantry Item */}
         <Button
           variant="primary"
           icon={{
@@ -156,12 +205,14 @@ export default function PantryPage() {
           }}
           className="h-24"
           textClassName="text-xl font-bold text-red-primary"
-          onPress={() => setIsAddOpen(true)}
+          onPress={() => {
+            setEditingItem(null);
+            setIsAddOpen(true);
+          }}
         >
           Add Pantry Item
         </Button>
 
-        {/* Pantry List */}
         {loading ? (
           <ActivityIndicator size="large" color="red" />
         ) : (
@@ -173,40 +224,39 @@ export default function PantryPage() {
                 No pantry items yet.
               </Text>
             }
+        /* Creates swipeable pantry item cards */
             renderItem={({ item }) => (
-              <View className="bg-background rounded-xl shadow-lg p-4 mb-3 flex-row items-center justify-between">
-                {/* left */}
-                <View className="flex-1 pr-4">
-                  <Text className="text-lg font-bold text-red-primary">
-                    {item.name}
-                  </Text>
-                  <Text className="text-foreground">
-                    {item.quantity} {item.unit}
-                  </Text>
-                </View>
-
-                {/* right - minus button */}
-                <TouchableOpacity
-                  onPress={() => confirmDelete(item)}
-                  disabled={deletingId === item.id}
-                  activeOpacity={0.85}
-                  className="h-12 w-12 rounded-full bg-red-primary items-center justify-center shadow-lg"
-                >
-                  <Text className="text-white text-3xl leading-none">−</Text>
-                </TouchableOpacity>
-              </View>
+              <SwipeablePantryItemCard
+                item={item}
+                deleting={deletingId === item.id}
+                onEdit={startEdit}
+                onDelete={confirmDelete}
+              />
             )}
           />
         )}
 
-        {/* Add Item Modal */}
         <AddIngredientModal
           visible={isAddOpen}
-          onClose={() => setIsAddOpen(false)}
-          onSubmit={handleSubmitNewItem}
-          title="Add Pantry Item"
+          onClose={() => {
+            setIsAddOpen(false);
+            setEditingItem(null);
+          }}
+          onSubmit={editingItem ? handleSubmitEditedItem : handleSubmitNewItem}
+          title={editingItem ? "Edit Pantry Item" : "Add Pantry Item"}
           nameLabel="Item Name"
           namePlaceholder="e.g., Milk"
+          initialItem={
+            editingItem
+              ? {
+                  id: null,
+                  name: editingItem.name,
+                  amount: editingItem.quantity,
+                  unit: editingItem.unit,
+                  image: null,
+                }
+              : null
+          }
         />
       </View>
     </ThemedSafeView>

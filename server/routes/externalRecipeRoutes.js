@@ -3,6 +3,7 @@ import express from "express";
 import {
   getExternalRecipeDetails,
   getExternalRecipeFeed,
+  getAutoMealPlanByDishTypes,
 } from "../controllers/externalRecipeController.js";
 import { getFilteredFeed } from "../controllers/combinedRecipeController.js";
 
@@ -17,6 +18,9 @@ router.get("/search", (req, res, next) => {
   req.query.externalOnly = "true";
   return getFilteredFeed(req, res, next);
 });
+
+// Auto meal plan route - picks breakfast/lunch/dinner from cached external recipes by dishTypes
+router.get("/auto-meal-plan", getAutoMealPlanByDishTypes);
 
 // Details route
 router.get("/:id/details", getExternalRecipeDetails);
