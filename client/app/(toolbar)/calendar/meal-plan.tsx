@@ -214,298 +214,298 @@ export default function MealPlanPage() {
     );
   };
 
-  const renderMealContainer = (meal:MealSlot, color:string, recipeData:Recipe[]) => {
-    return(
-    <View className="gap-2 py-4">
-      {/*header*/}
-      <View className="flex-row items-center">
-        <View
-          className="h-4 w-4 rounded-full"
-          style={{backgroundColor: color}}
-        />
-        <Text className="font-bold text-xl"> {meal} </Text>
-      </View>
-
-      {recipeData.map((recipe: Recipe) => (
-        <View key={recipe.id}>
-          {renderRecipeCard(recipe, meal)}
-          <View className="flex-row">
-            <Text className="flex-1 text-base">Servings per day:</Text>
-
-            <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-2">
-              {/*decrease*/}
-              <Pressable
-                onPress={() => decrement(recipe.id)}
-                className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-              >
-                <Text className="text-lg">&lt;</Text>
-              </Pressable>
-              <Text className="min-w-[24px] text-center font-medium text-gray-800">
-                {count[recipe.id] || 1}
-              </Text>
-              {/*increase*/}
-              <Pressable
-                onPress={() => increment(recipe.id)}
-                className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-              >
-                <Text className="text-lg">&gt;</Text>
-              </Pressable>
-            </View>
-
-          </View>
+  const renderMealContainer = (meal: MealSlot, color: string, recipeData: Recipe[]) => {
+    return (
+      <View className="gap-2 py-4">
+        {/*header*/}
+        <View className="flex-row items-center">
+          <View
+            className="h-4 w-4 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+          <Text className="font-bold text-xl"> {meal} </Text>
         </View>
-      ))}
-      <Button
-        variant="outline"
-        icon={{
-          name: "plus",
-          position: "left",
-          size: 16,
-          color: color,
-        }}
-        className="h-14 flex px-20 rounded-2xl shadow-sm border-2"
-        style={{borderColor: color}}
-        color="white"
-        onPress={() => openAddRecipeModal(meal)}
-      >
-        <Text className="text-xl font-bold" style={{color: color}}>
-          Add {meal}
-        </Text>
-      </Button>
 
-    </View>
+        {recipeData.map((recipe: Recipe) => (
+          <View key={recipe.id}>
+            {renderRecipeCard(recipe, meal)}
+            <View className="flex-row">
+              <Text className="flex-1 text-base">Servings per day:</Text>
+
+              <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-2">
+                {/*decrease*/}
+                <Pressable
+                  onPress={() => decrement(recipe.id)}
+                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                >
+                  <Text className="text-lg">&lt;</Text>
+                </Pressable>
+                <Text className="min-w-[24px] text-center font-medium text-gray-800">
+                  {count[recipe.id] || 1}
+                </Text>
+                {/*increase*/}
+                <Pressable
+                  onPress={() => increment(recipe.id)}
+                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                >
+                  <Text className="text-lg">&gt;</Text>
+                </Pressable>
+              </View>
+
+            </View>
+          </View>
+        ))}
+        <Button
+          variant="outline"
+          icon={{
+            name: "plus",
+            position: "left",
+            size: 16,
+            color: color,
+          }}
+          className="h-14 flex px-20 rounded-2xl shadow-sm border-2"
+          style={{ borderColor: color }}
+          color="white"
+          onPress={() => openAddRecipeModal(meal)}
+        >
+          <Text className="text-xl font-bold" style={{ color: color }}>
+            Add {meal}
+          </Text>
+        </Button>
+
+      </View>
     )
   }
 
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-safe-or-20">
-    <ScrollView
-      className="flex-1 px-4"
-      contentContainerStyle={{ paddingBottom: 40 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View className="flex-row gap-2">
-        {/*auto meal plan button*/}
-        <Pressable className="flex-1 h-12 bg-white rounded-lg shadow-sm items-center justify-center"
-          onPress={handleAutoMealPlan}
-          disabled={autoGenerating}
-        >
-          <Text>{autoGenerating ? "Generating..." : "Auto Meal Plan"}</Text>
-        </Pressable>
-
-        {/* meal plan settings — opens calorie range modal */}
-        <Pressable
-          className="h-12 w-12 bg-white rounded-lg shadow-sm items-center justify-center"
-          onPress={() => setSettingsModalVisible(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Meal plan settings"
-        >
-          <IconSymbol name="cog" size={22} color="--color-foreground" />
-        </Pressable>
-      </View>
-      
-      <Text className="py-4"> Plan Duration </Text>
-      {/* Plan Duration container */}
-      <View className="flex-row gap-4 w-full">
-
-        {/* start */}
-        <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
-          onPress={() => {
-            setActiveField("start");
-            setShowPicker(true);
-          }}
-        >
-          <Text> Start Date </Text>
-          <Text> {start_date.toDateString()} </Text>
-        </Pressable>
-
-        {/* End */}
-        <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
-          onPress={() => {
-            setActiveField("end");
-            setShowPicker(true);
-          }}
-        >
-          <Text> End Date </Text>
-          <Text> {end_date.toDateString()} </Text>
-        </Pressable>
-
-        {showPicker && (
-          <DateTimePicker
-            value={activeField === "start" ? start_date : end_date}
-            mode="date"
-            display="calendar"
-            onChange={onChange}
-          />
-        )}
-      </View>
-
-      <View className="py-3">
-        <Button
-          variant="outline"
-          icon={{ name: "invoice-list-outline", position: "left", size: 18 }}
-          className="rounded-xl border-2 border-[#666]"
-          textClassName="font-semibold text-foreground"
-          onPress={() => {
-            router.push({
-              pathname: "/calendar/meal-plan-nutrient-preview",
-              params: {
-                breakfastIds: JSON.stringify(breakfastRecipe.map(r => r.id)),
-                lunchIds: JSON.stringify(lunchRecipe.map(r => r.id)),
-                dinnerIds: JSON.stringify(dinnerRecipe.map(r => r.id)),
-              },
-            });
-          }}
-        >
-          Preview nutrient
-        </Button>
-      </View>
-
-      {/*Breakfast container*/}
-      <View>{renderMealContainer("Breakfast", "#fcba03", breakfastRecipe)}</View>
-
-      {/*Lunch container*/}
-      <View>{renderMealContainer("Lunch", "#14cc0a", lunchRecipe)}</View>
-
-      {/*dinner container*/}
-      <View>{renderMealContainer("Dinner", "#bd9b64", dinnerRecipe)}</View>
-
-      {/*Save button*/}
-      <View className="flex items-center">
-        <Button
-          variant="default"
-          className="h-16 flex  px-20 bg-red-primary rounded-2xl shadow-sm"
-          textClassName="text-xl font-bold text-white"
-          onPress={() => {
-            handleSave();
-            //router.back()
-          }}
-          disabled={saving}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </View>
-
-      {/* recipe select modal pop up */}
-      <Modal
-        transparent
-        visible={visible}
-        animationType="fade"
-        statusBarTranslucent={true}
+      <ScrollView
+        className="flex-1 px-4"
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Backdrop */}
-        <Pressable
-          className="flex-1 bg-black/50 justify-center items-center"
-          onPress={() => setVisible(false)}
-        >
-          {/* Stop press propagation */}
-          <Pressable className="w-80 bg-background rounded-2xl p-6 gap-4">
-            <Text className="text-lg font-bold text-center text-foreground">Choose Recipe</Text>
-            <Button
-              variant="outline"
-              onPress={() => {
-                setVisible(false);
-                //console.log("Favorites selected");
-                router.push({
-                  pathname: "/account/favorites",
-                  params: { mode: "select" },
-                });
-              }}
-              icon={{ name: "heart-outline", position: "left" }}
-            >
-              From Favorites
-            </Button>
-
-            <Button
-              variant="outline"
-              onPress={() => {
-                setVisible(false);
-                //console.log("Search selected");
-                router.push({
-                  pathname: "/home/search",
-                  params: { mode: "select" },
-                })
-              }}
-              icon={{ name: "magnify", position: "left" }}
-            >
-              Search Recipes
-            </Button>
-
+        <View className="flex-row gap-2">
+          {/*auto meal plan button*/}
+          <Pressable className="flex-1 h-12 bg-white rounded-lg shadow-sm items-center justify-center"
+            onPress={handleAutoMealPlan}
+            disabled={autoGenerating}
+          >
+            <Text>{autoGenerating ? "Generating..." : "Auto Meal Plan"}</Text>
           </Pressable>
-        </Pressable>
-      </Modal>
 
-      {/* meal plan settings — target calories per meal for auto generator */}
-      <Modal
-        transparent
-        visible={settingsModalVisible}
-        animationType="fade"
-        statusBarTranslucent
-      >
-        <View className="flex-1 justify-center items-center">
+          {/* meal plan settings — opens calorie range modal */}
           <Pressable
-            className="absolute inset-0 bg-black/50"
-            onPress={() => setSettingsModalVisible(false)}
-          />
-          <View className="mx-4 w-[90%] max-w-sm rounded-2xl bg-background p-6 gap-5 shadow-lg">
-            <Text className="text-lg font-bold text-center text-foreground">
-              Meal plan settings
-            </Text>
-            <Text className="text-center text-sm text-muted-foreground">
-              Auto meal plan will prefer recipes between these calories (per meal)
-            </Text>
-
-            <View className="gap-2">
-              <Text className="font-semibold text-foreground">
-                Minimum: {Math.min(calorieMin, calorieMax)} cal
-              </Text>
-              <Slider
-                minimumValue={CAL_SLIDER_MIN}
-                maximumValue={CAL_SLIDER_MAX}
-                step={CAL_SLIDER_STEP}
-                value={calorieMin}
-                onValueChange={(v) => {
-                  const next = Math.round(v / CAL_SLIDER_STEP) * CAL_SLIDER_STEP;
-                  setCalorieMin(next);
-                  if (next > calorieMax) setCalorieMax(next);
-                }}
-                minimumTrackTintColor="#bd9b64"
-                maximumTrackTintColor="#e5e5e5"
-                thumbTintColor="#bd9b64"
-              />
-            </View>
-
-            <View className="gap-2">
-              <Text className="font-semibold text-foreground">
-                Maximum: {Math.max(calorieMin, calorieMax)} cal
-              </Text>
-              <Slider
-                minimumValue={CAL_SLIDER_MIN}
-                maximumValue={CAL_SLIDER_MAX}
-                step={CAL_SLIDER_STEP}
-                value={calorieMax}
-                onValueChange={(v) => {
-                  const next = Math.round(v / CAL_SLIDER_STEP) * CAL_SLIDER_STEP;
-                  setCalorieMax(next);
-                  if (next < calorieMin) setCalorieMin(next);
-                }}
-                minimumTrackTintColor="#bd9b64"
-                maximumTrackTintColor="#e5e5e5"
-                thumbTintColor="#bd9b64"
-              />
-            </View>
-
-            <Button
-              variant="default"
-              className="rounded-xl"
-              onPress={() => setSettingsModalVisible(false)}
-            >
-              Done
-            </Button>
-          </View>
+            className="h-12 w-12 bg-white rounded-lg shadow-sm items-center justify-center"
+            onPress={() => setSettingsModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Meal plan settings"
+          >
+            <IconSymbol name="cog" size={22} color="--color-foreground" />
+          </Pressable>
         </View>
-      </Modal>
-    </ScrollView>
+
+        <Text className="py-4"> Plan Duration </Text>
+        {/* Plan Duration container */}
+        <View className="flex-row gap-4 w-full">
+
+          {/* start */}
+          <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
+            onPress={() => {
+              setActiveField("start");
+              setShowPicker(true);
+            }}
+          >
+            <Text> Start Date </Text>
+            <Text> {start_date.toDateString()} </Text>
+          </Pressable>
+
+          {/* End */}
+          <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
+            onPress={() => {
+              setActiveField("end");
+              setShowPicker(true);
+            }}
+          >
+            <Text> End Date </Text>
+            <Text> {end_date.toDateString()} </Text>
+          </Pressable>
+
+          {showPicker && (
+            <DateTimePicker
+              value={activeField === "start" ? start_date : end_date}
+              mode="date"
+              display="calendar"
+              onChange={onChange}
+            />
+          )}
+        </View>
+
+        <View className="py-3">
+          <Button
+            variant="outline"
+            icon={{ name: "invoice-list-outline", position: "left", size: 18 }}
+            className="rounded-xl border-2 border-[#666]"
+            textClassName="font-semibold text-foreground"
+            onPress={() => {
+              router.push({
+                pathname: "/calendar/meal-plan-nutrient-preview",
+                params: {
+                  breakfastIds: JSON.stringify(breakfastRecipe.map(r => r.id)),
+                  lunchIds: JSON.stringify(lunchRecipe.map(r => r.id)),
+                  dinnerIds: JSON.stringify(dinnerRecipe.map(r => r.id)),
+                },
+              });
+            }}
+          >
+            Preview nutrient
+          </Button>
+        </View>
+
+        {/*Breakfast container*/}
+        <View>{renderMealContainer("Breakfast", "#fcba03", breakfastRecipe)}</View>
+
+        {/*Lunch container*/}
+        <View>{renderMealContainer("Lunch", "#14cc0a", lunchRecipe)}</View>
+
+        {/*dinner container*/}
+        <View>{renderMealContainer("Dinner", "#bd9b64", dinnerRecipe)}</View>
+
+        {/*Save button*/}
+        <View className="flex items-center">
+          <Button
+            variant="default"
+            className="h-16 flex  px-20 bg-red-primary rounded-2xl shadow-sm"
+            textClassName="text-xl font-bold text-white"
+            onPress={() => {
+              handleSave();
+              //router.back()
+            }}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </View>
+
+        {/* recipe select modal pop up */}
+        <Modal
+          transparent
+          visible={visible}
+          animationType="fade"
+          statusBarTranslucent={true}
+        >
+          {/* Backdrop */}
+          <Pressable
+            className="flex-1 bg-black/50 justify-center items-center"
+            onPress={() => setVisible(false)}
+          >
+            {/* Stop press propagation */}
+            <Pressable className="w-80 bg-background rounded-2xl p-6 gap-4">
+              <Text className="text-lg font-bold text-center text-foreground">Choose Recipe</Text>
+              <Button
+                variant="outline"
+                onPress={() => {
+                  setVisible(false);
+                  //console.log("Favorites selected");
+                  router.push({
+                    pathname: "/account/favorites",
+                    params: { mode: "select" },
+                  });
+                }}
+                icon={{ name: "heart-outline", position: "left" }}
+              >
+                From Favorites
+              </Button>
+
+              <Button
+                variant="outline"
+                onPress={() => {
+                  setVisible(false);
+                  //console.log("Search selected");
+                  router.push({
+                    pathname: "/home/search",
+                    params: { mode: "select" },
+                  })
+                }}
+                icon={{ name: "magnify", position: "left" }}
+              >
+                Search Recipes
+              </Button>
+
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        {/* meal plan settings — target calories per meal for auto generator */}
+        <Modal
+          transparent
+          visible={settingsModalVisible}
+          animationType="fade"
+          statusBarTranslucent
+        >
+          <View className="flex-1 justify-center items-center">
+            <Pressable
+              className="absolute inset-0 bg-black/50"
+              onPress={() => setSettingsModalVisible(false)}
+            />
+            <View className="mx-4 w-[90%] max-w-sm rounded-2xl bg-background p-6 gap-5 shadow-lg">
+              <Text className="text-lg font-bold text-center text-foreground">
+                Meal plan settings
+              </Text>
+              <Text className="text-center text-sm text-muted-foreground">
+                Auto meal plan will prefer recipes between these calories (per meal)
+              </Text>
+
+              <View className="gap-2">
+                <Text className="font-semibold text-foreground">
+                  Minimum: {Math.min(calorieMin, calorieMax)} cal
+                </Text>
+                <Slider
+                  minimumValue={CAL_SLIDER_MIN}
+                  maximumValue={CAL_SLIDER_MAX}
+                  step={CAL_SLIDER_STEP}
+                  value={calorieMin}
+                  onValueChange={(v) => {
+                    const next = Math.round(v / CAL_SLIDER_STEP) * CAL_SLIDER_STEP;
+                    setCalorieMin(next);
+                    if (next > calorieMax) setCalorieMax(next);
+                  }}
+                  minimumTrackTintColor="#bd9b64"
+                  maximumTrackTintColor="#e5e5e5"
+                  thumbTintColor="#bd9b64"
+                />
+              </View>
+
+              <View className="gap-2">
+                <Text className="font-semibold text-foreground">
+                  Maximum: {Math.max(calorieMin, calorieMax)} cal
+                </Text>
+                <Slider
+                  minimumValue={CAL_SLIDER_MIN}
+                  maximumValue={CAL_SLIDER_MAX}
+                  step={CAL_SLIDER_STEP}
+                  value={calorieMax}
+                  onValueChange={(v) => {
+                    const next = Math.round(v / CAL_SLIDER_STEP) * CAL_SLIDER_STEP;
+                    setCalorieMax(next);
+                    if (next < calorieMin) setCalorieMin(next);
+                  }}
+                  minimumTrackTintColor="#bd9b64"
+                  maximumTrackTintColor="#e5e5e5"
+                  thumbTintColor="#bd9b64"
+                />
+              </View>
+
+              <Button
+                variant="default"
+                className="rounded-xl"
+                onPress={() => setSettingsModalVisible(false)}
+              >
+                Done
+              </Button>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
     </ThemedSafeView>
   );
 }

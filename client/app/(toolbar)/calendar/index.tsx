@@ -53,12 +53,13 @@ export default function CalendarPage() {
 
   const markedDates = useMemo(() => {
     // Colors for breakfast / lunch / dinner periods
-    const breakfastColor = "#6082b6";
-    const lunchColor = "#da627d";
-    const dinnerColor = "#77c199";
+    const breakfastColor = "#f0bb29";
+    const lunchColor = "#4fa34b";
+    const dinnerColor = "#bd9b64";
 
     // Initialize the marks object to store all marking info
     const marks: Record<string, any> = {};
+    type MealSlot = "breakfast" | "lunch" | "dinner";
 
     for (const plan of mealPlans ?? []) {
       if (!plan.start_date || !plan.end_date) continue;
@@ -87,36 +88,52 @@ export default function CalendarPage() {
         const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
         const d = String(dt.getUTCDate()).padStart(2, "0");
         const dayKey = `${y}-${m}-${d}`;
-        const entry = (marks[dayKey] ??= { periods: [] });
-        const periods: any[] = entry.periods; // Contains period marking info for a date
+        // Max 3 markings per day (Breakfast/Lunch/Dinner), even if multiple meal plans overlap on the same date
+        const entry = (marks[dayKey] ??= { periodsByMeal: {} as Partial<Record<MealSlot, any>> });
+        const periodsByMeal: Partial<Record<MealSlot, any>> = entry.periodsByMeal;
 
         const isStart = dayKey === start;
         const isEnd = dayKey === end;
 
         // Build the periods array for the day, containing each meal type (breakfast, lunch, dinner)
         if (plan.breakfast) {
-          periods.push({
-            startingDay: isStart,
-            endingDay: isEnd,
+          const prev = periodsByMeal.breakfast;
+          periodsByMeal.breakfast = {
             color: breakfastColor,
-          });
+            startingDay: !!prev?.startingDay || isStart,
+            endingDay: !!prev?.endingDay || isEnd,
+          };
         }
         if (plan.lunch) {
-          periods.push({
-            startingDay: isStart,
-            endingDay: isEnd,
+          const prev = periodsByMeal.lunch;
+          periodsByMeal.lunch = {
             color: lunchColor,
-          });
+            startingDay: !!prev?.startingDay || isStart,
+            endingDay: !!prev?.endingDay || isEnd,
+          };
         }
         if (plan.dinner) {
-          periods.push({
-            startingDay: isStart,
-            endingDay: isEnd,
+          const prev = periodsByMeal.dinner;
+          periodsByMeal.dinner = {
             color: dinnerColor,
-          });
+            startingDay: !!prev?.startingDay || isStart,
+            endingDay: !!prev?.endingDay || isEnd,
+          };
         }
 
       }
+    }
+
+    // Convert our de-duped per-day structure into the `markedDates[dayKey].periods`
+    // format expected by the calendar + our custom `dayComponent`.
+    const mealOrder: MealSlot[] = ["breakfast", "lunch", "dinner"];
+    for (const dayKey of Object.keys(marks)) {
+      const entry = marks[dayKey];
+      if (!entry?.periodsByMeal) continue;
+
+      entry.periods = mealOrder
+        .map((meal) => entry.periodsByMeal?.[meal])
+        .filter(Boolean);
     }
 
     // Ensure the currently selected date is visually highlighted as well
@@ -200,7 +217,7 @@ export default function CalendarPage() {
                             return (
                               <View
                                 key={idx}
-                                className="h-1"
+                                className="h-1.5"
                                 style={{
                                   backgroundColor: p.color,
                                   borderTopLeftRadius: isStart ? radius : 0,

@@ -106,43 +106,22 @@ export default function SettingsPage() {
             </View>
           </View>
         </View>
-        <View className="my-0 gap-2">
+        <View className="mt-4 gap-1">
           <Text className="text-base font-medium text-muted-foreground">Location</Text>
           <LocationSharingSection value={locationEnabled} onChange={toggleSwitch} />
         </View>
-        <View className="my-4 gap-1">
+        <View className="mt-4 mb-6 gap-1">
           <Text className="text-base font-medium text-muted-foreground">Notifications</Text>
-
-          <Pressable
-            onPress={() => router.push("/account/notifications")}
-            className="w-full h-[77px] bg-white rounded-[12px] flex-row items-center justify-between px-4 shadow-sm"
-            style={{
-              shadowColor: "#000",
-              shadowOpacity: 0.1,
-              shadowOffset: { width: 0, height: 1 },
-              shadowRadius: 3,
-              elevation: 3,
-            }}
-          >
-            <View className="flex-row items-center gap-4">
-              <View className="w-10 h-10 rounded-[10px] bg-[#F2F2F2] items-center justify-center">
-                <IconSymbol name="bell-outline" size={20} color="#666666" />
-              </View>
-
-              <View className="flex-col">
-                <Text className="text-[16px] font-medium leading-6 tracking-[0.5px] text-black">
-                  Notifications
-                </Text>
-                <Text className="text-[12px] leading-[18px] tracking-[0.5px] text-[#666666]">
-                  Meal plan and calendar reminders
-                </Text>
-              </View>
-            </View>
-
-            <View className="w-5 h-5 items-center justify-center">
-              <View className="w-3 h-3 border-r-[1.7px] border-b-[1.7px] border-[#666666] rotate-[-45deg]" />
-            </View>
-          </Pressable>
+          {/* Notification Settings Item */}
+          <View className="rounded-xl shadow-sm overflow-hidden">
+            <AccountMenuItem
+              title="Notification Settings"
+              subtitle="Meal plan and calendar reminders"
+              iconName="bell-outline"
+              onPress={() => router.push("/account/notifications")}
+              isLast
+            />
+          </View>
         </View>
 
         {/* Logout Button */}

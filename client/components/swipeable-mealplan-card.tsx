@@ -17,6 +17,16 @@ export interface SwipeableMealPlanCardProps {
   dinnerId?: string | null;
 }
 
+function parseRecipeIds(input?: string | null): string[] {
+  if (!input) return [];
+
+  // Meal plan stores multiple recipe ids as a comma-separated string, e.g. "638257,639715,1"
+  return input
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 export function SwipeableMealPlanCard({
   id,
   startDateLabel,
@@ -30,10 +40,16 @@ export function SwipeableMealPlanCard({
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [recipesById, setRecipesById] = useState<Record<string, any>>({});
 
-  const slotIds = useMemo(
-    () => [breakfastId, lunchId, dinnerId].filter((x): x is string => !!x),
-    [breakfastId, lunchId, dinnerId]
-  );
+  const breakfastRecipeIds = useMemo(() => parseRecipeIds(breakfastId), [breakfastId]);
+  const lunchRecipeIds = useMemo(() => parseRecipeIds(lunchId), [lunchId]);
+  const dinnerRecipeIds = useMemo(() => parseRecipeIds(dinnerId), [dinnerId]);
+
+  const slotIds = useMemo(() => {
+    // Flatten all meal recipe ids into one list for fetching.
+    // Use a Set to avoid duplicate requests when the same recipe appears multiple times.
+    const all = [...breakfastRecipeIds, ...lunchRecipeIds, ...dinnerRecipeIds];
+    return Array.from(new Set(all));
+  }, [breakfastRecipeIds, lunchRecipeIds, dinnerRecipeIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +81,7 @@ export function SwipeableMealPlanCard({
       setRecipesError(null);
       try {
         const idToken = await AsyncStorage.getItem("idToken");
+        // Fetch each recipe detail in the meal plan
         const entries = await Promise.all(
           slotIds.map(async (rid) => {
             try {
@@ -93,6 +110,24 @@ export function SwipeableMealPlanCard({
       cancelled = true;
     };
   }, [slotIds]);
+
+  type MealSlotDisplay = "Breakfast" | "Lunch" | "Dinner";
+  const renderRecipeCardsForMeal = (recipeIds: string[], meal: MealSlotDisplay) => {
+    const titleFallback = `${meal} recipe`;
+
+    return recipeIds.map((rid) => (
+      <RecipeCard
+        key={`${meal.toLowerCase()}-${rid}`}
+        id={rid}
+        variant="horizontal"
+        title={recipesById[rid]?.title ?? titleFallback}
+        calories={recipesById[rid]?.calories ?? 0}
+        rating={recipesById[rid]?.rating ?? 0}
+        reviewsLength={Array.isArray(recipesById[rid]?.reviews) ? recipesById[rid].reviews.length : 0}
+        imageUrl={recipesById[rid]?.image ?? recipesById[rid]?.imageUrl ?? null}
+      />
+    ));
+  };
 
   const renderRightActions = (
     _progress: unknown,
@@ -153,48 +188,42 @@ export function SwipeableMealPlanCard({
           <Text className="text-muted-foreground">{recipesError}</Text>
         ) : (
           <>
-            {breakfastId ? (
+            {breakfastRecipeIds.length > 0 ? (
               <View className="gap-2">
-                <Text className="text-foreground font-semibold">Breakfast</Text>
-                <RecipeCard
-                  id={breakfastId}
-                  variant="horizontal"
-                  title={recipesById[breakfastId]?.title ?? "Breakfast recipe"}
-                  calories={recipesById[breakfastId]?.calories ?? 0}
-                  rating={recipesById[breakfastId]?.rating ?? 0}
-                  reviewsLength={Array.isArray(recipesById[breakfastId]?.reviews) ? recipesById[breakfastId].reviews.length : 0}
-                  imageUrl={recipesById[breakfastId]?.image ?? recipesById[breakfastId]?.imageUrl ?? null}
-                />
+                <View className="flex-row items-center gap-2">
+                  <View
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: "#f0bb29" }}
+                  />
+                  <Text className="text-foreground font-semibold">Breakfast</Text>
+                </View>
+                {renderRecipeCardsForMeal(breakfastRecipeIds, "Breakfast")}
               </View>
             ) : null}
 
-            {lunchId ? (
+            {lunchRecipeIds.length > 0 ? (
               <View className="gap-2">
-                <Text className="text-foreground font-semibold">Lunch</Text>
-                <RecipeCard
-                  id={lunchId}
-                  variant="horizontal"
-                  title={recipesById[lunchId]?.title ?? "Lunch recipe"}
-                  calories={recipesById[lunchId]?.calories ?? 0}
-                  rating={recipesById[lunchId]?.rating ?? 0}
-                  reviewsLength={Array.isArray(recipesById[lunchId]?.reviews) ? recipesById[lunchId].reviews.length : 0}
-                  imageUrl={recipesById[lunchId]?.image ?? recipesById[lunchId]?.imageUrl ?? null}
-                />
+                <View className="flex-row items-center gap-2">
+                  <View
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: "#4fa34b" }}
+                  />
+                  <Text className="text-foreground font-semibold">Lunch</Text>
+                </View>
+                {renderRecipeCardsForMeal(lunchRecipeIds, "Lunch")}
               </View>
             ) : null}
 
-            {dinnerId ? (
+            {dinnerRecipeIds.length > 0 ? (
               <View className="gap-2">
-                <Text className="text-foreground font-semibold">Dinner</Text>
-                <RecipeCard
-                  id={dinnerId}
-                  variant="horizontal"
-                  title={recipesById[dinnerId]?.title ?? "Dinner recipe"}
-                  calories={recipesById[dinnerId]?.calories ?? 0}
-                  rating={recipesById[dinnerId]?.rating ?? 0}
-                  reviewsLength={Array.isArray(recipesById[dinnerId]?.reviews) ? recipesById[dinnerId].reviews.length : 0}
-                  imageUrl={recipesById[dinnerId]?.image ?? recipesById[dinnerId]?.imageUrl ?? null}
-                />
+                <View className="flex-row items-center gap-2">
+                  <View
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: "#bd9b64" }}
+                  />
+                  <Text className="text-foreground font-semibold">Dinner</Text>
+                </View>
+                {renderRecipeCardsForMeal(dinnerRecipeIds, "Dinner")}
               </View>
             ) : null}
           </>)}
