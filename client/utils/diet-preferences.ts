@@ -34,13 +34,16 @@ export async function loadDiets(): Promise<Set<string>> {
   if (!idToken) return new Set();
   
   try {
-    const response = await fetch(`${SERVER_URL}/api/auth/get-diets`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        "Content-Type": "application/json",
-      },
-    });
+    const response = await fetch(
+      `${SERVER_URL}/api/auth/get-preferences?fields=diets`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     if (!response.ok) {
       console.warn("Failed to load diets", await response.json());
@@ -67,13 +70,16 @@ export async function loadAllergies(): Promise<Set<string>> {
 
   if (!idToken) return new Set();
   try {
-    const response = await fetch(`${SERVER_URL}/api/auth/get-allergies`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        "Content-Type": "application/json",
-      },
-    });
+    const response = await fetch(
+      `${SERVER_URL}/api/auth/get-preferences?fields=allergies`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     if (!response.ok) {
       console.warn("Failed to load allergies", await response.json());
@@ -100,7 +106,7 @@ export async function saveDiets(diets: Set<string>): Promise<void> {
   try {
     const idToken = await AsyncStorage.getItem("idToken");
     if (idToken) {
-      const res = await fetch(`${SERVER_URL}/api/auth/update-diets`, {
+      const res = await fetch(`${SERVER_URL}/api/auth/update-preferences`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${idToken}`,
@@ -120,7 +126,7 @@ export async function saveAllergies(allergies: Set<string>): Promise<void> {
     try {
       const idToken = await AsyncStorage.getItem("idToken");
       if (idToken) {
-        const res = await fetch(`${SERVER_URL}/api/auth/update-allergies`, {
+        const res = await fetch(`${SERVER_URL}/api/auth/update-preferences`, {
           method: "PUT",
           headers: {
             Authorization: `Bearer ${idToken}`,

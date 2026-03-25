@@ -1,6 +1,5 @@
 import admin from "firebase-admin";
 import axios from "axios";
-import { success } from "zod";
 
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
 
@@ -72,6 +71,8 @@ export const register = async (req, res) => {
     batch.set(db.collection("users").doc(uid), {
       email,
       username,
+      onboarding: false, // legacy flag
+      onboarded: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -122,6 +123,7 @@ export const login = async (req, res) => {
   }
 
   try {
+    const db = admin.firestore();
     const firebaseResponse = await axios.post(
       `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
       { email, password, returnSecureToken: true },
@@ -130,6 +132,9 @@ export const login = async (req, res) => {
     const { idToken, refreshToken, localId, displayName } =
       firebaseResponse.data;
 
+    const userDoc = await db.collection("users").doc(localId).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+
     return res.json({
       success: true,
       uid: localId,
@@ -137,6 +142,7 @@ export const login = async (req, res) => {
       refreshToken,
       email,
       username: displayName,
+      onboarded: userData.onboarded,
       message: "Login successful",
     });
   } catch (error) {
@@ -245,6 +251,60 @@ export const updateAccount = async (req, res) => {
 };
 
 /**
+ * Delete user account
+ * DELETE /api/auth/delete-account
+ * Protected by verifyToken middleware (Authorization header)
+ */
+export const deleteAccount = async (req, res) => {
+  const uid = req.user?.uid;
+
+  if (!uid) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "UNAUTHORIZED",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+
+    const userDocRef = db.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User data not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+
+    const { username } = userDoc.data();
+
+    const batch = db.batch();
+    batch.delete(userDocRef);
+
+    if (username) {
+      batch.delete(db.collection("usernames").doc(username));
+    }
+
+    await batch.commit();
+
+    await admin.auth().deleteUser(uid);
+
+    return res.json({
+      success: true,
+      message: "Account deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: error.code || "DELETE_FAILED",
+    });
+  }
+};
+
+/**
  * Update user favorites
  * PUT /api/auth/update-favorites
  */
@@ -340,106 +400,11 @@ export const getFavorites = async (req, res) => {
 };
 
 /**
- * Update user cookware preferences
- * PUT /api/auth/update-cookware
+ * Get user preferences (subset or all)
+ * GET /api/auth/get-preferences?fields=cookware,diets,budget
+ * Omit fields or use fields=all to return every preference field.
  */
-export const updateCookware = async (req, res) => {
-  const uid = req.user?.uid;
-  const { cookware } = req.body;
-
-  if (!uid) {
-    return res.status(401).json({
-      error: "Error updating cookware",
-      code: "UPDATE_FAILED",
-    });
-  }
-
-  if (!Array.isArray(cookware)) {
-    return res.status(400).json({
-      error: "Cookware must be an array",
-      code: "INVALID_REQUEST",
-    });
-  }
-
-  try {
-    const db = admin.firestore();
-    const userDocRef = db.collection("users").doc(uid);
-
-    // Check if document exists first
-    const userDoc = await userDocRef.get();
-    if (!userDoc.exists) {
-      return res.status(404).json({
-        error: "User document not found",
-        code: "USER_NOT_FOUND",
-      });
-    }
-
-    // Update only the cookware field (update() automatically merges)
-    await userDocRef.update({
-      cookware,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    return res.json({
-      success: true,
-      message: "Cookware updated successfully",
-    });
-  } catch (error) {
-    console.error("Error updating cookware:", error);
-    return res.status(400).json({
-      error: error.message,
-      code: error.code || "UPDATE_FAILED",
-    });
-  }
-};
-
-/**
- * Get user cookware preferences
- * GET /api/auth/get-cookware
- */
-export const getCookware = async (req, res) => {
-  const uid = req.user?.uid;
-  if (!uid) {
-    return res.status(401).json({
-      error: "Unauthorized",
-      code: "UNAUTHORIZED",
-    });
-  }
-
-  try {
-    const db = admin.firestore();
-    const userDocRef = db.collection("users").doc(uid);
-    const userDoc = await userDocRef.get();
-
-    if (!userDoc.exists) {
-      return res.json({
-        success: true,
-        cookware: [],
-      });
-    }
-
-    const { cookware } = userDoc.data();
-    const list = Array.isArray(cookware) ? cookware : [];
-
-    return res.json({
-      success: true,
-      cookware: list,
-    });
-  } catch (error) {
-    console.error("Error fetching cookware:", error);
-    return res.status(400).json({
-      error: error.message,
-      code: error.code || "COOKWARE_FETCH_FAILED",
-    });
-  }
-};
-
-/**
- * Delete user account
- * DELETE /api/auth/delete-account
- * Protected by verifyToken middleware (Authorization header)
- */
-export const deleteAccount = async (req, res) => {
+export const getPreferences = async (req, res) => {
   const uid = req.user?.uid;
 
   if (!uid) {
@@ -449,105 +414,32 @@ export const deleteAccount = async (req, res) => {
     });
   }
 
-  try {
-    const db = admin.firestore();
+  const ALL_KEYS = [
+    "cookware",
+    "allergies",
+    "diets",
+    "budget",
+    "nutrientDisplay",
+    "locationEnabled",
+    "appPreferences",
+    "onboarded",
+  ];
 
-    const userDocRef = db.collection("users").doc(uid);
-    const userDoc = await userDocRef.get();
+  const raw = req.query.fields ?? req.query.keys ?? "";
+  // Turn string query into array
+  const parts = String(raw)
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 
-    if (!userDoc.exists) {
-      return res.status(404).json({
-        error: "User data not found",
-        code: "USER_NOT_FOUND",
-      });
-    }
+  const keysToReturn =
+    parts.length === 0 || parts.includes("all")
+      ? ALL_KEYS
+      : parts.filter((k) => ALL_KEYS.includes(k));
 
-    const { username } = userDoc.data();
-
-    const batch = db.batch();
-    batch.delete(userDocRef);
-
-    if (username) {
-      batch.delete(db.collection("usernames").doc(username));
-    }
-
-    await batch.commit();
-
-    await admin.auth().deleteUser(uid);
-
-    return res.json({
-      success: true,
-      message: "Account deleted successfully",
-    });
-  } catch (error) {
-    console.error("Error deleting account:", error);
+  if (keysToReturn.length === 0) {
     return res.status(400).json({
-      error: error.message,
-      code: error.code || "DELETE_FAILED",
-    });
-  }
-};
-
-/**
- * Get user allergies
- * GET /api/auth/get-allergies
- */
-export const getAllergies = async (req, res) => {
-  const uid = req.user?.uid;
-
-  if (!uid) {
-    return res.status(401).json({
-      error: "Unauthorized",
-      code: "UNAUTHORIZED",
-    });
-  }
-
-  try {
-    const db = admin.firestore();
-    const userDocRef = db.collection("users").doc(uid);
-    const userDoc = await userDocRef.get();
-
-    if (!userDoc.exists) {
-      return res.json({
-        success: true,
-        allergies: [],
-      });
-    }
-
-    const { allergies } = userDoc.data();
-    const list = Array.isArray(allergies) ? allergies : [];
-
-    return res.json({
-      success: true,
-      allergies: list,
-    });
-  } catch (error) {
-    console.error("Error fetching allergies:", error);
-    return res.status(400).json({
-      error: error.message,
-      code: error.code || "ALLERGIES_FETCH_FAILED",
-    });
-  }
-};
-
-/**
- * Update user allergies
- * PUT /api/auth/update-allergies
- */
-export const updateAllergies = async (req, res) => {
-  const uid = req.user?.uid;
-  const { allergies } = req.body;
-
-  if (!uid) {
-    return res.status(401).json({
-      error: "Error updating allergies",
-      code: "UPDATE_FAILED",
-    });
-  }
-
-  if (!Array.isArray(allergies)) {
-    return res.status(400).json({
-      error: "Allergies must be an array",
+      error: "No valid preference fields requested",
       code: "INVALID_REQUEST",
     });
   }
@@ -564,88 +456,88 @@ export const updateAllergies = async (req, res) => {
       });
     }
 
-    await userDocRef.update({
-      allergies,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    const d = userDoc.data() || {};
+    const output = { success: true };
 
-    return res.json({
-      success: true,
-      message: "Allergies updated successfully",
-    });
-  } catch (error) {
-    console.error("Error updating allergies:", error);
-    return res.status(400).json({
-      error: error.message,
-      code: error.code || "UPDATE_FAILED",
-    });
-  }
-};
-
-/**
- * Get user Diets
- * GET /api/auth/get-diets
- */
-export const getDiets = async (req, res) => {
-  const uid = req.user?.uid;
-
-  if (!uid) {
-    return res.status(401).json({
-      error: "Unauthorized",
-      code: "UNAUTHORIZED",
-    });
-  }
-
-  try {
-    const db = admin.firestore();
-    const userDocRef = db.collection("users").doc(uid);
-    const userDoc = await userDocRef.get();
-
-    if (!userDoc.exists) {
-      return res.json({
-        success: true,
-        diets: [],
-      });
+    for (const key of keysToReturn) {
+      switch (key) {
+        case "cookware":
+          output.cookware = Array.isArray(d.cookware) ? d.cookware : [];
+          break;
+        case "allergies":
+          output.allergies = Array.isArray(d.allergies) ? d.allergies : [];
+          break;
+        case "diets":
+          output.diets = Array.isArray(d.diets) ? d.diets : [];
+          break;
+        case "budget":
+          output.budget =
+            typeof d.budget === "number" && !Number.isNaN(d.budget)
+              ? d.budget
+              : 0;
+          break;
+        case "nutrientDisplay":
+          output.nutrientDisplay = Array.isArray(d.nutrientDisplay)
+            ? d.nutrientDisplay
+            : [];
+          break;
+        case "locationEnabled":
+          output.locationEnabled =
+            typeof d.locationEnabled === "boolean" ? d.locationEnabled : false;
+          break;
+        case "appPreferences":
+          output.appPreferences =
+            d.appPreferences && typeof d.appPreferences === "object"
+              ? d.appPreferences
+              : null;
+          break;
+        case "onboarded":
+          output.onboarded =
+            typeof d.onboarded === "boolean"
+              ? d.onboarded
+              : typeof d.onboarding === "boolean"
+                ? d.onboarding
+                : false;
+          break;
+        default:
+          break;
+      }
     }
 
-    const { diets } = userDoc.data();
-    const list = Array.isArray(diets) ? diets : [];
-
-    return res.json({
-      success: true,
-      diets: list,
-    });
+    return res.status(200).json(output);
   } catch (error) {
-    console.error("Error fetching diets:", error);
+    console.error("Error fetching preferences:", error);
     return res.status(400).json({
       error: error.message,
-      code: error.code || "DIETS_FETCH_FAILED",
+      code: error.code || "PREFERENCES_FETCH_FAILED",
     });
   }
 };
 
 /**
- * Update user diets
- * PUT /api/auth/update-diets
+ * Update multiple user preferences at once
+ * PUT /api/auth/update-preferences
  */
-export const updateDiets = async (req, res) => {
+export const updatePreferences = async (req, res) => {
   const uid = req.user?.uid;
-  const { diets } = req.body;
+  const {
+    cookware,
+    allergies,
+    diets,
+    budget,
+    nutrientDisplay,
+    locationEnabled,
+    appPreferences,
+    onboarded,
+  } = req.body;
 
   if (!uid) {
     return res.status(401).json({
-      error: "Error updating diets",
+      error: "Error updating preferences",
       code: "UPDATE_FAILED",
     });
   }
 
-  if (!Array.isArray(diets)) {
-    return res.status(400).json({
-      error: "Diets must be an array",
-      code: "INVALID_REQUEST",
-    });
-  }
-
   try {
     const db = admin.firestore();
     const userDocRef = db.collection("users").doc(uid);
@@ -658,109 +550,36 @@ export const updateDiets = async (req, res) => {
       });
     }
 
-    await userDocRef.update({
-      diets,
+    const updateData = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
 
-    return res.json({
-      success: true,
-      message: "Diets updated successfully",
-    });
-  } catch (error) {
-    console.error("Error updating diets:", error);
-    return res.status(400).json({
-      error: error.message,
-      code: error.code || "UPDATE_FAILED",
-    });
-  }
-};
+    // Validate and update each preference individually
+    if (Array.isArray(cookware)) updateData.cookware = cookware;
+    if (Array.isArray(allergies)) updateData.allergies = allergies;
+    if (Array.isArray(diets)) updateData.diets = diets;
+    if (typeof budget === "number" && !isNaN(budget))
+      updateData.budget = budget;
+    if (Array.isArray(nutrientDisplay))
+      updateData.nutrientDisplay = nutrientDisplay;
+    if (typeof locationEnabled === "boolean")
+      updateData.locationEnabled = locationEnabled;
+    if (appPreferences && typeof appPreferences === "object")
+      updateData.appPreferences = appPreferences;
 
-/**
- * Get user budget
- * GET /api/auth/get-budget
- */
-export const getBudget = async (req, res) => {
-  const uid = req.user?.uid;
-
-  if (!uid) {
-    return res.status(401).json({
-      error: "Unauthorized",
-      code: "UNAUTHORIZED",
-    });
-  }
-
-  try {
-    const db = admin.firestore();
-    const userDocRef = db.collection("users").doc(uid);
-    const userDoc = await userDocRef.get();
-
-    if (!userDoc.exists) {
-      return res.status(404).json({
-        error: "User document not found",
-        code: "USER_NOT_FOUND",
-      });
+    // Should be requested once: Set onboarded to true after setting preferences during onboarding
+    if (typeof onboarded === "boolean" && onboarded === true) {
+      updateData.onboarded = true;
     }
 
-    // Extract budget from user document or default to 0 if column does not exist
-    const { budget = 0 } = userDoc.data();
+    await userDocRef.update(updateData);
 
     return res.status(200).json({
-      budget: budget,
+      success: true,
+      message: "Preferences updated successfully",
     });
   } catch (error) {
-    console.error("Error fetching budget:", error);
-    return res.status(400).json({
-      error: error.message,
-      code: error.code || "BUDGET_FETCH_FAILED",
-    });
-  }
-};
-
-/**
- * Update user budget
- * PUT /api/auth/update-budget
- */
-export const updateBudget = async (req, res) => {
-  const uid = req.user?.uid;
-  const { budget } = req.body;
-
-  if (!uid) {
-    return res.status(401).json({
-      error: "Error updating budget",
-      code: "UPDATE_FAILED",
-    });
-  }
-
-  if (typeof budget !== "number" || isNaN(budget)) {
-    return res.status(400).json({
-      error: "Budget must be a number",
-      code: "INVALID_REQUEST",
-    });
-  }
-
-  try {
-    const db = admin.firestore();
-    const userDocRef = db.collection("users").doc(uid);
-    const userDoc = await userDocRef.get();
-
-    if (!userDoc.exists) {
-      return res.status(404).json({
-        error: "User document not found",
-        code: "USER_NOT_FOUND",
-      });
-    }
-
-    await userDocRef.update({
-      budget,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    return res.status(200).json({
-      message: "Budget updated successfully",
-    });
-  } catch (error) {
-    console.error("Error updating budget:", error);
+    console.error("Error updating preferences:", error);
     return res.status(400).json({
       error: error.message,
       code: error.code || "UPDATE_FAILED",

@@ -5,9 +5,9 @@
 
 import {
   Text,
-  TouchableOpacity,
+  Pressable,
   View,
-  type TouchableOpacityProps,
+  type PressableProps,
 } from "react-native";
 import React from "react";
 import { IconSymbol, type MaterialIconName } from "@/components/ui/icon-symbol";
@@ -38,7 +38,7 @@ const sizes = {
   sm: "h-10 px-2 py-1",
 };
 
-interface ButtonProps extends Omit<TouchableOpacityProps, "style"> {
+interface ButtonProps extends Omit<PressableProps, "style"> {
   className?: string;
   textClassName?: string;
   variant?: keyof typeof variants;
@@ -58,19 +58,19 @@ const Button = ({
   size = "default",
   children,
   icon, // Icon props
-  ...touchableProps // onPress, onLongPress, etc.
+  ...pressableProps // onPress, onLongPress, etc.
 }: ButtonProps) => {
   const theme = useThemePalette();
 
   return (
-    <TouchableOpacity
+    <Pressable
       className={twMerge(
         "rounded-xl justify-center items-center",
         variants[variant].background,
         sizes[size],
         className
       )}
-      {...touchableProps}
+      {...pressableProps}
     >
       <View
         className={twMerge(
@@ -89,7 +89,7 @@ const Button = ({
           />
         )}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 };
 

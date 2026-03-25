@@ -1,40 +1,13 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
-import { loadAllergies, loadDiets, saveAllergies, saveDiets, diets, allergies } from "@/utils/diet-preferences";
-import { Collapsible } from "@/components/ui/collapsible";
+import { loadAllergies, loadDiets, saveAllergies, saveDiets } from "@/utils/diet-preferences";
+import { DietaryPreferencesSection } from "@/components/preferences";
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-} from "react-native";
+import { View, Text } from "react-native";
 
 export default function DietaryPreferencesPage() {
   const [selectedAllergies, setSelectedAllergies] = useState<Set<string>>(new Set());
   const [selectedDiets, setSelectedDiets] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
-
-  const toggleAllergy = async (item: string) => {
-    setSelectedAllergies(prev => {
-      const updated = new Set(prev);
-      if (updated.has(item)) updated.delete(item);
-      else updated.add(item);
-
-      saveAllergies(updated);
-      return updated;
-    });
-  };
-
-  const toggleDiet = async (item: string) => {
-    setSelectedDiets(prev => {
-      const updated = new Set(prev);
-      if (updated.has(item)) updated.delete(item);
-      else updated.add(item);
-
-      saveDiets(updated);
-      return updated;
-    });
-  };
 
   useEffect(() => {
     const load = async () => {
@@ -57,67 +30,20 @@ export default function DietaryPreferencesPage() {
           <Text className="text-muted-foreground">Loading...</Text>
         </View>
       ) : (
-        <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 16 }}>
-          <Collapsible title="Allergies">
-            {allergies.map((item) => {
-              const isSelected = selectedAllergies.has(item);
-
-              return (
-                <Pressable
-                  key={item}
-                  onPress={() => toggleAllergy(item)}
-                  className="bg-background rounded-xl flex-row items-center justify-between px-4 h-[56px] shadow-sm mb-2"
-                >
-                  <Text className="text-foreground font-medium flex-1">
-                    {item}
-                  </Text>
-
-                  {/* Checkbox */}
-                  <View
-                    className={`w-6 h-6 rounded-[6px] border-2 items-center justify-center ${isSelected
-                      ? "bg-red-primary border-red-primary"
-                      : "border-muted-background bg-background"
-                      }`}
-                  >
-                    {isSelected && (
-                      <Text className="text-foreground text-xs font-bold">✓</Text>
-                    )}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </Collapsible>
-
-          <Collapsible title="Diets">
-            {diets.map((item) => {
-              const isSelected = selectedDiets.has(item);
-
-              return (
-                <Pressable
-                  key={item}
-                  onPress={() => toggleDiet(item)}
-                  className="bg-background rounded-xl flex-row items-center justify-between px-4 h-[56px] shadow-sm mb-2"
-                >
-                  <Text className="text-foreground font-medium flex-1">
-                    {item}
-                  </Text>
-
-                  {/* Checkbox */}
-                  <View
-                    className={`w-6 h-6 rounded-[6px] border-2 items-center justify-center ${isSelected
-                      ? "bg-red-primary border-red-primary"
-                      : "border-muted-background bg-background"
-                      }`}
-                  >
-                    {isSelected && (
-                      <Text className="text-foreground text-xs font-bold">✓</Text>
-                    )}
-                  </View>
-                </Pressable>
-              )
-            })}
-          </Collapsible>
-        </ScrollView>
+        <DietaryPreferencesSection
+          selectedAllergies={[...selectedAllergies]}
+          selectedDiets={[...selectedDiets]}
+          onChangeAllergies={(next) => {
+            const updated = new Set(next);
+            setSelectedAllergies(updated);
+            void saveAllergies(updated);
+          }}
+          onChangeDiets={(next) => {
+            const updated = new Set(next);
+            setSelectedDiets(updated);
+            void saveDiets(updated);
+          }}
+        />
       )}
     </ThemedSafeView>
   );

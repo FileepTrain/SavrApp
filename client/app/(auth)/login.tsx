@@ -44,9 +44,16 @@ const LoginPage = () => {
         ["uid", data.uid],
         ["username", data.username ?? ""],
         ["email", data.email ?? email],
+        ["onboarded", data.onboarded ? "true" : "false"],
       ]);
 
-      router.replace("/home"); // go to home screen
+      // Determine redirect route: onboarding if user is not onboarded, home if user is onboarded
+      const onboarded = data.onboarded;
+      if (!onboarded) {
+        router.replace("/onboarding");
+      } else {
+        router.replace("/home");
+      }
     } catch (err: any) {
       Alert.alert("Login failed", err.message);
     } finally {

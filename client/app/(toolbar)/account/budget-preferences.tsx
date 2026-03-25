@@ -2,19 +2,16 @@ import { View, Text, ActivityIndicator } from 'react-native'
 import React, { useState, useEffect } from 'react'
 import { ThemedSafeView } from '@/components/themed-safe-view';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Slider from '@react-native-community/slider';
-import { useThemePalette } from '@/components/theme-provider';
-import Input from '@/components/ui/input';
 import Button from '@/components/ui/button';
+import { BudgetPreferencesSection } from '@/components/preferences';
 
 const BUDGET_STORAGE_KEY = "USER_BUDGET";
 const SERVER_URL = "http://10.0.2.2:3000";
 
 const BudgetPreferencesPage = () => {
-  const [budget, setBudget] = useState(0);
+  const [budget, setBudget] = useState(100);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const theme = useThemePalette();
 
   useEffect(() => {
     const loadBudget = async () => {
@@ -33,17 +30,20 @@ const BudgetPreferencesPage = () => {
         const idToken = await AsyncStorage.getItem("idToken");
         if (!idToken) return;
 
-        const res = await fetch(`${SERVER_URL}/api/auth/get-budget`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "Content-Type": "application/json",
-          },
-        });
+        const res = await fetch(
+          `${SERVER_URL}/api/auth/get-preferences?fields=budget`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
         const data = await res.json();
 
         if (!res.ok) console.warn("Failed to get budget", data);
-        if (data.budget) {
+        if (typeof data.budget === "number" && !Number.isNaN(data.budget)) {
           setBudget(data.budget);
         }
       } catch (e) {
@@ -55,13 +55,6 @@ const BudgetPreferencesPage = () => {
 
     loadBudget();
   }, []);
-
-  const handleInputChange = (value: string) => {
-    const numericValue = Number(value.replace("$", ""));
-    if (numericValue < 0 || !numericValue) setBudget(0);
-    else if (numericValue > 100) setBudget(100);
-    else setBudget(numericValue)
-  }
 
   const handleBudgetSave = async (budget: number) => {
     try {
@@ -81,7 +74,7 @@ const BudgetPreferencesPage = () => {
     const idToken = await AsyncStorage.getItem("idToken");
     if (!idToken) return;
     try {
-      const res = await fetch(`${SERVER_URL}/api/auth/update-budget`, {
+      const res = await fetch(`${SERVER_URL}/api/auth/update-preferences`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${idToken}`,
@@ -98,28 +91,7 @@ const BudgetPreferencesPage = () => {
   return (
     <ThemedSafeView className="flex-1 bg-app-background pt-safe-or-20">
       <View className="px-4 pt-4 pb-2 gap-2">
-        <Text className="text-base text-foreground">Your budget preferences are considered when searching for recipes and meal plans.</Text>
-        <Slider
-          minimumValue={0}
-          maximumValue={100}
-          step={1}
-          value={budget}
-          onValueChange={(value) => setBudget(value)}
-          minimumTrackTintColor={theme["--color-foreground"]}
-          thumbTintColor={theme["--color-foreground"]}
-          StepMarker={({ index, min, max }) =>
-            <View className="mt-4 ">
-              {(index === min ? <Text className="font-medium text-muted-foreground">$0</Text> : index === max ? <Text className="font-medium text-muted-foreground">$100</Text> : null)}
-            </View>}
-        />
-        {/* Change budget with keyboard input instead of slider */}
-        <Input
-          inputType="numeric"
-          inputClassName="text-xl self-center font-medium"
-          value={`$${budget.toString()}`}
-          onChangeText={(value) => handleInputChange(value)}
-          placeholder="$0"
-        />
+        <BudgetPreferencesSection value={budget} onChange={setBudget} />
         {/* Save button */}
         <Button
           className="mt-4"

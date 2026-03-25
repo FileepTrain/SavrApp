@@ -7,6 +7,7 @@ import { Text, View, Switch, ScrollView } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AccountMenuItem } from "@/components/account/account-menu-item";
 import Button from "@/components/ui/button";
+import { LocationSharingSection } from "@/components/preferences";
 
 
 async function saveLocationEnabled(enabled: boolean) {
@@ -34,6 +35,11 @@ export default function SettingsPage() {
   const toggleSwitch = async (value: boolean) => {
     setLocationEnabled(value);
     await saveLocationEnabled(value);
+  };
+
+  const handleLogout = async () => {
+    await AsyncStorage.multiRemove(["idToken", "uid", "username", "email", "onboarded"]);
+    router.replace("/login");
   };
 
   return (
@@ -102,40 +108,13 @@ export default function SettingsPage() {
         </View>
         <View className="my-6 gap-2">
           <Text className="text-base font-medium text-muted-foreground">Location</Text>
-          {/* Location Button*/}
-          <View
-            className="rounded-xl shadow-sm overflow-hidden flex-row items-center justify-between px-4 h-[77px] bg-background"
-          >
-            {/* left side */}
-            <View className="flex-row items-center gap-4">
-              <View className="w-10 h-10 rounded-xl bg-muted-background items-center justify-center">
-                <IconSymbol name="map-marker-outline" size={20} color="--color-foreground" />
-              </View>
-
-              <View className="gap-0.5">
-                <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">
-                  Share Your Location
-                </Text>
-                <Text className="text-[12px] text-muted-foreground tracking-[0.5px]">
-                  Sharing is {locationEnabled ? "enabled" : "disabled"}
-                </Text>
-              </View>
-            </View>
-
-            <Switch
-              style={{ transform: [{ scaleX: 1.3 }, { scaleY: 1.3 }] }}
-              trackColor={{ false: "#9c989e", true: "#2adb47" }}
-              thumbColor="#ffffff"
-              value={locationEnabled}
-              onValueChange={toggleSwitch}
-            />
-          </View>
+          <LocationSharingSection value={locationEnabled} onChange={toggleSwitch} />
         </View>
 
         {/* Logout Button */}
         <Button
           size="lg"
-          onPress={() => router.replace("/login")}
+          onPress={handleLogout}
           variant="destructive"
           className="mt-auto mb-6 w-full rounded-xl"
           textClassName="font-medium text-lg">

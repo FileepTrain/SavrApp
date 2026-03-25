@@ -73,7 +73,7 @@ const SignUpPage = () => {
         throw new Error(regData.error || "Registration failed");
       }
 
-      // Option 1: auto-login right after register
+      // Auto-login right after register
       const loginRes = await fetch(`${SERVER_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,9 +91,16 @@ const SignUpPage = () => {
         ["uid", loginData.uid],
         ["username", loginData.username ?? username],
         ["email", loginData.email ?? email],
+        ["onboarded", loginData.onboarded ? "true" : "false"],
       ]);
 
-      router.replace("/home");
+      // Determine redirect route: onboarding if user is not onboarded, home if user is onboarded
+      const onboarded = loginData.onboarded;
+      if (!onboarded) {
+        router.replace("/onboarding");
+      } else {
+        router.replace("/home");
+      }
     } catch (err: any) {
       Alert.alert("Sign Up failed", err.message);
     } finally {
