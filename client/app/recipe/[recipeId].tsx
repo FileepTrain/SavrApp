@@ -3,13 +3,20 @@ import RecipeRating from "@/components/recipe/recipe-rating";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Ingredient } from "@/types/ingredient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -17,6 +24,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Your backend base (Android emulator -> host machine)
 const SERVER_URL = "http://10.0.2.2:3000";
+const SHARE_BASE_URL = "http://10.0.2.2:3000";
 const FAVORITES_KEY = "FAV_RECIPE_IDS";
 
 async function syncFavorites() {
@@ -99,6 +107,12 @@ type SimilarRecipe = {
   similarityScore?: number;
 };
 
+type RecipeCollectionRow = {
+  id: string;
+  name: string;
+  recipeIds: string[];
+};
+
 function stripHtml(html?: string) {
   if (!html) return "";
   return html.replace(/<[^>]*>/g, "").trim();
@@ -119,6 +133,7 @@ function isPersonalRecipeId(id: string): boolean {
 
 export default function RecipeDetailsPage() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
 
   const insets = useSafeAreaInsets();
@@ -135,6 +150,16 @@ export default function RecipeDetailsPage() {
   const [isFavorited, setIsFavorited] = useState(false);
   const [similarRecipes, setSimilarRecipes] = useState<SimilarRecipe[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveCollections, setSaveCollections] = useState<RecipeCollectionRow[]>([]);
+  const [saveCollectionsLoading, setSaveCollectionsLoading] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState("");
+  const [saveActionId, setSaveActionId] = useState<string | null>(null);
+  /** Personal recipe creator (from API userId + authorUsername). */
+  const [recipeAuthor, setRecipeAuthor] = useState<{
+    userId: string;
+    username: string | null;
+  } | null>(null);
 
   const toggleFavorite = async () => {
     if (!id) return;
@@ -151,6 +176,133 @@ export default function RecipeDetailsPage() {
 
     await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
     await syncFavorites();
+  };
+
+  const fetchCollectionsForSave = async () => {
+    try {
+      setSaveCollectionsLoading(true);
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) {
+        setSaveCollections([]);
+        return;
+      }
+      const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) {
+        setSaveCollections([]);
+        return;
+      }
+      const data = await res.json();
+      const list: RecipeCollectionRow[] = Array.isArray(data.collections)
+        ? data.collections.map((c: RecipeCollectionRow) => ({
+            id: c.id,
+            name: c.name,
+            recipeIds: Array.isArray(c.recipeIds) ? c.recipeIds : [],
+          }))
+        : [];
+      setSaveCollections(list);
+    } catch {
+      setSaveCollections([]);
+    } finally {
+      setSaveCollectionsLoading(false);
+    }
+  };
+
+  const openSaveModal = () => {
+    setSaveModalOpen(true);
+    setNewCollectionName("");
+    void fetchCollectionsForSave();
+  };
+
+  const collectionContainsRecipe = (c: RecipeCollectionRow) =>
+    id ? c.recipeIds.includes(id) : false;
+
+  const toggleRecipeInCollection = async (collectionId: string, currentlySaved: boolean) => {
+    if (!id) return;
+    try {
+      setSaveActionId(collectionId);
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) return;
+
+      if (currentlySaved) {
+        const res = await fetch(
+          `${SERVER_URL}/api/auth/collections/${collectionId}/recipes/${encodeURIComponent(id)}`,
+          {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${idToken}` },
+          },
+        );
+        if (res.ok) {
+          setSaveCollections((prev) =>
+            prev.map((c) =>
+              c.id === collectionId
+                ? { ...c, recipeIds: c.recipeIds.filter((rid) => rid !== id) }
+                : c,
+            ),
+          );
+        }
+      } else {
+        const res = await fetch(`${SERVER_URL}/api/auth/collections/${collectionId}/recipes`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ recipeId: id }),
+        });
+        if (res.ok) {
+          setSaveCollections((prev) =>
+            prev.map((c) =>
+              c.id === collectionId ? { ...c, recipeIds: [...c.recipeIds, id] } : c,
+            ),
+          );
+        }
+      }
+    } finally {
+      setSaveActionId(null);
+    }
+  };
+
+  const createCollectionAndSave = async () => {
+    const name = newCollectionName.trim();
+    if (!name || !id) {
+      Alert.alert("Name required", "Enter a name for your new collection.");
+      return;
+    }
+    try {
+      setSaveActionId("__create__");
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) return;
+      const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, recipeId: id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        Alert.alert("Could not create", err?.error || "Try again.");
+        return;
+      }
+      const data = await res.json();
+      const col = data.collection;
+      if (col?.id) {
+        setSaveCollections((prev) => [
+          {
+            id: col.id,
+            name: col.name ?? name,
+            recipeIds: Array.isArray(col.recipeIds) ? col.recipeIds : [id],
+          },
+          ...prev,
+        ]);
+      }
+      setNewCollectionName("");
+    } finally {
+      setSaveActionId(null);
+    }
   };
 
   /* SIMILAR RECIPES FETCH */
@@ -188,19 +340,40 @@ export default function RecipeDetailsPage() {
     }
   };
 
+  const copyRecipeDeepLink = async () => {
+    if (!id) return;
+    const shareLink = `${SHARE_BASE_URL}/recipe/${id}`;
+    try {
+      await Clipboard.setStringAsync(shareLink);
+      Alert.alert("Link copied", "Share link copied to your clipboard.");
+    } catch (err) {
+      console.error("Failed to copy share link:", err);
+      Alert.alert("Copy failed", "Could not copy the link to clipboard.");
+    }
+  };
+
   useEffect(() => {
     const fetchRecipe = async () => {
       if (!id) return;
       setLoading(true);
 
       try {
+        setRecipeAuthor(null);
+        const idToken = await AsyncStorage.getItem("idToken");
+        const uid = await AsyncStorage.getItem("uid");
+        if (!idToken || !uid) {
+          router.replace({
+            pathname: "/login",
+            params: { redirectTo: `/recipe/${id}` },
+          });
+          return;
+        }
+
         const saved = await AsyncStorage.getItem(FAVORITES_KEY);
         const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
         setIsFavorited(favoriteIds.includes(id));
 
         if (isPersonalRecipeId(id)) {
-          const idToken = await AsyncStorage.getItem("idToken");
-
           const response = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
             method: "GET",
             headers: {
@@ -210,6 +383,22 @@ export default function RecipeDetailsPage() {
           });
 
           const data = await response.json();
+
+          if (!response.ok) {
+            const msg = data?.error || "Failed to fetch recipe";
+            if (
+              typeof msg === "string" &&
+              msg.toLowerCase().includes("token")
+            ) {
+              router.replace({
+                pathname: "/login",
+                params: { redirectTo: `/recipe/${id}` },
+              });
+              return;
+            }
+            throw new Error(msg);
+          }
+
           const r = data.recipe;
 
           const reviewCount = typeof r.reviewCount === "number" ? r.reviewCount : (Array.isArray(r.reviews) ? r.reviews.length : 0);
@@ -240,6 +429,17 @@ export default function RecipeDetailsPage() {
             price: r.price,
           });
 
+          const ownerId = typeof r.userId === "string" ? r.userId : null;
+          setRecipeAuthor(
+            ownerId
+              ? {
+                  userId: ownerId,
+                  username:
+                    typeof r.authorUsername === "string" ? r.authorUsername : null,
+                }
+              : null,
+          );
+
           const ext = Array.isArray(r?.extendedIngredients)
             ? r.extendedIngredients
             : [];
@@ -257,6 +457,7 @@ export default function RecipeDetailsPage() {
 
         /* EXTERNAL FIRESTORE RECIPE */
         else if (isExternalFirestoreRecipeId(id)) {
+          setRecipeAuthor(null);
           const idToken = await AsyncStorage.getItem("idToken");
 
           const response = await fetch(`${SERVER_URL}/api/recipes/${id}`, {
@@ -299,6 +500,7 @@ export default function RecipeDetailsPage() {
 
         // External recipe: include nutrition so we can show calories on this page
         } else {
+          setRecipeAuthor(null);
           const response = await fetch(
             `${SERVER_URL}/api/external-recipes/${id}/details?includeNutrition=true`,
             { method: "GET" },
@@ -388,25 +590,38 @@ export default function RecipeDetailsPage() {
         </View>
 
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              router.back();
+              return;
+            }
+            router.replace("/home");
+          }}
           className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
         >
           <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
         </TouchableOpacity>
 
         {/* Favorite Button */}
-        <TouchableOpacity
-          onPress={toggleFavorite}
-          className="absolute right-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
-        >
-          <IconSymbol
-            name={isFavorited ? "cards-heart" : "cards-heart-outline"}
-            size={24}
-            color="--color-red-primary"
-            // fix slight misalignment
-            style={{ transform: [{ translateY: 1 }, { translateX: 0.5 }] }}
-          />
-        </TouchableOpacity>
+        <View className="absolute right-4 top-20 flex-row gap-2">
+          <TouchableOpacity
+            onPress={openSaveModal}
+            className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+          >
+            <IconSymbol name="bookmark-outline" size={22} color="--color-red-primary" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={toggleFavorite}
+            className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+          >
+            <IconSymbol
+              name={isFavorited ? "cards-heart" : "cards-heart-outline"}
+              size={24}
+              color="--color-red-primary"
+              style={{ transform: [{ translateY: 1 }, { translateX: 0.5 }] }}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View
@@ -441,6 +656,35 @@ export default function RecipeDetailsPage() {
                 </Text>
               </View>
             </View>
+
+            {recipeAuthor ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                className="flex-row items-center gap-3 bg-background rounded-xl p-3 shadow-sm border border-border"
+                onPress={() =>
+                  router.push({
+                    pathname: "/profile/[userId]",
+                    params: { userId: recipeAuthor.userId },
+                  })
+                }
+              >
+                <View className="w-12 h-12 rounded-full bg-red-primary/15 items-center justify-center">
+                  <Text className="text-lg font-bold text-red-primary">
+                    {(recipeAuthor.username || "?").trim().slice(0, 1).toUpperCase() || "?"}
+                  </Text>
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="text-muted-foreground text-xs">Recipe by</Text>
+                  <Text className="text-foreground font-semibold text-base" numberOfLines={1}>
+                    {recipeAuthor.username || "Savr creator"}
+                  </Text>
+                  <Text className="text-muted-foreground text-xs mt-0.5">
+                    View profile and recipes
+                  </Text>
+                </View>
+                <IconSymbol name="chevron-right" size={22} color="--color-muted-foreground" />
+              </TouchableOpacity>
+            ) : null}
 
             <View className="bg-background rounded-xl shadow h-20 w-full items-center justify-evenly flex-row">
               <View className="justify-center items-center">
@@ -510,12 +754,9 @@ export default function RecipeDetailsPage() {
 
               <TouchableOpacity
                 className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
-                onPress={() =>
-                  router.push({
-                    pathname: "/recipe/share",
-                    params: { recipeId: id },
-                  })
-                }
+                onPress={() => {
+                  void copyRecipeDeepLink();
+                }}
               >
                 <IconSymbol
                   name="share-variant-outline"
@@ -668,6 +909,112 @@ export default function RecipeDetailsPage() {
           </View>
         </ScrollView>
       </View>
+
+      <Modal
+        visible={saveModalOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSaveModalOpen(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1"
+        >
+          <Pressable
+            className="flex-1 bg-black/40 justify-end"
+            onPress={() => setSaveModalOpen(false)}
+          >
+            <Pressable
+              className="bg-background rounded-t-3xl max-h-[85%]"
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View className="p-5 gap-4">
+                <Text className="text-xl font-bold text-foreground">Save to collection</Text>
+                <Text className="text-muted-foreground text-sm">
+                  Pick a board or create a new one. This is separate from favorites.
+                </Text>
+
+                <View className="gap-2">
+                  <Text className="text-foreground font-medium text-sm">New collection</Text>
+                  <View className="flex-row gap-2">
+                    <TextInput
+                      placeholder="Board name"
+                      placeholderTextColor="#888"
+                      value={newCollectionName}
+                      onChangeText={setNewCollectionName}
+                      className="flex-1 border border-border rounded-xl px-3 py-2.5 text-foreground"
+                      editable={saveActionId !== "__create__"}
+                    />
+                    <TouchableOpacity
+                      className="bg-red-primary px-4 rounded-xl items-center justify-center"
+                      onPress={() => void createCollectionAndSave()}
+                      disabled={saveActionId === "__create__"}
+                    >
+                      {saveActionId === "__create__" ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text className="text-white font-semibold">Add</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <Text className="text-foreground font-medium text-sm">Your collections</Text>
+                {saveCollectionsLoading ? (
+                  <View className="py-8 items-center">
+                    <ActivityIndicator size="large" color="red" />
+                  </View>
+                ) : saveCollections.length === 0 ? (
+                  <Text className="text-muted-foreground text-sm py-2">
+                    You do not have any collections yet. Create one above.
+                  </Text>
+                ) : (
+                  <ScrollView className="max-h-64" nestedScrollEnabled>
+                    {saveCollections.map((c) => {
+                      const saved = collectionContainsRecipe(c);
+                      const busy = saveActionId === c.id;
+                      return (
+                        <TouchableOpacity
+                          key={c.id}
+                          className="flex-row items-center justify-between py-3 border-b border-border"
+                          onPress={() => void toggleRecipeInCollection(c.id, saved)}
+                          disabled={busy}
+                        >
+                          <View className="flex-1 pr-3">
+                            <Text className="text-foreground font-medium" numberOfLines={1}>
+                              {c.name}
+                            </Text>
+                            <Text className="text-muted-foreground text-xs">
+                              {c.recipeIds.length}{" "}
+                              {c.recipeIds.length === 1 ? "recipe" : "recipes"}
+                            </Text>
+                          </View>
+                          {busy ? (
+                            <ActivityIndicator size="small" color="red" />
+                          ) : (
+                            <IconSymbol
+                              name={saved ? "checkbox-marked-circle" : "plus-circle-outline"}
+                              size={26}
+                              color={saved ? "--color-red-primary" : "--color-muted-foreground"}
+                            />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+
+                <TouchableOpacity
+                  className="py-3 rounded-xl bg-muted-background items-center"
+                  onPress={() => setSaveModalOpen(false)}
+                >
+                  <Text className="font-medium text-foreground">Done</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }

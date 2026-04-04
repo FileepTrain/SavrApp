@@ -38,7 +38,14 @@ export default function SettingsPage() {
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.multiRemove(["idToken", "uid", "username", "email", "onboarded"]);
+    await AsyncStorage.multiRemove([
+      "idToken",
+      "uid",
+      "username",
+      "email",
+      "onboarded",
+      "FAV_RECIPE_IDS",
+    ]);
     router.replace("/login");
   };
 

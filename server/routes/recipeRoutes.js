@@ -5,6 +5,7 @@ import { uploadRecipeImage } from "../middleware/multer.js";
 import {
   createRecipe,
   getUserRecipes,
+  getRecipesByUserId,
   getRecipeById,
   updateRecipe,
   deleteRecipe,
@@ -18,6 +19,9 @@ router.post("/", verifyToken, uploadRecipeImage, createRecipe);
 
 // GET /api/recipes - Get all recipes for the authenticated user
 router.get("/", verifyToken, getUserRecipes);
+
+// GET /api/recipes/by-user/:userId - Personal recipes by creator (must be registered before /:id)
+router.get("/by-user/:userId", verifyToken, getRecipesByUserId);
 
 // GET /api/recipes/:id - Get a single recipe by ID (must be authed to avoid leaking recipes)
 router.get("/:id", verifyToken, getRecipeById);

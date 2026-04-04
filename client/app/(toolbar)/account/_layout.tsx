@@ -43,6 +43,14 @@ export default function AccountStackLayout() {
           options={{ title: "Personal Recipes" }}
         />
         <Stack.Screen
+          name="collections"
+          options={{ title: "My Collections" }}
+        />
+        <Stack.Screen
+          name="collection/[collectionId]"
+          options={{ title: "Collection" }}
+        />
+        <Stack.Screen
           name="create-recipe"
           options={{ title: "Create New Recipe" }}
         />

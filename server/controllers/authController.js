@@ -586,3 +586,339 @@ export const updatePreferences = async (req, res) => {
     });
   }
 };
+
+/* --- Recipe collections (Pinterest-style boards) --- */
+
+function collectionsRef(db, uid) {
+  return db.collection("users").doc(uid).collection("recipeCollections");
+}
+
+/**
+ * GET /api/auth/collections
+ */
+export const listRecipeCollections = async (req, res) => {
+  const uid = req.user?.uid;
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  try {
+    const db = admin.firestore();
+    let snap;
+    try {
+      snap = await collectionsRef(db, uid).orderBy("updatedAt", "desc").get();
+    } catch (orderErr) {
+      console.warn("Collections orderBy failed, falling back:", orderErr?.message);
+      snap = await collectionsRef(db, uid).get();
+    }
+    const collections = snap.docs.map((doc) => {
+      const d = doc.data() || {};
+      const recipeIds = Array.isArray(d.recipeIds) ? d.recipeIds : [];
+      return {
+        id: doc.id,
+        name: typeof d.name === "string" ? d.name : "Untitled",
+        recipeIds,
+        recipeCount: recipeIds.length,
+      };
+    });
+
+    return res.json({ success: true, collections });
+  } catch (error) {
+    console.error("Error listing collections:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "COLLECTIONS_LIST_FAILED",
+    });
+  }
+};
+
+/**
+ * POST /api/auth/collections
+ * body: { name: string, recipeId?: string } — optional recipe added on create
+ */
+export const createRecipeCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const rawName = req.body?.name;
+  const recipeId = typeof req.body?.recipeId === "string" ? req.body.recipeId.trim() : "";
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  const name = String(rawName ?? "").trim();
+  if (!name) {
+    return res.status(400).json({
+      error: "Collection name is required",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        error: "User document not found",
+        code: "USER_NOT_FOUND",
+      });
+    }
+
+    const ref = collectionsRef(db, uid).doc();
+    const recipeIds = recipeId ? [recipeId] : [];
+
+    await ref.set({
+      name,
+      recipeIds,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.status(201).json({
+      success: true,
+      collection: {
+        id: ref.id,
+        name,
+        recipeIds,
+        recipeCount: recipeIds.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating collection:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "COLLECTION_CREATE_FAILED",
+    });
+  }
+};
+
+/**
+ * GET /api/auth/collections/:collectionId
+ */
+export const getRecipeCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const { collectionId } = req.params;
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  if (!collectionId) {
+    return res.status(400).json({
+      error: "collectionId is required",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const doc = await collectionsRef(db, uid).doc(collectionId).get();
+    if (!doc.exists) {
+      return res.status(404).json({
+        error: "Collection not found",
+        code: "NOT_FOUND",
+      });
+    }
+
+    const d = doc.data() || {};
+    const recipeIds = Array.isArray(d.recipeIds) ? d.recipeIds : [];
+
+    return res.json({
+      success: true,
+      collection: {
+        id: doc.id,
+        name: typeof d.name === "string" ? d.name : "Untitled",
+        recipeIds,
+        recipeCount: recipeIds.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching collection:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "COLLECTION_FETCH_FAILED",
+    });
+  }
+};
+
+/**
+ * PATCH /api/auth/collections/:collectionId
+ * body: { name: string }
+ */
+export const updateRecipeCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const { collectionId } = req.params;
+  const name = String(req.body?.name ?? "").trim();
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  if (!collectionId) {
+    return res.status(400).json({
+      error: "collectionId is required",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  if (!name) {
+    return res.status(400).json({
+      error: "Collection name is required",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const ref = collectionsRef(db, uid).doc(collectionId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({
+        error: "Collection not found",
+        code: "NOT_FOUND",
+      });
+    }
+
+    await ref.update({
+      name,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ success: true, message: "Collection updated" });
+  } catch (error) {
+    console.error("Error updating collection:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "COLLECTION_UPDATE_FAILED",
+    });
+  }
+};
+
+/**
+ * DELETE /api/auth/collections/:collectionId
+ */
+export const deleteRecipeCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const { collectionId } = req.params;
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  if (!collectionId) {
+    return res.status(400).json({
+      error: "collectionId is required",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const ref = collectionsRef(db, uid).doc(collectionId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({
+        error: "Collection not found",
+        code: "NOT_FOUND",
+      });
+    }
+
+    await ref.delete();
+    return res.json({ success: true, message: "Collection deleted" });
+  } catch (error) {
+    console.error("Error deleting collection:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "COLLECTION_DELETE_FAILED",
+    });
+  }
+};
+
+/**
+ * POST /api/auth/collections/:collectionId/recipes
+ * body: { recipeId: string }
+ */
+export const addRecipeToCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const { collectionId } = req.params;
+  const recipeId = String(req.body?.recipeId ?? "").trim();
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  if (!collectionId || !recipeId) {
+    return res.status(400).json({
+      error: "collectionId and recipeId are required",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const ref = collectionsRef(db, uid).doc(collectionId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({
+        error: "Collection not found",
+        code: "NOT_FOUND",
+      });
+    }
+
+    await ref.update({
+      recipeIds: admin.firestore.FieldValue.arrayUnion(recipeId),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ success: true, message: "Recipe saved to collection" });
+  } catch (error) {
+    console.error("Error adding recipe to collection:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "COLLECTION_ADD_RECIPE_FAILED",
+    });
+  }
+};
+
+/**
+ * DELETE /api/auth/collections/:collectionId/recipes/:recipeId
+ */
+export const removeRecipeFromCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const { collectionId, recipeId } = req.params;
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  if (!collectionId || !recipeId) {
+    return res.status(400).json({
+      error: "collectionId and recipeId are required",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const ref = collectionsRef(db, uid).doc(collectionId);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return res.status(404).json({
+        error: "Collection not found",
+        code: "NOT_FOUND",
+      });
+    }
+
+    await ref.update({
+      recipeIds: admin.firestore.FieldValue.arrayRemove(recipeId),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ success: true, message: "Recipe removed from collection" });
+  } catch (error) {
+    console.error("Error removing recipe from collection:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "COLLECTION_REMOVE_RECIPE_FAILED",
+    });
+  }
+};

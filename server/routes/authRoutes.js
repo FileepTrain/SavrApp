@@ -10,6 +10,13 @@ import {
   getFavorites,
   getPreferences,
   updatePreferences,
+  listRecipeCollections,
+  createRecipeCollection,
+  getRecipeCollection,
+  updateRecipeCollection,
+  deleteRecipeCollection,
+  addRecipeToCollection,
+  removeRecipeFromCollection,
 } from "../controllers/authController.js";
 
 const router = express.Router();
@@ -31,6 +38,19 @@ router.put("/update-favorites", verifyToken, updateFavorites);
 
 // GET /api/auth/get-favorites - Get array of favorite recipes
 router.get("/get-favorites", verifyToken, getFavorites);
+
+// Recipe collections (boards)
+router.get("/collections", verifyToken, listRecipeCollections);
+router.post("/collections", verifyToken, createRecipeCollection);
+router.get("/collections/:collectionId", verifyToken, getRecipeCollection);
+router.patch("/collections/:collectionId", verifyToken, updateRecipeCollection);
+router.delete("/collections/:collectionId", verifyToken, deleteRecipeCollection);
+router.post("/collections/:collectionId/recipes", verifyToken, addRecipeToCollection);
+router.delete(
+  "/collections/:collectionId/recipes/:recipeId",
+  verifyToken,
+  removeRecipeFromCollection,
+);
 
 // GET /api/auth/get-preferences - Get user preferences (query: fields=cookware,diets,... or all)
 router.get("/get-preferences", verifyToken, getPreferences);

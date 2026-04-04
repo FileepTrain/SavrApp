@@ -394,6 +394,93 @@ export const getUserRecipes = async (req, res) => {
   }
 };
 
+function isValidFirestoreUid(id) {
+  return (
+    typeof id === "string" &&
+    id.length > 0 &&
+    id.length <= 128 &&
+    /^[a-zA-Z0-9]+$/.test(id)
+  );
+}
+
+/**
+ * GET /api/recipes/by-user/:userId
+ * Personal recipes created by that user (any authenticated viewer).
+ */
+export const getRecipesByUserId = async (req, res) => {
+  const { userId } = req.params;
+
+  if (!isValidFirestoreUid(userId)) {
+    return res.status(400).json({
+      error: "Invalid user id",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  const db = admin.firestore();
+
+  try {
+    const userSnap = await db.collection("users").doc(userId).get();
+    const username = userSnap.exists
+      ? userSnap.data().username || "User"
+      : "User";
+
+    let snap;
+    try {
+      snap = await db
+        .collection(RECIPES_COLL)
+        .where("userId", "==", userId)
+        .orderBy("createdAt", "desc")
+        .get();
+    } catch (error) {
+      const msg = String(error?.message || "");
+      const needsIndex =
+        error?.code === 9 || msg.toLowerCase().includes("requires an index");
+
+      if (needsIndex) {
+        console.warn(
+          "Firestore missing composite index for (userId + createdAt desc). Falling back for by-user query.",
+        );
+        const snap2 = await db
+          .collection(RECIPES_COLL)
+          .where("userId", "==", userId)
+          .get();
+
+        const recipes2 = snap2.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const ta = a?.createdAt?.toMillis?.() ?? 0;
+            const tb = b?.createdAt?.toMillis?.() ?? 0;
+            return tb - ta;
+          });
+
+        return res.json({
+          success: true,
+          userId,
+          username,
+          recipes: recipes2,
+        });
+      }
+
+      throw error;
+    }
+
+    const recipes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return res.json({
+      success: true,
+      userId,
+      username,
+      recipes,
+    });
+  } catch (error) {
+    console.error("Error fetching recipes by user:", error);
+    return res.status(500).json({
+      error: error.message || "Internal server error",
+      code: "FETCH_RECIPES_FAILED",
+    });
+  }
+};
+
 /**
  * Get all recipes (any user) that match optional filters and optional search query.
  * Used by combined-recipes feed. Does not require auth.
@@ -494,6 +581,17 @@ export const getRecipeById = async (req, res) => {
 
     const data = snap.data();
     const recipePayload = { id: snap.id, ...data };
+
+    if (data.userId) {
+      try {
+        const authorSnap = await db.collection("users").doc(data.userId).get();
+        if (authorSnap.exists) {
+          recipePayload.authorUsername = authorSnap.data().username ?? null;
+        }
+      } catch (lookupErr) {
+        console.warn("Author username lookup failed:", lookupErr?.message);
+      }
+    }
 
     // Increment view count only when the viewer is not the recipe owner (don't track own views)
     if (data.userId !== uid) {

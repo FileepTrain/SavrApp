@@ -6,7 +6,7 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { images } from "@/constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
 
@@ -16,6 +16,18 @@ const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const { redirectTo } = useLocalSearchParams<{ redirectTo?: string }>();
+
+  const getSafeRedirectTarget = () => {
+    const target = Array.isArray(redirectTo)
+      ? redirectTo[0]
+      : typeof redirectTo === "string"
+        ? redirectTo
+        : null;
+    // Basic safety: only allow internal routes like "/recipe/123".
+    return target && target.startsWith("/") ? target : "/home";
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -47,12 +59,11 @@ const LoginPage = () => {
         ["onboarded", data.onboarded ? "true" : "false"],
       ]);
 
-      // Determine redirect route: onboarding if user is not onboarded, home if user is onboarded
       const onboarded = data.onboarded;
       if (!onboarded) {
         router.replace("/onboarding");
       } else {
-        router.replace("/home");
+        router.replace(getSafeRedirectTarget());
       }
     } catch (err: any) {
       Alert.alert("Login failed", err.message);

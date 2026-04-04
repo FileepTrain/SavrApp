@@ -64,6 +64,13 @@ export default function AccountPage() {
         />
 
         <AccountMenuItem
+          title="My Collections"
+          subtitle="Boards and grouped saves"
+          iconName="folder-outline"
+          onPress={() => router.push("/account/collections")}
+        />
+
+        <AccountMenuItem
           title="Settings"
           subtitle="Preferences and more"
           iconName="cog-outline"
