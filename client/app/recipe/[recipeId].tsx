@@ -3,7 +3,6 @@ import RecipeRating from "@/components/recipe/recipe-rating";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Ingredient } from "@/types/ingredient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -21,10 +20,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
 
 // Your backend base (Android emulator -> host machine)
 const SERVER_URL = "http://10.0.2.2:3000";
-const SHARE_BASE_URL = "http://10.0.2.2:3000";
 const FAVORITES_KEY = "FAV_RECIPE_IDS";
 
 async function syncFavorites() {
@@ -155,10 +154,12 @@ export default function RecipeDetailsPage() {
   const [saveCollectionsLoading, setSaveCollectionsLoading] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
   const [saveActionId, setSaveActionId] = useState<string | null>(null);
-  /** Personal recipe creator (from API userId + authorUsername). */
+  const [createCollectionStep, setCreateCollectionStep] = useState(false);
+  /** Personal recipe creator (from API userId + authorUsername + optional photo). */
   const [recipeAuthor, setRecipeAuthor] = useState<{
     userId: string;
     username: string | null;
+    profilePhotoUrl: string | null;
   } | null>(null);
 
   const toggleFavorite = async () => {
@@ -211,6 +212,7 @@ export default function RecipeDetailsPage() {
 
   const openSaveModal = () => {
     setSaveModalOpen(true);
+    setCreateCollectionStep(false);
     setNewCollectionName("");
     void fetchCollectionsForSave();
   };
@@ -218,53 +220,39 @@ export default function RecipeDetailsPage() {
   const collectionContainsRecipe = (c: RecipeCollectionRow) =>
     id ? c.recipeIds.includes(id) : false;
 
-  const toggleRecipeInCollection = async (collectionId: string, currentlySaved: boolean) => {
+  const addRecipeToCollectionAndClose = async (collectionId: string) => {
     if (!id) return;
+    const col = saveCollections.find((c) => c.id === collectionId);
+    if (col && collectionContainsRecipe(col)) {
+      setSaveModalOpen(false);
+      return;
+    }
     try {
       setSaveActionId(collectionId);
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
-
-      if (currentlySaved) {
-        const res = await fetch(
-          `${SERVER_URL}/api/auth/collections/${collectionId}/recipes/${encodeURIComponent(id)}`,
-          {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${idToken}` },
-          },
+      const res = await fetch(`${SERVER_URL}/api/auth/collections/${collectionId}/recipes`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ recipeId: id }),
+      });
+      if (res.ok) {
+        setSaveCollections((prev) =>
+          prev.map((c) =>
+            c.id === collectionId ? { ...c, recipeIds: [...c.recipeIds, id] } : c,
+          ),
         );
-        if (res.ok) {
-          setSaveCollections((prev) =>
-            prev.map((c) =>
-              c.id === collectionId
-                ? { ...c, recipeIds: c.recipeIds.filter((rid) => rid !== id) }
-                : c,
-            ),
-          );
-        }
-      } else {
-        const res = await fetch(`${SERVER_URL}/api/auth/collections/${collectionId}/recipes`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ recipeId: id }),
-        });
-        if (res.ok) {
-          setSaveCollections((prev) =>
-            prev.map((c) =>
-              c.id === collectionId ? { ...c, recipeIds: [...c.recipeIds, id] } : c,
-            ),
-          );
-        }
+        setSaveModalOpen(false);
       }
     } finally {
       setSaveActionId(null);
     }
   };
 
-  const createCollectionAndSave = async () => {
+  const createCollectionAndSaveRecipe = async () => {
     const name = newCollectionName.trim();
     if (!name || !id) {
       Alert.alert("Name required", "Enter a name for your new collection.");
@@ -300,6 +288,8 @@ export default function RecipeDetailsPage() {
         ]);
       }
       setNewCollectionName("");
+      setCreateCollectionStep(false);
+      setSaveModalOpen(false);
     } finally {
       setSaveActionId(null);
     }
@@ -340,16 +330,9 @@ export default function RecipeDetailsPage() {
     }
   };
 
-  const copyRecipeDeepLink = async () => {
+  const shareRecipeLink = () => {
     if (!id) return;
-    const shareLink = `${SHARE_BASE_URL}/recipe/${id}`;
-    try {
-      await Clipboard.setStringAsync(shareLink);
-      Alert.alert("Link copied", "Share link copied to your clipboard.");
-    } catch (err) {
-      console.error("Failed to copy share link:", err);
-      Alert.alert("Copy failed", "Could not copy the link to clipboard.");
-    }
+    void openNativeShare(buildRecipeShareWebUrl(id), "Share recipe");
   };
 
   useEffect(() => {
@@ -430,12 +413,15 @@ export default function RecipeDetailsPage() {
           });
 
           const ownerId = typeof r.userId === "string" ? r.userId : null;
+          const photoRaw =
+            typeof r.authorProfilePhotoUrl === "string" ? r.authorProfilePhotoUrl.trim() : "";
           setRecipeAuthor(
             ownerId
               ? {
                   userId: ownerId,
                   username:
                     typeof r.authorUsername === "string" ? r.authorUsername : null,
+                  profilePhotoUrl: photoRaw.length > 0 ? photoRaw : null,
                 }
               : null,
           );
@@ -640,6 +626,37 @@ export default function RecipeDetailsPage() {
                 {recipe?.title || "Recipe Name"}
               </Text>
 
+              {recipeAuthor ? (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  className="flex-row items-center justify-center gap-2 py-0.5"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/profile/[userId]",
+                      params: { userId: recipeAuthor.userId },
+                    })
+                  }
+                >
+                  <Text className="text-muted-foreground text-xs">by</Text>
+                  {recipeAuthor.profilePhotoUrl ? (
+                    <Image
+                      source={{ uri: recipeAuthor.profilePhotoUrl }}
+                      style={{ width: 22, height: 22, borderRadius: 11 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View className="w-[22px] h-[22px] rounded-full bg-red-primary/15 items-center justify-center">
+                      <Text className="text-[10px] font-bold text-red-primary">
+                        {(recipeAuthor.username || "?").trim().slice(0, 1).toUpperCase() || "?"}
+                      </Text>
+                    </View>
+                  )}
+                  <Text className="text-foreground text-xs font-medium max-w-[70%]" numberOfLines={1}>
+                    {recipeAuthor.username || "Savr creator"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
               <View className="flex-row items-center justify-center gap-4 flex-wrap">
                 <RecipeRating
                   rating={recipe?.rating ?? 0}
@@ -656,35 +673,6 @@ export default function RecipeDetailsPage() {
                 </Text>
               </View>
             </View>
-
-            {recipeAuthor ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                className="flex-row items-center gap-3 bg-background rounded-xl p-3 shadow-sm border border-border"
-                onPress={() =>
-                  router.push({
-                    pathname: "/profile/[userId]",
-                    params: { userId: recipeAuthor.userId },
-                  })
-                }
-              >
-                <View className="w-12 h-12 rounded-full bg-red-primary/15 items-center justify-center">
-                  <Text className="text-lg font-bold text-red-primary">
-                    {(recipeAuthor.username || "?").trim().slice(0, 1).toUpperCase() || "?"}
-                  </Text>
-                </View>
-                <View className="flex-1 min-w-0">
-                  <Text className="text-muted-foreground text-xs">Recipe by</Text>
-                  <Text className="text-foreground font-semibold text-base" numberOfLines={1}>
-                    {recipeAuthor.username || "Savr creator"}
-                  </Text>
-                  <Text className="text-muted-foreground text-xs mt-0.5">
-                    View profile and recipes
-                  </Text>
-                </View>
-                <IconSymbol name="chevron-right" size={22} color="--color-muted-foreground" />
-              </TouchableOpacity>
-            ) : null}
 
             <View className="bg-background rounded-xl shadow h-20 w-full items-center justify-evenly flex-row">
               <View className="justify-center items-center">
@@ -754,9 +742,7 @@ export default function RecipeDetailsPage() {
 
               <TouchableOpacity
                 className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
-                onPress={() => {
-                  void copyRecipeDeepLink();
-                }}
+                onPress={shareRecipeLink}
               >
                 <IconSymbol
                   name="share-variant-outline"
@@ -914,7 +900,10 @@ export default function RecipeDetailsPage() {
         visible={saveModalOpen}
         animationType="slide"
         transparent
-        onRequestClose={() => setSaveModalOpen(false)}
+        onRequestClose={() => {
+          if (createCollectionStep) setCreateCollectionStep(false);
+          else setSaveModalOpen(false);
+        }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -922,95 +911,109 @@ export default function RecipeDetailsPage() {
         >
           <Pressable
             className="flex-1 bg-black/40 justify-end"
-            onPress={() => setSaveModalOpen(false)}
+            onPress={() => {
+              if (createCollectionStep) setCreateCollectionStep(false);
+              else setSaveModalOpen(false);
+            }}
           >
             <Pressable
-              className="bg-background rounded-t-3xl max-h-[85%]"
+              className="bg-background rounded-t-3xl"
+              style={{ maxHeight: "88%" }}
               onPress={(e) => e.stopPropagation()}
             >
-              <View className="p-5 gap-4">
-                <Text className="text-xl font-bold text-foreground">Save to collection</Text>
-                <Text className="text-muted-foreground text-sm">
-                  Pick a board or create a new one. This is separate from favorites.
-                </Text>
-
-                <View className="gap-2">
-                  <Text className="text-foreground font-medium text-sm">New collection</Text>
-                  <View className="flex-row gap-2">
-                    <TextInput
-                      placeholder="Board name"
-                      placeholderTextColor="#888"
-                      value={newCollectionName}
-                      onChangeText={setNewCollectionName}
-                      className="flex-1 border border-border rounded-xl px-3 py-2.5 text-foreground"
-                      editable={saveActionId !== "__create__"}
-                    />
+              {createCollectionStep ? (
+                <View className="p-5 gap-4">
+                  <Text className="text-lg font-bold text-foreground">New collection</Text>
+                  <TextInput
+                    placeholder="Collection name"
+                    placeholderTextColor="#888"
+                    value={newCollectionName}
+                    onChangeText={setNewCollectionName}
+                    className="border border-border rounded-xl px-3 py-2.5 text-foreground"
+                    editable={saveActionId !== "__create__"}
+                    autoFocus
+                  />
+                  <View className="flex-row gap-3">
                     <TouchableOpacity
-                      className="bg-red-primary px-4 rounded-xl items-center justify-center"
-                      onPress={() => void createCollectionAndSave()}
+                      className="flex-1 py-3 rounded-xl bg-muted-background items-center"
+                      onPress={() => {
+                        setCreateCollectionStep(false);
+                        setNewCollectionName("");
+                      }}
+                      disabled={saveActionId === "__create__"}
+                    >
+                      <Text className="font-medium text-foreground">Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="flex-1 py-3 rounded-xl bg-red-primary items-center"
+                      onPress={() => void createCollectionAndSaveRecipe()}
                       disabled={saveActionId === "__create__"}
                     >
                       {saveActionId === "__create__" ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
-                        <Text className="text-white font-semibold">Add</Text>
+                        <Text className="font-semibold text-white">Create</Text>
                       )}
                     </TouchableOpacity>
                   </View>
                 </View>
+              ) : (
+                <View className="p-5 gap-3">
+                  <Text className="text-lg font-bold text-foreground">Save to collection</Text>
 
-                <Text className="text-foreground font-medium text-sm">Your collections</Text>
-                {saveCollectionsLoading ? (
-                  <View className="py-8 items-center">
-                    <ActivityIndicator size="large" color="red" />
-                  </View>
-                ) : saveCollections.length === 0 ? (
-                  <Text className="text-muted-foreground text-sm py-2">
-                    You do not have any collections yet. Create one above.
-                  </Text>
-                ) : (
-                  <ScrollView className="max-h-64" nestedScrollEnabled>
-                    {saveCollections.map((c) => {
-                      const saved = collectionContainsRecipe(c);
-                      const busy = saveActionId === c.id;
-                      return (
-                        <TouchableOpacity
-                          key={c.id}
-                          className="flex-row items-center justify-between py-3 border-b border-border"
-                          onPress={() => void toggleRecipeInCollection(c.id, saved)}
-                          disabled={busy}
-                        >
-                          <View className="flex-1 pr-3">
-                            <Text className="text-foreground font-medium" numberOfLines={1}>
-                              {c.name}
-                            </Text>
-                            <Text className="text-muted-foreground text-xs">
-                              {c.recipeIds.length}{" "}
-                              {c.recipeIds.length === 1 ? "recipe" : "recipes"}
-                            </Text>
-                          </View>
-                          {busy ? (
-                            <ActivityIndicator size="small" color="red" />
-                          ) : (
-                            <IconSymbol
-                              name={saved ? "checkbox-marked-circle" : "plus-circle-outline"}
-                              size={26}
-                              color={saved ? "--color-red-primary" : "--color-muted-foreground"}
-                            />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                )}
+                  {saveCollectionsLoading ? (
+                    <View className="py-10 items-center">
+                      <ActivityIndicator size="large" color="red" />
+                    </View>
+                  ) : (
+                    <ScrollView
+                      className="max-h-80"
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                      showsVerticalScrollIndicator
+                    >
+                      {saveCollections.length === 0 ? (
+                        <Text className="text-muted-foreground text-sm py-2">
+                          No collections yet. Add one below.
+                        </Text>
+                      ) : (
+                        saveCollections.map((c) => {
+                          const saved = collectionContainsRecipe(c);
+                          const busy = saveActionId === c.id;
+                          return (
+                            <TouchableOpacity
+                              key={c.id}
+                              className="py-3.5 border-b border-border flex-row items-center justify-between gap-2"
+                              onPress={() => void addRecipeToCollectionAndClose(c.id)}
+                              disabled={busy}
+                            >
+                              <View className="flex-1 flex-row items-center gap-1.5 min-w-0">
+                                <Text className="text-foreground font-medium flex-1" numberOfLines={1}>
+                                  {c.name}
+                                </Text>
+                                {saved ? (
+                                  <Text className="text-muted-foreground text-xs">· saved</Text>
+                                ) : null}
+                              </View>
+                              {busy ? <ActivityIndicator size="small" color="red" /> : null}
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  )}
 
-                <TouchableOpacity
-                  className="py-3 rounded-xl bg-muted-background items-center"
-                  onPress={() => setSaveModalOpen(false)}
-                >
-                  <Text className="font-medium text-foreground">Done</Text>
-                </TouchableOpacity>
-              </View>
+                  <TouchableOpacity
+                    className="mt-2 py-3.5 rounded-xl border border-red-primary items-center"
+                    onPress={() => {
+                      setNewCollectionName("");
+                      setCreateCollectionStep(true);
+                    }}
+                  >
+                    <Text className="text-red-primary font-semibold">Add collection</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </Pressable>
           </Pressable>
         </KeyboardAvoidingView>

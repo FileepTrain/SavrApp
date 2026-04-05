@@ -1,25 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { isIdTokenExpired } from "@/utils/auth-session";
 import { router } from "expo-router";
 import React, { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
-
-// Check if the user's auth token is expired (when first opening the app)
-const isIdTokenExpired = (token: string): boolean => {
-  try {
-    const payloadPart = token.split(".")[1];
-    if (!payloadPart) return true;
-
-    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const payload = JSON.parse(atob(padded));
-    const exp = typeof payload.exp === "number" ? payload.exp : 0;
-
-    // exp is seconds since epoch.
-    return exp * 1000 <= Date.now();
-  } catch {
-    return true;
-  }
-};
 
 export default function Index() {
   useEffect(() => {

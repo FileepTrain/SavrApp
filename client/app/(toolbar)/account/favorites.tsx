@@ -55,7 +55,9 @@ export default function FavoritesPage() {
             const isPersonal = !/^\d+$/.test(id);
 
             if (isPersonal) {
-              const res = await fetch(`${SERVER_URL}/api/recipes/${id}`);
+              const res = await fetch(`${SERVER_URL}/api/recipes/${encodeURIComponent(id)}`, {
+                headers: { Authorization: `Bearer ${idToken}` },
+              });
               if (!res.ok) return null;
               const recipeData = await res.json();
               return recipeData.recipe;

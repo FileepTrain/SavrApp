@@ -1,6 +1,6 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Stack } from "expo-router";
-import { Text, TouchableOpacity } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ProfileLayout() {
@@ -17,11 +17,17 @@ export default function ProfileLayout() {
             <Text className="text-2xl font-bold text-foreground flex-1" numberOfLines={1}>
               {options.title ?? "Profile"}
             </Text>
+            {typeof options.headerRight === "function" ? (
+              <View className="min-w-[52px] items-end justify-center">
+                {options.headerRight({ canGoBack: navigation.canGoBack() })}
+              </View>
+            ) : null}
           </SafeAreaView>
         ),
       }}
     >
-      <Stack.Screen name="[userId]" options={{ title: "Creator" }} />
+      <Stack.Screen name="[userId]" options={{ headerShown: false, title: "Profile" }} />
+      <Stack.Screen name="collection-preview" options={{ title: "Collection" }} />
     </Stack>
   );
 }

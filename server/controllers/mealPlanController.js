@@ -90,3 +90,37 @@ export const getMealPlan = async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch meal plans" });
   }
 };
+
+/**
+ * DELETE /api/meal-plans/:planId
+ * Deletes a meal plan owned by the authenticated user.
+ */
+export const deleteMealPlan = async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const userID = req.user.uid;
+    const planId = String(req.params.planId ?? "").trim();
+
+    if (!planId) {
+      return res.status(400).json({ error: "planId is required" });
+    }
+
+    const ref = db.collection("meal_plans").doc(planId);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Meal plan not found" });
+    }
+
+    const owner = snap.data()?.userID;
+    if (owner !== userID) {
+      return res.status(403).json({ error: "You can only delete your own meal plans" });
+    }
+
+    await ref.delete();
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error("deleteMealPlan error:", err);
+    return res.status(500).json({ error: "Failed to delete meal plan" });
+  }
+};

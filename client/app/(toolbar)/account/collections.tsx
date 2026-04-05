@@ -1,94 +1,120 @@
+import { CollectionTile } from "@/components/collection/collection-tile";
 import { ThemedSafeView } from "@/components/themed-safe-view";
-import { IconSymbol } from "@/components/ui/icon-symbol";
-import { fetchRecipeForList } from "@/utils/fetch-recipe-for-list";
+import { useCollectionCoverImages } from "@/hooks/use-collection-cover-images";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
-  Image,
   Modal,
   Pressable,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 
 const SERVER_URL = "http://10.0.2.2:3000";
-const H_PAD = 16;
-const TILE_GAP = 12;
-const tileWidth = (Dimensions.get("window").width - H_PAD * 2 - TILE_GAP) / 2;
+const GAP = 16;
+/** Must match `ThemedSafeView` horizontal padding (`px-6` → 24). */
+const SAFE_H_INSET = 24;
 
 type CollectionRow = {
   id: string;
   name: string;
   recipeIds: string[];
   recipeCount: number;
+  ownerUid?: string;
+  ownerUsername?: string;
 };
+
+type TabId = "mine" | "followed";
 
 export default function CollectionsPage() {
   const router = useRouter();
+  const { width: winW } = useWindowDimensions();
+  const tileWidth = useMemo(
+    () => Math.max(0, Math.floor((winW - SAFE_H_INSET * 2 - GAP) / 2)),
+    [winW],
+  );
+
+  const [tab, setTab] = useState<TabId>("mine");
   const [collections, setCollections] = useState<CollectionRow[]>([]);
-  const [covers, setCovers] = useState<Record<string, string | null>>({});
+  const [followed, setFollowed] = useState<CollectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const loadCovers = useCallback(async (rows: CollectionRow[]) => {
-    const next: Record<string, string | null> = {};
-    await Promise.all(
-      rows.map(async (c) => {
-        const firstId = c.recipeIds[0];
-        if (!firstId) {
-          next[c.id] = null;
-          return;
-        }
-        const r = await fetchRecipeForList(firstId);
-        const img =
-          r && typeof (r as { image?: string }).image === "string"
-            ? (r as { image: string }).image
-            : null;
-        next[c.id] = img;
-      }),
-    );
-    setCovers(next);
+  const mineCoverRows = useMemo(
+    () => collections.map((c) => ({ coverId: c.id, recipeIds: c.recipeIds })),
+    [collections],
+  );
+  const followedCoverRows = useMemo(
+    () =>
+      followed.map((c) => ({
+        coverId: `${c.ownerUid ?? ""}_${c.id}`,
+        recipeIds: c.recipeIds,
+      })),
+    [followed],
+  );
+
+  const mineCovers = useCollectionCoverImages(mineCoverRows);
+  const followedCovers = useCollectionCoverImages(followedCoverRows);
+
+  const fetchMine = useCallback(async () => {
+    const idToken = await AsyncStorage.getItem("idToken");
+    if (!idToken) {
+      setCollections([]);
+      return;
+    }
+    const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!res.ok) {
+      setCollections([]);
+      return;
+    }
+    const data = await res.json();
+    setCollections(Array.isArray(data.collections) ? data.collections : []);
   }, []);
 
-  const fetchCollections = useCallback(async () => {
+  const fetchFollowed = useCallback(async () => {
+    const idToken = await AsyncStorage.getItem("idToken");
+    if (!idToken) {
+      setFollowed([]);
+      return;
+    }
+    const res = await fetch(`${SERVER_URL}/api/auth/followed-collections`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!res.ok) {
+      setFollowed([]);
+      return;
+    }
+    const data = await res.json();
+    setFollowed(Array.isArray(data.collections) ? data.collections : []);
+  }, []);
+
+  const fetchAll = useCallback(async () => {
     try {
       setLoading(true);
-      const idToken = await AsyncStorage.getItem("idToken");
-      if (!idToken) {
-        setCollections([]);
-        return;
-      }
-      const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!res.ok) {
-        setCollections([]);
-        return;
-      }
-      const data = await res.json();
-      const rows: CollectionRow[] = Array.isArray(data.collections) ? data.collections : [];
-      setCollections(rows);
-      loadCovers(rows);
+      await Promise.all([fetchMine(), fetchFollowed()]);
     } catch {
       setCollections([]);
+      setFollowed([]);
     } finally {
       setLoading(false);
     }
-  }, [loadCovers]);
+  }, [fetchMine, fetchFollowed]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchCollections();
-    }, [fetchCollections]),
+      void fetchAll();
+    }, [fetchAll]),
   );
 
   const handleCreate = async () => {
@@ -116,7 +142,7 @@ export default function CollectionsPage() {
       }
       setNewName("");
       setCreateOpen(false);
-      await fetchCollections();
+      await fetchMine();
     } finally {
       setCreating(false);
     }
@@ -125,7 +151,7 @@ export default function CollectionsPage() {
   const confirmDelete = (item: CollectionRow) => {
     Alert.alert(
       "Delete collection",
-      `Remove “${item.name}”? Recipes stay in the app; only this board is deleted.`,
+      `Remove “${item.name}”? Recipes stay in the app; only this collection is removed.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -138,82 +164,174 @@ export default function CollectionsPage() {
               method: "DELETE",
               headers: { Authorization: `Bearer ${idToken}` },
             });
-            if (res.ok) fetchCollections();
+            if (res.ok) void fetchMine();
           },
         },
       ],
     );
   };
 
+  const unfollow = (item: CollectionRow) => {
+    const owner = item.ownerUid;
+    if (!owner) return;
+    Alert.alert("Unfollow", `Stop following “${item.name}”?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Unfollow",
+        style: "destructive",
+        onPress: async () => {
+          const idToken = await AsyncStorage.getItem("idToken");
+          if (!idToken) return;
+          const res = await fetch(
+            `${SERVER_URL}/api/auth/followed-collections/${encodeURIComponent(owner)}/${encodeURIComponent(item.id)}`,
+            { method: "DELETE", headers: { Authorization: `Bearer ${idToken}` } },
+          );
+          if (res.ok) void fetchFollowed();
+        },
+      },
+    ]);
+  };
+
+  type MineGridRow = CollectionRow | { id: "__add__"; isAdd: true };
+
+  const mineGridData: MineGridRow[] = useMemo(() => {
+    const add: MineGridRow = { id: "__add__", isAdd: true };
+    return [...collections, add];
+  }, [collections]);
+
+  const openCollection = (c: CollectionRow) => {
+    if (c.ownerUid) {
+      router.push({
+        pathname: "/account/collection/[collectionId]",
+        params: { collectionId: c.id, ownerUid: c.ownerUid },
+      });
+      return;
+    }
+    router.push({
+      pathname: "/account/collection/[collectionId]",
+      params: { collectionId: c.id },
+    });
+  };
+
+  const renderMineItem = ({ item }: { item: MineGridRow }) => {
+    if ("isAdd" in item && item.isAdd) {
+      return (
+        <View style={{ width: tileWidth }}>
+          <CollectionTile
+            width={tileWidth}
+            variant="add"
+            covers={undefined}
+            onPress={() => setCreateOpen(true)}
+          />
+        </View>
+      );
+    }
+    const c = item as CollectionRow;
+    return (
+      <View style={{ width: tileWidth }}>
+        <CollectionTile
+          width={tileWidth}
+          name={c.name}
+          recipeCount={c.recipeCount}
+          covers={mineCovers[c.id]}
+          onPress={() => openCollection(c)}
+          onLongPress={() => confirmDelete(c)}
+        />
+      </View>
+    );
+  };
+
+  const renderFollowedItem = ({ item }: { item: CollectionRow }) => {
+    const coverId = `${item.ownerUid ?? ""}_${item.id}`;
+    return (
+      <View style={{ width: tileWidth }}>
+        <CollectionTile
+          width={tileWidth}
+          name={item.name}
+          recipeCount={item.recipeCount}
+          subtitle={item.ownerUsername ? `by ${item.ownerUsername}` : undefined}
+          covers={followedCovers[coverId]}
+          onPress={() => openCollection(item)}
+          onLongPress={() => unfollow(item)}
+        />
+      </View>
+    );
+  };
+
+  const tabButton = (id: TabId, label: string) => {
+    const on = tab === id;
+    return (
+      <TouchableOpacity
+        key={id}
+        className={`flex-1 py-2 rounded-lg justify-center ${on ? "bg-red-primary" : "bg-background"}`}
+        onPress={() => setTab(id)}
+      >
+        <Text
+          className={`text-center text-xs font-medium ${on ? "text-white" : "text-foreground"}`}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const emptyMine = !loading && tab === "mine" && collections.length === 0;
+  const emptyFollowed = !loading && tab === "followed" && followed.length === 0;
+
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <View className="px-4 pb-3 flex-row items-center justify-between">
-        <Text className="text-muted-foreground text-sm flex-1 pr-2">
-          Group recipes into boards. Saving here does not change favorites.
-        </Text>
-        <TouchableOpacity
-          onPress={() => setCreateOpen(true)}
-          className="bg-red-primary px-3 py-2 rounded-xl flex-row items-center gap-1"
-        >
-          <IconSymbol name="plus" size={20} color="#fff" />
-          <Text className="text-white font-semibold text-sm">New</Text>
-        </TouchableOpacity>
+      <View className="px-4 pb-3">
+        <View className="flex-row gap-1 bg-background rounded-xl h-11 p-1 shadow-sm">
+          {tabButton("mine", "My collections")}
+          {tabButton("followed", "Followed collections")}
+        </View>
       </View>
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="red" />
         </View>
-      ) : collections.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-8 gap-3">
-          <IconSymbol name="folder-outline" size={48} color="--color-muted-foreground" />
-          <Text className="text-center text-muted-foreground">
-            No collections yet. Tap New to create a board, or save a recipe from its page.
-          </Text>
-        </View>
+      ) : tab === "mine" ? (
+        <FlatList
+          data={mineGridData}
+          keyExtractor={(r) => r.id}
+          numColumns={2}
+          columnWrapperStyle={{ gap: GAP }}
+          contentContainerStyle={{
+            paddingBottom: 24,
+            rowGap: GAP,
+            flexGrow: emptyMine ? 1 : 0,
+          }}
+          ListHeaderComponent={
+            emptyMine ? (
+              <Text className="text-center text-muted-foreground px-6 pb-4 text-sm">
+                No collections yet. Tap the tile below to create one, or save a recipe from its page.
+              </Text>
+            ) : null
+          }
+          renderItem={renderMineItem}
+        />
       ) : (
         <FlatList
-          data={collections}
-          keyExtractor={(item) => item.id}
+          data={followed}
+          keyExtractor={(r) => `${r.ownerUid ?? ""}_${r.id}`}
           numColumns={2}
-          columnWrapperStyle={{ gap: 12, paddingHorizontal: 16 }}
-          contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
-          renderItem={({ item }) => (
-            <Pressable
-              style={{ width: tileWidth }}
-              onPress={() =>
-                router.push({
-                  pathname: "/account/collection/[collectionId]",
-                  params: { collectionId: item.id },
-                })
-              }
-              onLongPress={() => confirmDelete(item)}
-            >
-              <View className="rounded-2xl overflow-hidden bg-background shadow-sm border border-border">
-                <View className="aspect-[4/5] bg-muted-background">
-                  {covers[item.id] ? (
-                    <Image
-                      source={{ uri: covers[item.id]! }}
-                      className="w-full h-full"
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View className="flex-1 items-center justify-center">
-                      <IconSymbol name="image-outline" size={36} color="--color-icon" />
-                    </View>
-                  )}
-                </View>
-                <View className="p-3 gap-1">
-                  <Text className="text-foreground font-semibold" numberOfLines={2}>
-                    {item.name}
-                  </Text>
-                  <Text className="text-muted-foreground text-sm">
-                    {item.recipeCount} {item.recipeCount === 1 ? "recipe" : "recipes"}
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
-          )}
+          columnWrapperStyle={{ gap: GAP }}
+          contentContainerStyle={{
+            paddingBottom: 24,
+            rowGap: GAP,
+            flexGrow: emptyFollowed ? 1 : 0,
+          }}
+          ListEmptyComponent={
+            <View className="flex-1 px-8 pt-8 items-center">
+              <Text className="text-center text-muted-foreground text-sm">
+                No followed collections yet. Open someone’s profile, go to Collections, and tap
+                Follow on a board you like.
+              </Text>
+            </View>
+          }
+          renderItem={renderFollowedItem}
         />
       )}
 
@@ -228,7 +346,7 @@ export default function CollectionsPage() {
           >
             <Text className="text-xl font-bold text-foreground">New collection</Text>
             <TextInput
-              placeholder="Board name"
+              placeholder="Collection name"
               placeholderTextColor="#888"
               value={newName}
               onChangeText={setNewName}

@@ -1,12 +1,11 @@
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
+import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
 import { useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
-
-const SHARE_BASE_URL = "http://10.0.2.2:3000";
 
 export default function ShareRecipePage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
@@ -19,8 +18,13 @@ export default function ShareRecipePage() {
 
   const shareLink = useMemo(() => {
     if (!id) return "";
-    return `${SHARE_BASE_URL}/recipe/${id}`;
+    return buildRecipeShareWebUrl(id);
   }, [id]);
+
+  const handleShare = () => {
+    if (!shareLink) return;
+    void openNativeShare(shareLink, "Share recipe");
+  };
 
   const handleCopy = async () => {
     if (!shareLink) return;
@@ -44,11 +48,11 @@ export default function ShareRecipePage() {
         <View className="gap-3 mt-2">
           <Text className="text-2xl font-bold text-foreground">Share Recipe</Text>
           <Text className="text-muted-foreground">
-            Copy the link below. Anyone who opens it will land on this recipe.
+            Share a link that opens this recipe in Savr (same as profile and meal plan links).
           </Text>
 
           <View className="bg-background rounded-xl p-4 border border-muted-background">
-            <Text className="text-muted-foreground text-sm mb-2">Deep link</Text>
+            <Text className="text-muted-foreground text-sm mb-2">Link</Text>
             <Text selectable className="text-foreground">
               {shareLink || "—"}
             </Text>
@@ -56,6 +60,16 @@ export default function ShareRecipePage() {
 
           <View className="gap-3 mt-2">
             <Button
+              onPress={handleShare}
+              disabled={!shareLink}
+              textClassName="font-medium text-lg"
+              size="lg"
+            >
+              Share
+            </Button>
+
+            <Button
+              variant="outline"
               onPress={handleCopy}
               disabled={!shareLink || copying}
               textClassName="font-medium text-lg"
@@ -74,7 +88,7 @@ export default function ShareRecipePage() {
               textClassName="font-medium text-lg"
               size="lg"
             >
-              Open in Savr
+              Open link in browser
             </Button>
           </View>
         </View>

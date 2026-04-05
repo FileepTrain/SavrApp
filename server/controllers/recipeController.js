@@ -586,7 +586,27 @@ export const getRecipeById = async (req, res) => {
       try {
         const authorSnap = await db.collection("users").doc(data.userId).get();
         if (authorSnap.exists) {
-          recipePayload.authorUsername = authorSnap.data().username ?? null;
+          const u = authorSnap.data() || {};
+          recipePayload.authorUsername = u.username ?? null;
+          const photoPath =
+            typeof u.profilePhotoStoragePath === "string" ? u.profilePhotoStoragePath : null;
+          if (photoPath) {
+            try {
+              const bucket = admin.storage().bucket();
+              const file = bucket.file(photoPath);
+              const [exists] = await file.exists();
+              if (exists) {
+                const [url] = await file.getSignedUrl({
+                  version: "v4",
+                  action: "read",
+                  expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+                });
+                recipePayload.authorProfilePhotoUrl = url;
+              }
+            } catch (photoErr) {
+              console.warn("Author profile photo URL failed:", photoErr?.message);
+            }
+          }
         }
       } catch (lookupErr) {
         console.warn("Author username lookup failed:", lookupErr?.message);

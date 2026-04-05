@@ -1,5 +1,6 @@
 import admin from "firebase-admin";
 import axios from "axios";
+import { ensureUserFirestoreFromAuth } from "../utils/ensureUserFirestoreRecord.js";
 
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
 
@@ -132,8 +133,20 @@ export const login = async (req, res) => {
     const { idToken, refreshToken, localId, displayName } =
       firebaseResponse.data;
 
-    const userDoc = await db.collection("users").doc(localId).get();
-    const userData = userDoc.exists ? userDoc.data() : {};
+    let userData = {};
+    try {
+      userData = await ensureUserFirestoreFromAuth(db, {
+        uid: localId,
+        email,
+        displayName,
+        treatMissingDocAsReturningUser: true,
+        forceFullRepair: false,
+      });
+    } catch (ensureErr) {
+      console.error("ensureUserFirestoreFromAuth (login):", ensureErr);
+      const userDoc = await db.collection("users").doc(localId).get();
+      userData = userDoc.exists ? userDoc.data() : {};
+    }
 
     return res.json({
       success: true,
@@ -742,12 +755,15 @@ export const getRecipeCollection = async (req, res) => {
 
 /**
  * PATCH /api/auth/collections/:collectionId
- * body: { name: string }
+ * body: { name?: string, recipeIds?: string[] } — at least one field required.
+ * recipeIds replaces order (used for cover = first id, then mosaic slots).
  */
 export const updateRecipeCollection = async (req, res) => {
   const uid = req.user?.uid;
   const { collectionId } = req.params;
-  const name = String(req.body?.name ?? "").trim();
+  const body = req.body ?? {};
+  const nameRaw = body.name;
+  const recipeIdsRaw = body.recipeIds;
 
   if (!uid) {
     return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
@@ -760,9 +776,12 @@ export const updateRecipeCollection = async (req, res) => {
     });
   }
 
-  if (!name) {
+  const hasName = typeof nameRaw === "string" && String(nameRaw).trim().length > 0;
+  const hasRecipeIds = Array.isArray(recipeIdsRaw);
+
+  if (!hasName && !hasRecipeIds) {
     return res.status(400).json({
-      error: "Collection name is required",
+      error: "Provide name and/or recipeIds",
       code: "INVALID_REQUEST",
     });
   }
@@ -778,12 +797,42 @@ export const updateRecipeCollection = async (req, res) => {
       });
     }
 
-    await ref.update({
-      name,
+    const updatePayload = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
 
-    return res.json({ success: true, message: "Collection updated" });
+    if (hasName) {
+      updatePayload.name = String(nameRaw).trim();
+    }
+
+    if (hasRecipeIds) {
+      const seen = new Set();
+      const uniq = [];
+      for (const x of recipeIdsRaw) {
+        const id = String(x ?? "").trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        uniq.push(id);
+      }
+      updatePayload.recipeIds = uniq;
+    }
+
+    await ref.update(updatePayload);
+
+    const after = await ref.get();
+    const d = after.data() || {};
+    const recipeIds = Array.isArray(d.recipeIds) ? d.recipeIds : [];
+
+    return res.json({
+      success: true,
+      message: "Collection updated",
+      collection: {
+        id: after.id,
+        name: typeof d.name === "string" ? d.name : "Untitled",
+        recipeIds,
+        recipeCount: recipeIds.length,
+      },
+    });
   } catch (error) {
     console.error("Error updating collection:", error);
     return res.status(400).json({
@@ -919,6 +968,241 @@ export const removeRecipeFromCollection = async (req, res) => {
     return res.status(400).json({
       error: error.message,
       code: "COLLECTION_REMOVE_RECIPE_FAILED",
+    });
+  }
+};
+
+/* --- Follow other users' collections --- */
+
+function isValidFirestoreUid(id) {
+  return (
+    typeof id === "string" &&
+    id.length > 0 &&
+    id.length <= 128 &&
+    /^[a-zA-Z0-9]+$/.test(id)
+  );
+}
+
+function normalizeProfilePrivacy(raw) {
+  const p = raw && typeof raw === "object" ? raw : {};
+  return {
+    showFavorites: p.showFavorites !== false,
+    showCollections: p.showCollections !== false,
+    showMealPlans: p.showMealPlans !== false,
+  };
+}
+
+function followedCollectionDocId(ownerUid, collectionId) {
+  return `${ownerUid}__${collectionId}`;
+}
+
+function followedCollectionsRef(db, uid) {
+  return db.collection("users").doc(uid).collection("followedCollections");
+}
+
+/**
+ * POST /api/auth/followed-collections
+ * body: { ownerUid, collectionId }
+ */
+export const followRecipeCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const ownerUid = String(req.body?.ownerUid ?? "").trim();
+  const collectionId = String(req.body?.collectionId ?? "").trim();
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+  if (!isValidFirestoreUid(ownerUid) || !collectionId) {
+    return res.status(400).json({ error: "Invalid request", code: "INVALID_REQUEST" });
+  }
+  if (ownerUid === uid) {
+    return res.status(400).json({
+      error: "Cannot follow your own collection",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  try {
+    const db = admin.firestore();
+    const ownerSnap = await db.collection("users").doc(ownerUid).get();
+    if (!ownerSnap.exists) {
+      return res.status(404).json({ error: "User not found", code: "USER_NOT_FOUND" });
+    }
+
+    const privacy = normalizeProfilePrivacy(ownerSnap.data()?.profilePrivacy);
+    if (!privacy.showCollections) {
+      return res.status(403).json({
+        error: "This collection is not shared publicly",
+        code: "COLLECTION_PRIVATE",
+      });
+    }
+
+    const colRef = collectionsRef(db, ownerUid).doc(collectionId);
+    const colSnap = await colRef.get();
+    if (!colSnap.exists) {
+      return res.status(404).json({ error: "Collection not found", code: "NOT_FOUND" });
+    }
+
+    const d = colSnap.data() || {};
+    const recipeIds = Array.isArray(d.recipeIds) ? d.recipeIds : [];
+
+    const docRef = followedCollectionsRef(db, uid).doc(
+      followedCollectionDocId(ownerUid, collectionId),
+    );
+    await docRef.set({
+      ownerUid,
+      collectionId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.status(201).json({
+      success: true,
+      collection: {
+        id: collectionId,
+        ownerUid,
+        ownerUsername:
+          typeof ownerSnap.data()?.username === "string"
+            ? ownerSnap.data().username
+            : "User",
+        name: typeof d.name === "string" ? d.name : "Untitled",
+        recipeIds,
+        recipeCount: recipeIds.length,
+      },
+    });
+  } catch (error) {
+    console.error("followRecipeCollection error:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "FOLLOW_FAILED",
+    });
+  }
+};
+
+/**
+ * DELETE /api/auth/followed-collections/:ownerUid/:collectionId
+ */
+export const unfollowRecipeCollection = async (req, res) => {
+  const uid = req.user?.uid;
+  const ownerUid = String(req.params?.ownerUid ?? "").trim();
+  const collectionId = String(req.params?.collectionId ?? "").trim();
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+  if (!isValidFirestoreUid(ownerUid) || !collectionId) {
+    return res.status(400).json({ error: "Invalid request", code: "INVALID_REQUEST" });
+  }
+
+  try {
+    const db = admin.firestore();
+    const ref = followedCollectionsRef(db, uid).doc(
+      followedCollectionDocId(ownerUid, collectionId),
+    );
+    const snap = await ref.get();
+    if (snap.exists) {
+      await ref.delete();
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("unfollowRecipeCollection error:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "UNFOLLOW_FAILED",
+    });
+  }
+};
+
+/**
+ * GET /api/auth/followed-collections
+ */
+export const listFollowedRecipeCollections = async (req, res) => {
+  const uid = req.user?.uid;
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+
+  try {
+    const db = admin.firestore();
+    let snap;
+    try {
+      snap = await followedCollectionsRef(db, uid).orderBy("createdAt", "desc").get();
+    } catch (orderErr) {
+      console.warn("followedCollections orderBy failed, falling back:", orderErr?.message);
+      snap = await followedCollectionsRef(db, uid).get();
+    }
+
+    const out = [];
+    for (const doc of snap.docs) {
+      const row = doc.data() || {};
+      const ownerUid = typeof row.ownerUid === "string" ? row.ownerUid : "";
+      const collectionId = typeof row.collectionId === "string" ? row.collectionId : "";
+      if (!isValidFirestoreUid(ownerUid) || !collectionId) continue;
+
+      const ownerSnap = await db.collection("users").doc(ownerUid).get();
+      if (!ownerSnap.exists) continue;
+
+      const privacy = normalizeProfilePrivacy(ownerSnap.data()?.profilePrivacy);
+      if (!privacy.showCollections) continue;
+
+      const colSnap = await collectionsRef(db, ownerUid).doc(collectionId).get();
+      if (!colSnap.exists) continue;
+
+      const d = colSnap.data() || {};
+      const recipeIds = Array.isArray(d.recipeIds) ? d.recipeIds : [];
+      const ts = row.createdAt?.toMillis?.() ?? 0;
+      out.push({
+        id: collectionId,
+        ownerUid,
+        ownerUsername:
+          typeof ownerSnap.data()?.username === "string"
+            ? ownerSnap.data().username
+            : "User",
+        name: typeof d.name === "string" ? d.name : "Untitled",
+        recipeIds,
+        recipeCount: recipeIds.length,
+        _sortTs: ts,
+      });
+    }
+
+    out.sort((a, b) => b._sortTs - a._sortTs);
+    const collections = out.map(({ _sortTs, ...rest }) => rest);
+
+    return res.json({ success: true, collections });
+  } catch (error) {
+    console.error("listFollowedRecipeCollections error:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "FOLLOWED_LIST_FAILED",
+    });
+  }
+};
+
+/**
+ * GET /api/auth/followed-collections/status?ownerUid=&collectionId=
+ */
+export const getFollowCollectionStatus = async (req, res) => {
+  const uid = req.user?.uid;
+  const ownerUid = String(req.query?.ownerUid ?? "").trim();
+  const collectionId = String(req.query?.collectionId ?? "").trim();
+
+  if (!uid) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+  }
+  if (!isValidFirestoreUid(ownerUid) || !collectionId) {
+    return res.status(400).json({ error: "Invalid request", code: "INVALID_REQUEST" });
+  }
+
+  try {
+    const db = admin.firestore();
+    const doc = await followedCollectionsRef(db, uid)
+      .doc(followedCollectionDocId(ownerUid, collectionId))
+      .get();
+    return res.json({ success: true, following: doc.exists });
+  } catch (error) {
+    console.error("getFollowCollectionStatus error:", error);
+    return res.status(400).json({
+      error: error.message,
+      code: "FOLLOW_STATUS_FAILED",
     });
   }
 };

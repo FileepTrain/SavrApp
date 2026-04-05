@@ -6,8 +6,10 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { images } from "@/constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { isIdTokenExpired } from "@/utils/auth-session";
+import { hrefFromRedirectTo, mergeLoginLooseParamsIntoRedirect } from "@/utils/href-from-redirect";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
 
 const SERVER_URL = "http://10.0.2.2:3000";
@@ -17,17 +19,41 @@ const LoginPage = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const { redirectTo } = useLocalSearchParams<{ redirectTo?: string }>();
+  const params = useLocalSearchParams<{
+    redirectTo?: string;
+    tab?: string;
+    mealPlanId?: string;
+  }>();
+  const { redirectTo, tab: looseTab, mealPlanId: looseMealPlanId } = params;
 
-  const getSafeRedirectTarget = () => {
-    const target = Array.isArray(redirectTo)
-      ? redirectTo[0]
-      : typeof redirectTo === "string"
-        ? redirectTo
-        : null;
-    // Basic safety: only allow internal routes like "/recipe/123".
-    return target && target.startsWith("/") ? target : "/home";
-  };
+  const getSafeRedirectTarget = () =>
+    mergeLoginLooseParamsIntoRedirect(redirectTo, {
+      tab: looseTab,
+      mealPlanId: looseMealPlanId,
+    });
+
+  // Share links open savr://login?redirectTo=... — if already signed in, skip this screen.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken || isIdTokenExpired(idToken)) return;
+
+      const onboardedValue = await AsyncStorage.getItem("onboarded");
+      const isOnboarded = onboardedValue === "true";
+      if (cancelled) return;
+
+      if (isOnboarded) {
+        router.replace(hrefFromRedirectTo(getSafeRedirectTarget()));
+      } else {
+        router.replace("/onboarding");
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [redirectTo, looseTab, looseMealPlanId]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -63,7 +89,7 @@ const LoginPage = () => {
       if (!onboarded) {
         router.replace("/onboarding");
       } else {
-        router.replace(getSafeRedirectTarget());
+        router.replace(hrefFromRedirectTo(getSafeRedirectTarget()));
       }
     } catch (err: any) {
       Alert.alert("Login failed", err.message);

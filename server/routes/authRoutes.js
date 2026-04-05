@@ -17,7 +17,18 @@ import {
   deleteRecipeCollection,
   addRecipeToCollection,
   removeRecipeFromCollection,
+  followRecipeCollection,
+  unfollowRecipeCollection,
+  listFollowedRecipeCollections,
+  getFollowCollectionStatus,
 } from "../controllers/authController.js";
+import { uploadProfileImage } from "../middleware/multer.js";
+import {
+  getUserProfile,
+  updateProfilePrivacy,
+  uploadProfilePhoto,
+  getPublicCollection,
+} from "../controllers/userProfileController.js";
 
 const router = express.Router();
 
@@ -36,6 +47,16 @@ router.put("/update-account", verifyToken, updateAccount);
 // PUT /api/auth/update-favorites - Update user favorites
 router.put("/update-favorites", verifyToken, updateFavorites);
 
+// Public-style profile (authenticated viewers; respects privacy)
+router.get("/users/:userId/profile", verifyToken, getUserProfile);
+router.get(
+  "/users/:ownerUid/collections/:collectionId/public",
+  verifyToken,
+  getPublicCollection,
+);
+router.put("/profile-privacy", verifyToken, updateProfilePrivacy);
+router.post("/profile-photo", verifyToken, uploadProfileImage, uploadProfilePhoto);
+
 // GET /api/auth/get-favorites - Get array of favorite recipes
 router.get("/get-favorites", verifyToken, getFavorites);
 
@@ -50,6 +71,15 @@ router.delete(
   "/collections/:collectionId/recipes/:recipeId",
   verifyToken,
   removeRecipeFromCollection,
+);
+
+router.get("/followed-collections/status", verifyToken, getFollowCollectionStatus);
+router.get("/followed-collections", verifyToken, listFollowedRecipeCollections);
+router.post("/followed-collections", verifyToken, followRecipeCollection);
+router.delete(
+  "/followed-collections/:ownerUid/:collectionId",
+  verifyToken,
+  unfollowRecipeCollection,
 );
 
 // GET /api/auth/get-preferences - Get user preferences (query: fields=cookware,diets,... or all)
