@@ -7,14 +7,43 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
-import { Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
 import Button from "@/components/ui/button";
 import { SwipeableRecipeCardRemovable } from "@/components/swipeable-recipe-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+
+function parseRecipeIds(input?: string | null): string[] {
+  if (!input) return [];
+  return input
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function dateOnlyToLocalDate(ymd: string): Date | null {
+  const [y, m, d] = ymd.split("-").map((x) => Number(x));
+  if (y == null || m == null || d == null) return null;
+  const dt = new Date(y, m - 1, d);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function normalizeRecipeFromApi(json: unknown, fallbackId: string): Recipe {
+  const body = json as { recipe?: Recipe } | Recipe | null;
+  const r = body && typeof body === "object" && "recipe" in body ? (body as { recipe?: Recipe }).recipe : (body as Recipe | null);
+  if (!r || typeof r !== "object") return { id: fallbackId };
+  return {
+    id: String((r as Recipe).id ?? fallbackId),
+    title: (r as Recipe).title,
+    calories: typeof (r as Recipe).calories === "number" ? (r as Recipe).calories : undefined,
+    rating: typeof (r as Recipe).rating === "number" ? (r as Recipe).rating : undefined,
+    reviews: Array.isArray((r as Recipe).reviews) ? (r as Recipe).reviews : undefined,
+    image: (r as Recipe).image ?? ((r as Recipe).imageUrl as string | undefined),
+  };
+}
 
 const CAL_SLIDER_MIN = 100;
 const CAL_SLIDER_MAX = 1200;
@@ -23,8 +52,23 @@ const CAL_SLIDER_STEP = 25;
 type MealSlot = "Breakfast" | "Lunch" | "Dinner";
 
 export default function MealPlanPage() {
+  const params = useLocalSearchParams<{ date?: string; mealPlanId?: string }>();
+  const mealPlanIdParam = useMemo(() => {
+    const raw = params.mealPlanId;
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+    if (Array.isArray(raw) && raw[0]) return String(raw[0]).trim();
+    return null;
+  }, [params.mealPlanId]);
+  const dateParam = useMemo(() => {
+    const raw = params.date;
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+    if (Array.isArray(raw) && raw[0]) return String(raw[0]).trim();
+    return null;
+  }, [params.date]);
+
   const [start_date, setStartDate] = useState(new Date());
   const [end_date, setEndDate] = useState(new Date());
+  const [loadingPlan, setLoadingPlan] = useState(() => !!mealPlanIdParam);
 
   const [showPicker, setShowPicker] = useState(false);
   const [activeField, setActiveField] = useState<"start" | "end" | null>(null);
@@ -49,6 +93,97 @@ export default function MealPlanPage() {
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
   const { refetch: refetchMealPlans } = useMealPlans();
 
+  useEffect(() => {
+    if (mealPlanIdParam) {
+      let cancelled = false;
+      const run = async () => {
+        setLoadingPlan(true);
+        try {
+          const idToken = await AsyncStorage.getItem("idToken");
+          if (!idToken) {
+            Alert.alert("Not signed in", "Sign in to edit meal plans.");
+            return;
+          }
+          const res = await fetch(
+            `${SERVER_URL}/api/meal-plans/${encodeURIComponent(mealPlanIdParam)}`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${idToken}`,
+                "Content-Type": "application/json",
+              },
+            },
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(typeof data?.error === "string" ? data.error : "Failed to load meal plan");
+          }
+          const plan = data?.mealPlan;
+          if (!plan || cancelled) return;
+
+          const start = plan.start_date ? new Date(plan.start_date) : new Date();
+          const end = plan.end_date ? new Date(plan.end_date) : new Date();
+          if (!cancelled) {
+            setStartDate(start);
+            setEndDate(end);
+          }
+
+          const bIds = parseRecipeIds(plan.breakfast);
+          const lIds = parseRecipeIds(plan.lunch);
+          const dIds = parseRecipeIds(plan.dinner);
+          const allIds = Array.from(new Set([...bIds, ...lIds, ...dIds]));
+
+          const fetchOne = async (recipeId: string) => {
+            const isPersonal = !/^\d+$/.test(recipeId);
+            const url = isPersonal
+              ? `${SERVER_URL}/api/recipes/${encodeURIComponent(recipeId)}`
+              : `${SERVER_URL}/api/external-recipes/${encodeURIComponent(recipeId)}/details`;
+            const r = await fetch(url, {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${idToken}`,
+                "Content-Type": "application/json",
+              },
+            });
+            const json = await r.json().catch(() => ({}));
+            if (!r.ok) return null;
+            return normalizeRecipeFromApi(json, recipeId);
+          };
+
+          const entries = await Promise.all(allIds.map(async (rid) => [rid, await fetchOne(rid)] as const));
+          if (cancelled) return;
+          const byId: Record<string, Recipe> = {};
+          for (const [rid, rec] of entries) {
+            if (rec) byId[rid] = rec;
+          }
+
+          setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
+          setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
+          setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
+        } catch (e) {
+          if (!cancelled) {
+            Alert.alert("Error", e instanceof Error ? e.message : "Failed to load meal plan.");
+          }
+        } finally {
+          if (!cancelled) setLoadingPlan(false);
+        }
+      };
+      void run();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (dateParam) {
+      const d = dateOnlyToLocalDate(dateParam);
+      if (d) {
+        setStartDate(d);
+        setEndDate(d);
+      }
+    }
+    return undefined;
+  }, [mealPlanIdParam, dateParam]);
+
   const increment = (id: string) => {
     setCount((prev) => ({
       ...prev,
@@ -70,32 +205,45 @@ export default function MealPlanPage() {
     }
     setSaving(true);
     try {
-      const res = await fetch(`${SERVER_URL}/api/meal-plans`, {
-        method: "POST",
+      const body = {
+        breakfast: breakfastRecipe.map((r) => r.id),
+        lunch: lunchRecipe.map((r) => r.id),
+        dinner: dinnerRecipe.map((r) => r.id),
+        start_date: start_date.toISOString(),
+        end_date: end_date.toISOString(),
+      };
+      const url = mealPlanIdParam
+        ? `${SERVER_URL}/api/meal-plans/${encodeURIComponent(mealPlanIdParam)}`
+        : `${SERVER_URL}/api/meal-plans`;
+      const method = mealPlanIdParam ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({
-          breakfast: breakfastRecipe.map(r => r.id),
-          lunch: lunchRecipe?.map(r => r.id),
-          dinner: dinnerRecipe?.map(r => r.id),
-          start_date: start_date.toISOString(),
-          end_date: end_date.toISOString(),
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to save meal plan");
       }
-      Alert.alert("Saved", "Your meal plan has been saved.");
+      Alert.alert("Saved", mealPlanIdParam ? "Your meal plan has been updated." : "Your meal plan has been saved.");
       await refetchMealPlans();
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to save meal plan.");
     } finally {
       setSaving(false);
     }
-  }, [start_date, end_date, breakfastRecipe, lunchRecipe, dinnerRecipe]);
+  }, [
+    start_date,
+    end_date,
+    breakfastRecipe,
+    lunchRecipe,
+    dinnerRecipe,
+    mealPlanIdParam,
+    refetchMealPlans,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -284,6 +432,15 @@ export default function MealPlanPage() {
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
+        {loadingPlan ? (
+          <View className="py-16 items-center justify-center min-h-[200px]">
+            <ActivityIndicator size="large" color="#bd9b64" />
+            <Text className="text-muted-foreground mt-3">Loading meal plan…</Text>
+          </View>
+        ) : null}
+
+        {!loadingPlan ? (
+        <>
         <View className="flex-row gap-2">
           {/*auto meal plan button*/}
           <Pressable className="flex-1 h-12 bg-white rounded-lg shadow-sm items-center justify-center"
@@ -505,6 +662,8 @@ export default function MealPlanPage() {
             </View>
           </View>
         </Modal>
+        </>
+        ) : null}
       </ScrollView>
     </ThemedSafeView>
   );

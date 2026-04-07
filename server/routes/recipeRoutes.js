@@ -3,6 +3,8 @@ import express from "express";
 import { verifyToken } from "../middleware/auth.js";
 import { uploadRecipeImage } from "../middleware/multer.js";
 import {
+  appendRecipeGalleryImage,
+  deleteRecipeGalleryImage,
   createRecipe,
   getUserRecipes,
   getRecipesByUserId,
@@ -22,6 +24,12 @@ router.get("/", verifyToken, getUserRecipes);
 
 // GET /api/recipes/by-user/:userId - Personal recipes by creator (must be registered before /:id)
 router.get("/by-user/:userId", verifyToken, getRecipesByUserId);
+
+// POST /api/recipes/:id/gallery-image — append a photo to the recipe gallery (before /:id)
+router.post("/:id/gallery-image", verifyToken, uploadRecipeImage, appendRecipeGalleryImage);
+
+// DELETE /api/recipes/:id/gallery-image — remove main image or a gallery entry (JSON body: { url })
+router.delete("/:id/gallery-image", verifyToken, deleteRecipeGalleryImage);
 
 // GET /api/recipes/:id - Get a single recipe by ID (must be authed to avoid leaking recipes)
 router.get("/:id", verifyToken, getRecipeById);

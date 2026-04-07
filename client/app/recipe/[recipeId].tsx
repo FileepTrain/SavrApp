@@ -1,4 +1,5 @@
 import { IngredientsList } from "@/components/recipe/ingredients-list";
+import { RecipeHeroGallery } from "@/components/recipe/recipe-hero-gallery";
 import RecipeRating from "@/components/recipe/recipe-rating";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Ingredient } from "@/types/ingredient";
@@ -78,12 +79,15 @@ type ExternalRecipe = {
   reviewCount?: number;
   totalStars?: number;
   viewCount?: number;
+  galleryImages?: unknown;
 };
 
 /** Display shape used by the UI (normalized from both personal and external) */
 type DisplayRecipe = {
   title: string;
   image?: string | null;
+  /** Extra photos from firebase storage */
+  galleryImages?: Array<{ url: string; uploadedBy: string | null }>;
   readyInMinutes?: number;
   prepTime?: number;
   cookTime?: number;
@@ -130,6 +134,34 @@ function isPersonalRecipeId(id: string): boolean {
   return !isExternalFirestoreRecipeId(id) && !isRawExternalRecipeId(id);
 }
 
+function parseGalleryImagesFromApi(
+  galleryImages: unknown,
+  recipeUserId: string | null,
+): Array<{ url: string; uploadedBy: string | null }> {
+  if (!Array.isArray(galleryImages)) return [];
+  const out: Array<{ url: string; uploadedBy: string | null }> = [];
+  for (const item of galleryImages) {
+    if (typeof item === "string" && item.length > 0) {
+      out.push({
+        url: item,
+        uploadedBy: recipeUserId,
+      });
+    } else if (
+      item &&
+      typeof item === "object" &&
+      "url" in item &&
+      typeof (item as { url: unknown }).url === "string"
+    ) {
+      const g = item as { url: string; uploadedBy?: string };
+      out.push({
+        url: g.url,
+        uploadedBy: typeof g.uploadedBy === "string" ? g.uploadedBy : recipeUserId,
+      });
+    }
+  }
+  return out;
+}
+
 export default function RecipeDetailsPage() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -161,6 +193,36 @@ export default function RecipeDetailsPage() {
     username: string | null;
     profilePhotoUrl: string | null;
   } | null>(null);
+  /** Recipe owner `userId` from API (set even when author row is not shown). */
+  const [recipeOwnerId, setRecipeOwnerId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void AsyncStorage.getItem("uid").then(setCurrentUserId);
+  }, []);
+
+  const recipeGalleryItems = useMemo(() => {
+    const owner = recipeOwnerId ?? recipeAuthor?.userId ?? null;
+    const out: { url: string; uploadedBy: string | null; isMain: boolean }[] = [];
+    if (recipe?.image) {
+      out.push({ url: recipe.image, uploadedBy: owner, isMain: true });
+    }
+    for (const g of recipe?.galleryImages ?? []) {
+      const url = g.url;
+      const uploadedBy = g.uploadedBy != null && g.uploadedBy !== "" ? g.uploadedBy : owner;
+      if (url && !out.some((x) => x.url === url)) {
+        out.push({ url, uploadedBy, isMain: false });
+      }
+    }
+    return out;
+  }, [recipe?.galleryImages, recipe?.image, recipeAuthor?.userId, recipeOwnerId]);
+
+  /** Numeric Spoonacular ids use external_recipes; gallery is stored there once the recipe is cached. */
+  const canUploadGallery =
+    (isPersonalRecipeId(id) ||
+      isExternalFirestoreRecipeId(id) ||
+      isRawExternalRecipeId(id)) &&
+    currentUserId !== null;
 
   const toggleFavorite = async () => {
     if (!id) return;
@@ -342,6 +404,7 @@ export default function RecipeDetailsPage() {
 
       try {
         setRecipeAuthor(null);
+        setRecipeOwnerId(null);
         const idToken = await AsyncStorage.getItem("idToken");
         const uid = await AsyncStorage.getItem("uid");
         if (!idToken || !uid) {
@@ -388,10 +451,14 @@ export default function RecipeDetailsPage() {
           const totalStars = typeof r.totalStars === "number" ? r.totalStars : (Array.isArray(r.reviews) ? r.reviews.reduce((s: number, rev: { rating?: number }) => s + (rev?.rating ?? 0), 0) : 0);
           const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
 
+          const ownerId = typeof r.userId === "string" ? r.userId : null;
+          setRecipeOwnerId(ownerId);
+
           setRecipe({
             title: r.title,
             summary: r.summary,
             image: r.image,
+            galleryImages: parseGalleryImagesFromApi(r.galleryImages, ownerId),
             prepTime: r.prepTime,
             cookTime: r.cookTime,
             readyInMinutes: (r.prepTime ?? 0) + (r.cookTime ?? 0),
@@ -412,7 +479,6 @@ export default function RecipeDetailsPage() {
             price: r.price,
           });
 
-          const ownerId = typeof r.userId === "string" ? r.userId : null;
           const photoRaw =
             typeof r.authorProfilePhotoUrl === "string" ? r.authorProfilePhotoUrl.trim() : "";
           setRecipeAuthor(
@@ -456,10 +522,14 @@ export default function RecipeDetailsPage() {
           const data = await response.json();
           const r = data.recipe;
 
+          const fsOwnerId = typeof r.userId === "string" ? r.userId : null;
+          setRecipeOwnerId(fsOwnerId);
+
           setRecipe({
             title: r.title,
             summary: r.summary,
             image: r.image,
+            galleryImages: parseGalleryImagesFromApi(r.galleryImages, fsOwnerId),
             readyInMinutes: r.readyInMinutes,
             servings: r.servings,
             instructions: r.instructions,
@@ -487,6 +557,7 @@ export default function RecipeDetailsPage() {
         // External recipe: include nutrition so we can show calories on this page
         } else {
           setRecipeAuthor(null);
+          setRecipeOwnerId(null);
           const response = await fetch(
             `${SERVER_URL}/api/external-recipes/${id}/details?includeNutrition=true`,
             { method: "GET" },
@@ -514,6 +585,7 @@ export default function RecipeDetailsPage() {
           setRecipe({
             title: r.title,
             image: r.image,
+            galleryImages: parseGalleryImagesFromApi(r.galleryImages, null),
             readyInMinutes: r.readyInMinutes,
             servings: r.servings,
             summary: r.summary ?? undefined,
@@ -558,22 +630,39 @@ export default function RecipeDetailsPage() {
     <View className="flex-1 bg-app-background gap-6">
       {/* HEADER: Recipe Image + Favorite Button + Back Button */}
       <View className="relative">
-        <View className="w-full h-60 bg-muted-background justify-center items-center">
-          {recipe?.image ? (
-            <Image
-              source={{ uri: recipe.image }}
-              className="w-full h-full"
-              resizeMode="cover"
-            />
-          ) : (
-            <View className="mt-12 w-full h-full items-center justify-center gap-2">
-              <IconSymbol name="image-outline" size={36} color="--color-icon" />
-              <Text className="text-icon text-lg font-medium">
-                No image available
-              </Text>
-            </View>
-          )}
-        </View>
+        <RecipeHeroGallery
+          items={recipeGalleryItems}
+          recipeId={id}
+          canUpload={canUploadGallery}
+          serverUrl={SERVER_URL}
+          currentUserId={currentUserId}
+          recipeOwnerId={recipeOwnerId}
+          onAppendGalleryEntry={(entry) => {
+            setRecipe((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    galleryImages: [
+                      ...(prev.galleryImages ?? []),
+                      { url: entry.url, uploadedBy: entry.uploadedBy || null },
+                    ],
+                  }
+                : null,
+            );
+          }}
+          onRemoveImageUrl={(url) => {
+            setRecipe((prev) => {
+              if (!prev) return null;
+              if (prev.image === url) {
+                return { ...prev, image: null };
+              }
+              return {
+                ...prev,
+                galleryImages: (prev.galleryImages ?? []).filter((g) => g.url !== url),
+              };
+            });
+          }}
+        />
 
         <TouchableOpacity
           onPress={() => {

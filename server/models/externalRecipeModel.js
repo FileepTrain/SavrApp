@@ -1,5 +1,9 @@
 // models/externalRecipeModel.js
 import admin from "firebase-admin";
+import {
+  galleryImagesForApiResponse,
+  normalizeGalleryImagesArray,
+} from "../utils/recipeGalleryNormalize.js";
 
 const COLL = "external_recipes";
 
@@ -36,6 +40,12 @@ async function findByExternal(externalSource, externalId) {
   const totalStars = Number.isFinite(Number(data.totalStars)) ? Number(data.totalStars) : reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0);
   const viewCount = Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0;
 
+  const galleryNorm = normalizeGalleryImagesArray(
+    data.galleryImages,
+    data.userId || null,
+  );
+  const galleryImages = galleryImagesForApiResponse(galleryNorm);
+
   return {
     id: String(data.externalId ?? externalId),
     title: data.title ?? null,
@@ -56,6 +66,7 @@ async function findByExternal(externalSource, externalId) {
     reviewCount,
     totalStars,
     viewCount,
+    galleryImages,
     _docId: docId,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,

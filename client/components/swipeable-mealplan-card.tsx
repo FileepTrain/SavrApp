@@ -326,7 +326,13 @@ export function SwipeableMealPlanCard({
     ) => (
       <View style={styles.swipeActionsRow}>
         <Pressable
-          onPress={() => swipeableMethods.close()}
+          onPress={() => {
+            swipeableMethods.close();
+            router.push({
+              pathname: "/calendar/meal-plan",
+              params: { mealPlanId: String(id) },
+            });
+          }}
           style={[styles.swipeBtn, styles.swipeBtnEdit]}
         >
           <MaterialCommunityIcons name="pencil-outline" size={28} color="#ffffff" />
@@ -346,7 +352,7 @@ export function SwipeableMealPlanCard({
         </Pressable>
       </View>
     ),
-    [loading, requestDeleteMealPlan],
+    [id, loading, requestDeleteMealPlan],
   );
 
   const headerInner = (
