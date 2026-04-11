@@ -6,6 +6,8 @@ export interface CachedRecipeEntry {
   recipe: {
     title: string;
     image?: string | null;
+    /** Extra photos from firebase storage */
+    galleryImages?: Array<{ url: string; uploadedBy: string | null }>;
     readyInMinutes?: number;
     prepTime?: number;
     cookTime?: number;

@@ -7,16 +7,42 @@ import { router } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { Text, View } from "react-native";
 
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+
 export default function AccountPage() {
   const [username, setUsername] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
+  const [uid, setUid] = useState<string | null>(null);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
 
   const loadUserData = useCallback(async () => {
-    const storedName = await AsyncStorage.getItem("username");
-    const storedEmail = await AsyncStorage.getItem("email");
+    const [storedName, storedEmail, storedUid, idToken] = await Promise.all([
+      AsyncStorage.getItem("username"),
+      AsyncStorage.getItem("email"),
+      AsyncStorage.getItem("uid"),
+      AsyncStorage.getItem("idToken"),
+    ]);
 
     setUsername(storedName || "Unknown User");
     setEmail(storedEmail || "Unknown Email");
+    setUid(storedUid);
+
+    if (storedUid && idToken) {
+      try {
+        const res = await fetch(
+          `${SERVER_URL}/api/auth/users/${encodeURIComponent(storedUid)}/profile`,
+          { headers: { Authorization: `Bearer ${idToken}` } },
+        );
+        const data = await res.json().catch(() => ({}));
+        const raw =
+          res.ok && typeof data.profilePhotoUrl === "string" ? data.profilePhotoUrl.trim() : "";
+        setProfilePhotoUrl(raw.length > 0 ? raw : null);
+      } catch {
+        setProfilePhotoUrl(null);
+      }
+    } else {
+      setProfilePhotoUrl(null);
+    }
   }, []);
 
   useFocusEffect(
@@ -38,6 +64,16 @@ export default function AccountPage() {
       <AccountProfileCard
         name={username ?? "Loading..."}
         email={email ?? "Loading..."}
+        photoUrl={profilePhotoUrl}
+        onPress={
+          uid
+            ? () =>
+                router.push({
+                  pathname: "/profile/[userId]",
+                  params: { userId: uid },
+                })
+            : undefined
+        }
       />
 
       {/* Menu */}
@@ -61,6 +97,13 @@ export default function AccountPage() {
           subtitle="Your own creations"
           iconName="book-open-outline"
           onPress={() => router.push("/account/personal-recipes")}
+        />
+
+        <AccountMenuItem
+          title="Collections"
+          subtitle="Organize saved recipes"
+          iconName="folder-outline"
+          onPress={() => router.push("/account/collections")}
         />
 
         <AccountMenuItem

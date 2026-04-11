@@ -11,10 +11,16 @@ const SERVER_URL = "http://10.0.2.2:3000"
 
 type GroceryItem = {
   id: string;
-  name: string;
+  name: string; // product name
+  ingredient: string; // original ingredient
   amount: number;
   unit: string;
   estimatedCost?: number | null;
+  term?: string | null;
+  productPrice?: number | null;
+  productSize?: string | null;
+  effectiveUnitCost?: number | null;
+  productUnit?: string | null;
 }
 
 export default function GroceryListPage() {
@@ -194,7 +200,7 @@ export default function GroceryListPage() {
             </View>
 
             <Text className="text-lg font-semibold text-foreground">
-              Total: ${totalCost ?? "0.00"}
+              Total: ${typeof totalCost === "number" ? totalCost.toFixed(2) : "0.00"}
             </Text>
           </View>
 
@@ -202,7 +208,7 @@ export default function GroceryListPage() {
           {loading ? (
             <ActivityIndicator size="large" color="red" />
           ) : (
-            <FlatList
+            <FlatList<GroceryItem>
               data={items}
               keyExtractor={(item) => item.id}
               ListEmptyComponent={
@@ -218,9 +224,17 @@ export default function GroceryListPage() {
                     <Text className="text-lg font-bold text-red-primary">
                       {item.name}
                     </Text>
-
+                    <Text className="text-foreground opacity-70">
+                      Ingredient: {item.ingredient}
+                    </Text>
                     <Text className="text-foreground">
-                      {item.amount} {item.unit} {typeof item.estimatedCost === "number" && ` ($${item.estimatedCost.toFixed(2)})`}
+                      Price: {item.productPrice != null ? `$${item.productPrice.toFixed(2)}` : "--"}
+                    </Text>
+                    <Text className="text-foreground">
+                      {item.productSize ?? `${item.amount} ${item.unit}`}
+                      {typeof item.effectiveUnitCost === "number" &&
+                      ` ($${item.effectiveUnitCost.toFixed(2)} per ${item.productUnit ?? item.unit})`}
+                      {` [${item.amount} ${item.unit} needed]`}
                     </Text>
                   </View>
 

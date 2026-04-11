@@ -6,8 +6,10 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { images } from "@/constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { isIdTokenExpired } from "@/utils/auth-session";
+import { hrefFromRedirectTo, mergeLoginLooseParamsIntoRedirect } from "@/utils/href-from-redirect";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
 
 const SERVER_URL = "http://10.0.2.2:3000";
@@ -16,6 +18,42 @@ const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const params = useLocalSearchParams<{
+    redirectTo?: string;
+    tab?: string;
+    mealPlanId?: string;
+  }>();
+  const { redirectTo, tab: looseTab, mealPlanId: looseMealPlanId } = params;
+
+  const getSafeRedirectTarget = () =>
+    mergeLoginLooseParamsIntoRedirect(redirectTo, {
+      tab: looseTab,
+      mealPlanId: looseMealPlanId,
+    });
+
+  // Share links open savr://login?redirectTo=... — if already signed in, skip this screen.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken || isIdTokenExpired(idToken)) return;
+
+      const onboardedValue = await AsyncStorage.getItem("onboarded");
+      const isOnboarded = onboardedValue === "true";
+      if (cancelled) return;
+
+      if (isOnboarded) {
+        router.replace(hrefFromRedirectTo(getSafeRedirectTarget()));
+      } else {
+        router.replace("/onboarding");
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [redirectTo, looseTab, looseMealPlanId]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -47,12 +85,11 @@ const LoginPage = () => {
         ["onboarded", data.onboarded ? "true" : "false"],
       ]);
 
-      // Determine redirect route: onboarding if user is not onboarded, home if user is onboarded
       const onboarded = data.onboarded;
       if (!onboarded) {
         router.replace("/onboarding");
       } else {
-        router.replace("/home");
+        router.replace(hrefFromRedirectTo(getSafeRedirectTarget()));
       }
     } catch (err: any) {
       Alert.alert("Login failed", err.message);

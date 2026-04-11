@@ -1,5 +1,5 @@
 import admin from "firebase-admin";
-import {normalizeItem, mergeItemIntoList} from "../models/ingredientNormalizationModel.js"
+import {normalizeItem, mergeItemIntoList, normalizeName} from "../models/ingredientNormalizationModel.js"
 import { fetchPriceForTerm } from "./krogerController.js";
 
 const GROCERY_LIST_COLL = "grocery-lists";
@@ -30,7 +30,7 @@ export const getGroceryList = async (req, res) => {
     }
 
     const data = snap.data();
-    return res.json({success: true, groceryList: {...data, items: data.items.map(normalizeItem)}});
+    return res.json({success: true, groceryList: data});
 
   } catch (err) {
     console.error("Error getting grocery list:", err);
@@ -48,67 +48,113 @@ export const getGroceryList = async (req, res) => {
 export const addItemToGroceryList = async (req, res) => {
   const db = admin.firestore();
   const { uid } = req.user;
+  
   try {
     const { name, amount = 1, unit = "each" } = req.body;
+    
     if (!name || typeof name !== "string") {
-      return res.status(400).json({ 
-        error: "Missing or invalid 'name' field" 
+      return res.status(400).json({
+        error: "Missing or invalid 'name' field",
       });
     }
+
     const docRef = db.collection(GROCERY_LIST_COLL).doc(uid);
     const snap = await docRef.get();
+    
     if (!snap.exists) {
       return res.status(404).json({ error: "Grocery list not found" });
     }
+    
     const list = snap.data();
     const items = Array.isArray(list.items) ? list.items : [];
-    // Normalize
-    const normalizedItem = normalizeItem({name, amount, unit});
-    // Price Check
-    const locationId = "70300165"
-    let estimatedCost = null;
-    try {
-      const result = await fetchPriceForTerm(
-        normalizedItem.name,
-        locationId,
-        5,
-        "median",
-        false
-      );
-      const price = result?.cost ?? null;
-      if (price !== null) {
-        estimatedCost = Number((price * normalizedItem.amount).toFixed(2));
+    
+    const normalizedItem = {
+      ...normalizeItem({ name, amount, unit }),
+      ingredient: normalizeName(name),
+    };
+
+    const mergedItems = mergeItemIntoList(items, normalizedItem);
+
+    const updatedItem = mergedItems.find(
+      (i) => i.ingredient === normalizedItem.ingredient
+    );
+
+    const locationId = "70300165"; // temp
+
+    if (updatedItem) {
+      try {
+        const result = await fetchPriceForTerm(
+          updatedItem.ingredient,
+          locationId,
+          5,
+          "cheapest_unit",
+          false,
+          updatedItem.amount,
+          updatedItem.unit
+        );
+
+        const product = result?.product ?? null;
+        const cost = result?.cost ?? null;
+
+        if (cost !== null) {
+          updatedItem.estimatedCost = Number(
+            (cost * updatedItem.amount).toFixed(2)
+          );
+          updatedItem.lastPriceLookup = Date.now();
+        } else {
+          updatedItem.estimatedCost = null;
+        }
+
+        // keep ingredient stable
+        updatedItem.ingredient = updatedItem.ingredient || normalizedItem.ingredient;
+
+        // use product description for the card title
+        updatedItem.name = product?.description ?? updatedItem.name;
+
+        // flat fields for frontend
+        updatedItem.term = result?.term ?? null;
+        updatedItem.productPrice =
+          typeof product?.price === "number" ? product.price : null;
+        updatedItem.productSize = product?.size ?? null;
+        updatedItem.effectiveUnitCost =
+          typeof product?.effectiveUnitCost === "number"
+            ? Number(product.effectiveUnitCost.toFixed(2))
+            : null;
+        updatedItem.productUnit =
+          product?.unit?.unitType ?? null;
+
+      } catch (priceErr) {
+        console.log("Price lookup failed:", priceErr);
+
+        updatedItem.estimatedCost = null;
+        updatedItem.term = null;
+        updatedItem.productPrice = null;
+        updatedItem.productSize = null;
+        updatedItem.effectiveUnitCost = null;
+        updatedItem.productUnit = null;
       }
-      else {price = 1.0}
-    } catch (priceErr) {
-      console.log("Price lookup failed:", priceErr)
     }
-    normalizedItem.estimatedCost = estimatedCost;
-    normalizedItem.lastPriceLookup = Date.now();
-    // Merge into List
-    const updatedItems = mergeItemIntoList(items, normalizedItem);
-    // Total Cost Recalculation
-    const totalCost = updatedItems.reduce((sum, item) => {
-      return sum + (item.estimatedCost ?? 0);
+
+    const totalCost = mergedItems.reduce((sum, item) => {
+      return sum + (item.productPrice ?? 0);
     }, 0);
-    // Firestore
+
     await docRef.update({
-      items: updatedItems,
+      items: mergedItems,
       totalCost: Number(totalCost.toFixed(2)),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     return res.json({
       success: true,
       message: "Item added to grocery list",
-      item: normalizedItem
+      item: updatedItem ?? normalizedItem,
     });
-
   } catch (err) {
     console.error("Error adding grocery item:", err);
     return res.status(500).json({
       error: "Failed to add item",
-      code: "ADD_ITEM_FAILED"
+      code: "ADD_ITEM_FAILED",
     });
   }
 };
@@ -139,7 +185,7 @@ export const removeItemFromGroceryList = async (req, res) => {
 
     const filtered = items.filter(item => item.id !== itemId);
     const totalCost = filtered.reduce((sum, item) => {
-      return sum + (item.estimatedCost ?? 0);
+      return sum + (item.productPrice ?? 0);
     }, 0);
 
     await docRef.update({

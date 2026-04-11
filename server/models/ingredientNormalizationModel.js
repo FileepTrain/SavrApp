@@ -1,13 +1,13 @@
 /**
- * Normalization Helpers
+ * Normalize Units
  */
 const UNIT_MAP = {
-  // ----- COUNT -----
+  // COUNT
   each: "each",
   ea: "each",
   ct: "each",
   count: "each",
-  // ----- MASS -----
+  // MASS
   lb: "lb",
   lbs: "lb",
   pound: "lb",
@@ -28,7 +28,7 @@ const UNIT_MAP = {
   mg: "mg",
   milligram: "mg",
   milligrams: "mg",
-  // ----- VOLUME (US COOKING) -----
+  // VOLUME (US COOKING)
   tsp: "tsp",
   tsps: "tsp",
   teaspoon: "tsp",
@@ -60,7 +60,7 @@ const UNIT_MAP = {
   "fluid ounces": "fl_oz",
   "fluidounce": "fl_oz",
   "fluidounces": "fl_oz",
-  // ----- METRIC VOLUME -----
+  // METRIC VOLUME
   ml: "ml",
   milliliter: "ml",
   milliliters: "ml",
@@ -68,7 +68,7 @@ const UNIT_MAP = {
   l: "l",
   liter: "l",
   liters: "l",
-  // ----- RECIPE COMMON UNITS -----
+  // RECIPE COMMON UNITS
   pinch: "pinch",
   pinches: "pinch",
 
@@ -96,6 +96,61 @@ const UNIT_MAP = {
   package: "package",
   packages: "package",
 
+};
+/**
+ * Normalize Unit Categories (For Conversion)
+ */
+const UNIT_CATEGORIES = {
+  // MASS
+  g: "mass",
+  kg: "mass",
+  oz: "mass",
+  lb: "mass",
+  mg: "mass",
+
+  // VOLUME
+  ml: "volume",
+  l: "volume",
+  tsp: "volume",
+  tbsp: "volume",
+  cup: "volume",
+  pt: "volume",
+  qt: "volume",
+  gal: "volume",
+  fl_oz: "volume",
+
+  // COUNT / NON-CONVERTIBLE
+  each: "count",
+  clove: "count",
+  slice: "count",
+  piece: "count",
+  stick: "count",
+  can: "count",
+  package: "count",
+  bunch: "count",
+
+  pinch: "other",
+  dash: "other",
+};
+
+const MASS_TO_GRAMS = {
+  mg: 0.001,
+  g: 1,
+  kg: 1000,
+  oz: 28.3495,
+  lb: 453.592,
+};
+
+const VOLUME_TO_ML = {
+  ml: 1,
+  l: 1000,
+  tsp: 4.92892,
+  tbsp: 14.7868,
+  cup: 236.588,
+  pt: 473.176,
+  qt: 946.353,
+  gal: 3785.41,
+  fl_oz: 29.5735,
 };
 
 const PUNCTUATION_REGEX = /[.,()]/g;
@@ -158,17 +213,33 @@ export function getIngredientKey(name) {
  * Merge duplicate items in a list
  */
 export function mergeItemIntoList(list, newItem) {
-  const existing = list.find(
-    (item) => item.name === newItem.name && item.unit === newItem.unit
-  );
-
-  if (!existing) {
-    return [...list, newItem];
+  const normalizedNewUnit = normalizeUnit(newItem.unit);
+  for (const item of list) {
+    if (item.ingredient !== newItem.name) continue;
+    const normalizedExistingUnit = normalizeUnit(item.unit);
+    const converted = convertUnit(
+      newItem.amount,
+      normalizedNewUnit,
+      normalizedExistingUnit
+    );
+    if (converted !== null) {
+      item.amount += converted;
+      item.amount = Number(item.amount.toFixed(2));
+      return [...list];
+    }
+    const reverseConverted = convertUnit(
+      item.amount,
+      normalizedExistingUnit,
+      normalizedNewUnit
+    );
+    if (reverseConverted !== null) {
+      item.amount = reverseConverted + newItem.amount;
+      item.unit = normalizedNewUnit;
+      item.amount = Number(item.amount.toFixed(2));
+      return [...list];
+    }
   }
-
-  existing.amount += newItem.amount;
-
-  return [...list];
+  return [...list, newItem];
 }
 
 /**
@@ -185,4 +256,27 @@ export function normalizeItemList(items) {
   }
 
   return result;
+}
+
+/**
+ * Convert # of One Unit to another Unit
+ */
+export function convertUnit(amount, fromUnit, toUnit) {
+  const from = normalizeUnit(fromUnit);
+  const to = normalizeUnit(toUnit);
+  if (from == to) return amount;
+  const fromCategory = UNIT_CATEGORIES[from];
+  const toCategory = UNIT_CATEGORIES[to];
+  if (!fromCategory || fromCategory !== toCategory) return null;
+  // MASS
+  if (fromCategory === "mass") {
+    const grams = amount * MASS_TO_GRAMS[from];
+    return grams / MASS_TO_GRAMS[to];
+  }
+  // VOLUME
+  if (fromCategory === "volume") {
+    const ml = amount * VOLUME_TO_ML[from];
+    return ml / VOLUME_TO_ML[to];
+  }
+  return null;
 }

@@ -5,3 +5,8 @@ export const uploadRecipeImage = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB upload limit
 }).single("image");
+
+export const uploadProfileImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single("image");

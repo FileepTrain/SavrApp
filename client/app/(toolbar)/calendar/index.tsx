@@ -1,7 +1,8 @@
 // app/(toolbar)/calendar/index.tsx
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from "react-native";
-import React, { useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Calendar } from "react-native-calendars";
 import type { DateData } from "react-native-calendars";
@@ -35,11 +36,16 @@ const toLocalDate = (
 
 export default function CalendarPage() {
   const { mealPlans, loading, error, refetch } = useMealPlans();
+  const [calendarOwnerUid, setCalendarOwnerUid] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => dateOnlyFromISO(new Date().toISOString()));
   const [visibleMonth, setVisibleMonth] = useState(() =>
     toLocalDate(new Date().getFullYear(), new Date().getMonth() + 1, 1)
   );
   const theme = useThemePalette();
+
+  useEffect(() => {
+    void AsyncStorage.getItem("uid").then(setCalendarOwnerUid);
+  }, []);
 
   const mealPlansForSelectedDay = useMemo(() => {
     const d = selectedDate;
@@ -332,6 +338,12 @@ export default function CalendarPage() {
                         breakfastId={item.breakfast}
                         lunchId={item.lunch}
                         dinnerId={item.dinner}
+                        onMealPlanDeleted={refetch}
+                        shareTargets={
+                          calendarOwnerUid
+                            ? { profileUserId: calendarOwnerUid, mealPlanId: item.id }
+                            : undefined
+                        }
                       />
                     </View>
                   )}
