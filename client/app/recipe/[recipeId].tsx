@@ -1,7 +1,10 @@
 import { IngredientsList } from "@/components/recipe/ingredients-list";
 import RecipeRating from "@/components/recipe/recipe-rating";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useNetwork } from "@/contexts/network-context";
 import { Ingredient } from "@/types/ingredient";
+import { CACHE_KEYS, CachedRecipeEntry, readCache, recipeDetailKey, writeCache } from "@/utils/offline-cache";
+import { enqueueMutation } from "@/utils/mutation-queue";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -17,12 +20,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Your backend base (Android emulator -> host machine)
 const SERVER_URL = "http://10.0.2.2:3000";
-const FAVORITES_KEY = "FAV_RECIPE_IDS";
 
+// Reads the ID-only favorites list and pushes it to the server.
+// When offline, the caller is responsible for queuing this operation instead.
 async function syncFavorites() {
   const idToken = await AsyncStorage.getItem("idToken");
-  const saved = await AsyncStorage.getItem(FAVORITES_KEY);
-  const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+  const raw = await AsyncStorage.getItem(CACHE_KEYS.FAVORITES_IDS);
+  const favoriteIds: string[] = raw ? JSON.parse(raw) : [];
 
   await fetch(`${SERVER_URL}/api/auth/update-favorites`, {
     method: "PUT",
@@ -73,23 +77,9 @@ type ExternalRecipe = {
   viewCount?: number;
 };
 
-/** Display shape used by the UI (normalized from both personal and external) */
-type DisplayRecipe = {
-  title: string;
-  image?: string | null;
-  readyInMinutes?: number;
-  prepTime?: number;
-  cookTime?: number;
-  servings?: number;
-  summary?: string;
-  instructions?: string;
-  equipment?: EquipmentItem[];
-  calories?: number;
-  rating?: number;
-  reviewsLength?: number;
-  viewCount?: number;
-  price?: number;
-};
+/** Display shape used by the UI (normalized from both personal and external).
+ *  Must remain structurally compatible with CachedRecipeEntry["recipe"]. */
+type DisplayRecipe = CachedRecipeEntry["recipe"] & { equipment?: EquipmentItem[] };
 
 type SimilarRecipe = {
   id: string;
@@ -120,6 +110,7 @@ function isPersonalRecipeId(id: string): boolean {
 export default function RecipeDetailsPage() {
   const router = useRouter();
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
+  const { isOnline } = useNetwork();
 
   const insets = useSafeAreaInsets();
 
@@ -129,6 +120,7 @@ export default function RecipeDetailsPage() {
   }, [recipeId]);
 
   const [loading, setLoading] = useState(true);
+  const [notCached, setNotCached] = useState(false);
   const [recipe, setRecipe] = useState<DisplayRecipe | null>(null);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [isIngredientsOpen, setIsIngredientsOpen] = useState(true);
@@ -142,15 +134,23 @@ export default function RecipeDetailsPage() {
     const next = !isFavorited;
     setIsFavorited(next);
 
-    const saved = await AsyncStorage.getItem(FAVORITES_KEY);
-    const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+    // FAVORITES_IDS holds only the plain string IDs; this is the source of truth
+    // for which recipes are favorited and what gets synced to Firebase.
+    const raw = await AsyncStorage.getItem(CACHE_KEYS.FAVORITES_IDS);
+    const favoriteIds: string[] = raw ? JSON.parse(raw) : [];
 
     const updated = next
       ? [...new Set([...favoriteIds, id])]
       : favoriteIds.filter((fav) => fav !== id);
 
-    await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
-    await syncFavorites();
+    await AsyncStorage.setItem(CACHE_KEYS.FAVORITES_IDS, JSON.stringify(updated));
+
+    if (isOnline) {
+      await syncFavorites();
+    } else {
+      // Enqueue the sync so it runs when connectivity is restored.
+      await enqueueMutation({ type: "SYNC_FAVORITES", payload: { favoriteIds: updated } });
+    }
   };
 
   /* SIMILAR RECIPES FETCH */
@@ -192,11 +192,27 @@ export default function RecipeDetailsPage() {
     const fetchRecipe = async () => {
       if (!id) return;
       setLoading(true);
+      setNotCached(false);
 
       try {
-        const saved = await AsyncStorage.getItem(FAVORITES_KEY);
-        const favoriteIds: string[] = saved ? JSON.parse(saved) : [];
+        const raw = await AsyncStorage.getItem(CACHE_KEYS.FAVORITES_IDS);
+        const favoriteIds: string[] = raw ? JSON.parse(raw) : [];
         setIsFavorited(favoriteIds.includes(id));
+
+        if (!isOnline) {
+          // Attempt to serve the recipe from the per-recipe cache.
+          const cached = await readCache<CachedRecipeEntry>(recipeDetailKey(id));
+          if (cached) {
+            setRecipe(cached.recipe);
+            // Guard against a malformed cache entry that is missing the ingredients array.
+            setIngredients((cached.ingredients ?? []) as Ingredient[]);
+          } else {
+            // Recipe was never viewed while online; nothing to show.
+            setNotCached(true);
+          }
+          setLoading(false);
+          return;
+        }
 
         if (isPersonalRecipeId(id)) {
           const idToken = await AsyncStorage.getItem("idToken");
@@ -216,7 +232,7 @@ export default function RecipeDetailsPage() {
           const totalStars = typeof r.totalStars === "number" ? r.totalStars : (Array.isArray(r.reviews) ? r.reviews.reduce((s: number, rev: { rating?: number }) => s + (rev?.rating ?? 0), 0) : 0);
           const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
 
-          setRecipe({
+          const displayRecipe: DisplayRecipe = {
             title: r.title,
             summary: r.summary,
             image: r.image,
@@ -238,19 +254,26 @@ export default function RecipeDetailsPage() {
             reviewsLength: reviewCount,
             viewCount: typeof r.viewCount === "number" ? r.viewCount : 0,
             price: r.price,
-          });
+          };
 
           const ext = Array.isArray(r?.extendedIngredients)
             ? r.extendedIngredients
             : [];
 
-          setIngredients(
-            ext.map((ing: any) => ({
-              name: ing.name,
-              quantity: Number(ing.amount ?? 0),
-              unit: ing.unit ?? "",
-            }))
-          );
+          const mappedIngredients: Ingredient[] = ext.map((ing: any) => ({
+            name: ing.name,
+            quantity: Number(ing.amount ?? 0),
+            unit: ing.unit ?? "",
+          }));
+
+          setRecipe(displayRecipe);
+          setIngredients(mappedIngredients);
+
+          // Cache so this recipe is available when the user is next offline.
+          await writeCache<CachedRecipeEntry>(recipeDetailKey(id), {
+            recipe: displayRecipe,
+            ingredients: mappedIngredients,
+          });
 
           await fetchSimilarRecipes(id);
         }
@@ -269,7 +292,7 @@ export default function RecipeDetailsPage() {
           const data = await response.json();
           const r = data.recipe;
 
-          setRecipe({
+          const displayRecipe: DisplayRecipe = {
             title: r.title,
             summary: r.summary,
             image: r.image,
@@ -281,23 +304,29 @@ export default function RecipeDetailsPage() {
             rating: r.rating ?? 0,
             reviewsLength: r.reviews?.length ?? 0,
             price: r.price,
-          });
+          };
 
           const ext = Array.isArray(r?.extendedIngredients)
             ? r.extendedIngredients
             : [];
 
-          setIngredients(
-            ext.map((ing: any) => ({
-              name: ing.name,
-              quantity: Number(ing.amount ?? 0),
-              unit: ing.unit ?? "",
-            }))
-          );
+          const mappedIngredients: Ingredient[] = ext.map((ing: any) => ({
+            name: ing.name,
+            quantity: Number(ing.amount ?? 0),
+            unit: ing.unit ?? "",
+          }));
+
+          setRecipe(displayRecipe);
+          setIngredients(mappedIngredients);
+
+          await writeCache<CachedRecipeEntry>(recipeDetailKey(id), {
+            recipe: displayRecipe,
+            ingredients: mappedIngredients,
+          });
 
           await fetchSimilarRecipes(id);
 
-        // External recipe: include nutrition so we can show calories on this page
+          // External recipe: include nutrition so we can show calories on this page
         } else {
           const response = await fetch(
             `${SERVER_URL}/api/external-recipes/${id}/details?includeNutrition=true`,
@@ -323,7 +352,7 @@ export default function RecipeDetailsPage() {
           const totalStars = typeof r.totalStars === "number" ? r.totalStars : 0;
           const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
 
-          setRecipe({
+          const displayRecipe: DisplayRecipe = {
             title: r.title,
             image: r.image,
             readyInMinutes: r.readyInMinutes,
@@ -336,15 +365,21 @@ export default function RecipeDetailsPage() {
             reviewsLength: reviewCount,
             viewCount: typeof r.viewCount === "number" ? r.viewCount : 0,
             price: r.price ?? undefined,
-          });
+          };
 
-          setIngredients(
-            (r.extendedIngredients ?? []).map((ing) => ({
-              name: ing.name,
-              amount: Number((ing.amount ?? 1).toFixed(2)),
-              unit: ing.unit ?? "serving",
-            })),
-          );
+          const mappedIngredients: Ingredient[] = (r.extendedIngredients ?? []).map((ing) => ({
+            name: ing.name,
+            amount: Number((ing.amount ?? 1).toFixed(2)),
+            unit: ing.unit ?? "serving",
+          }));
+
+          setRecipe(displayRecipe);
+          setIngredients(mappedIngredients);
+
+          await writeCache<CachedRecipeEntry>(recipeDetailKey(id), {
+            recipe: displayRecipe,
+            ingredients: mappedIngredients,
+          });
 
           await fetchSimilarRecipes(id);
         }
@@ -356,12 +391,33 @@ export default function RecipeDetailsPage() {
     };
 
     fetchRecipe();
-  }, [id, router]);
+  }, [id]);
 
   if (loading) {
     return (
       <View className="flex-1 bg-app-background items-center justify-center">
         <ActivityIndicator size="large" color="red" />
+      </View>
+    );
+  }
+
+  // The recipe has never been viewed while online and cannot be served from cache.
+  if (notCached) {
+    return (
+      <View className="flex-1 bg-app-background items-center justify-center px-8 gap-4">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+        >
+          <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
+        </TouchableOpacity>
+        <IconSymbol name="wifi-off" size={48} color="--color-muted-foreground" />
+        <Text className="text-foreground text-center text-lg font-semibold">
+          Recipe not available offline
+        </Text>
+        <Text className="text-muted-foreground text-center">
+          Open this recipe while connected to the internet to make it available offline.
+        </Text>
       </View>
     );
   }
@@ -614,7 +670,12 @@ export default function RecipeDetailsPage() {
                   Similar Recipes
                 </Text>
 
-                {similarLoading ? (
+                {/* Similar recipes require a live API call; hide the section when offline */}
+                {!isOnline ? (
+                  <Text className="text-muted-foreground">
+                    Similar recipes are not available offline.
+                  </Text>
+                ) : similarLoading ? (
                   <View className="py-4 items-center justify-center">
                     <ActivityIndicator size="small" color="red" />
                   </View>

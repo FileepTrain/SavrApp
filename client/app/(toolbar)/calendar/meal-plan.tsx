@@ -3,12 +3,12 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import type { Recipe } from "@/contexts/meal-plan-selection-context";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { useMealPlans } from "@/contexts/meal-plans-context";
+import { useNetwork } from "@/contexts/network-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
 import Button from "@/components/ui/button";
 import { SwipeableRecipeCardRemovable } from "@/components/swipeable-recipe-card";
@@ -47,7 +47,9 @@ export default function MealPlanPage() {
   const [count, setCount] = useState<Record<string, number>>({});
 
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
-  const { refetch: refetchMealPlans } = useMealPlans();
+  const { createMealPlan } = useMealPlans();
+  const { isOnline } = useNetwork();
+
 
   const increment = (id: string) => {
     setCount((prev) => ({
@@ -63,39 +65,29 @@ export default function MealPlanPage() {
   };
 
   const handleSave = useCallback(async () => {
-    const idToken = await AsyncStorage.getItem("idToken");
-    if (!idToken) {
-      Alert.alert("Not signed in", "Sign in to save your meal plan.");
-      return;
-    }
     setSaving(true);
     try {
-      const res = await fetch(`${SERVER_URL}/api/meal-plans`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          breakfast: breakfastRecipe.map(r => r.id),
-          lunch: lunchRecipe?.map(r => r.id),
-          dinner: dinnerRecipe?.map(r => r.id),
-          start_date: start_date.toISOString(),
-          end_date: end_date.toISOString(),
-        }),
+      await createMealPlan({
+        breakfast: breakfastRecipe.map((r) => r.id),
+        lunch: lunchRecipe.map((r) => r.id),
+        dinner: dinnerRecipe.map((r) => r.id),
+        start_date: start_date.toISOString(),
+        end_date: end_date.toISOString(),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to save meal plan");
-      }
-      Alert.alert("Saved", "Your meal plan has been saved.");
-      await refetchMealPlans();
+
+      // Context handles both the online POST and the offline queue internally.
+      Alert.alert(
+        "Saved",
+        isOnline
+          ? "Your meal plan has been saved."
+          : "You are offline. Your meal plan will sync when you reconnect."
+      );
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to save meal plan.");
     } finally {
       setSaving(false);
     }
-  }, [start_date, end_date, breakfastRecipe, lunchRecipe, dinnerRecipe]);
+  }, [start_date, end_date, breakfastRecipe, lunchRecipe, dinnerRecipe, createMealPlan, isOnline]);
 
   useFocusEffect(
     useCallback(() => {
@@ -274,8 +266,8 @@ export default function MealPlanPage() {
         </Button>
 
       </View>
-    )
-  }
+    );
+  };
 
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-safe-or-20">
@@ -285,15 +277,20 @@ export default function MealPlanPage() {
         showsVerticalScrollIndicator={false}
       >
         <View className="flex-row gap-2">
-          {/*auto meal plan button*/}
-          <Pressable className="flex-1 h-12 bg-white rounded-lg shadow-sm items-center justify-center"
-            onPress={handleAutoMealPlan}
-            disabled={autoGenerating}
+          {/* Auto Meal Plan is disabled when offline because it requires an external API */}
+          <Pressable
+            className={`flex-1 h-12 rounded-lg shadow-sm items-center justify-center ${
+              isOnline ? "bg-white" : "bg-gray-200 opacity-50"
+            }`}
+            onPress={isOnline ? handleAutoMealPlan : undefined}
+            disabled={autoGenerating || !isOnline}
           >
-            <Text>{autoGenerating ? "Generating..." : "Auto Meal Plan"}</Text>
+            <Text className={isOnline ? "" : "text-gray-400"}>
+              {autoGenerating ? "Generating..." : "Auto Meal Plan"}
+            </Text>
           </Pressable>
 
-          {/* meal plan settings — opens calorie range modal */}
+          {/* meal plan settings -- opens calorie range modal */}
           <Pressable
             className="h-12 w-12 bg-white rounded-lg shadow-sm items-center justify-center"
             onPress={() => setSettingsModalVisible(true)}
@@ -341,11 +338,13 @@ export default function MealPlanPage() {
         </View>
 
         <View className="py-3">
+          {/* Nutrient preview requires live API calls; it is hidden when offline */}
           <Button
             variant="outline"
             icon={{ name: "invoice-list-outline", position: "left", size: 18 }}
-            className="rounded-xl border-2 border-[#666]"
+            className={`rounded-xl border-2 border-[#666] ${!isOnline ? "opacity-40" : ""}`}
             textClassName="font-semibold text-foreground"
+            disabled={!isOnline}
             onPress={() => {
               router.push({
                 pathname: "/calendar/meal-plan-nutrient-preview",
@@ -378,7 +377,6 @@ export default function MealPlanPage() {
             textClassName="text-xl font-bold text-white"
             onPress={() => {
               handleSave();
-              //router.back()
             }}
             disabled={saving}
           >
@@ -386,7 +384,7 @@ export default function MealPlanPage() {
           </Button>
         </View>
 
-        {/* recipe select modal pop up */}
+        {/* Recipe select modal: when offline, shows cached personal + favorited recipes only */}
         <Modal
           transparent
           visible={visible}
@@ -401,11 +399,13 @@ export default function MealPlanPage() {
             {/* Stop press propagation */}
             <Pressable className="w-80 bg-background rounded-2xl p-6 gap-4">
               <Text className="text-lg font-bold text-center text-foreground">Choose Recipe</Text>
+
+              {/* From Favorites is available both online and offline (favorites page
+                  handles offline reading via its own cache). */}
               <Button
                 variant="outline"
                 onPress={() => {
                   setVisible(false);
-                  //console.log("Favorites selected");
                   router.push({
                     pathname: "/account/favorites",
                     params: { mode: "select" },
@@ -416,26 +416,27 @@ export default function MealPlanPage() {
                 From Favorites
               </Button>
 
-              <Button
-                variant="outline"
-                onPress={() => {
-                  setVisible(false);
-                  //console.log("Search selected");
-                  router.push({
-                    pathname: "/home/search",
-                    params: { mode: "select" },
-                  })
-                }}
-                icon={{ name: "magnify", position: "left" }}
-              >
-                Search Recipes
-              </Button>
-
+              {/* Search requires a live network call; hide it when offline. */}
+              {isOnline && (
+                <Button
+                  variant="outline"
+                  onPress={() => {
+                    setVisible(false);
+                    router.push({
+                      pathname: "/home/search",
+                      params: { mode: "select" },
+                    });
+                  }}
+                  icon={{ name: "magnify", position: "left" }}
+                >
+                  Search Recipes
+                </Button>
+              )}
             </Pressable>
           </Pressable>
         </Modal>
 
-        {/* meal plan settings — target calories per meal for auto generator */}
+        {/* meal plan settings -- target calories per meal for auto generator */}
         <Modal
           transparent
           visible={settingsModalVisible}

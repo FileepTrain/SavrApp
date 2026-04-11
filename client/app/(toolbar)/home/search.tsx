@@ -2,6 +2,7 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { useHomeFilter, DEFAULT_FILTERS } from "@/contexts/home-filter-context";
+import { useNetwork } from "@/contexts/network-context";
 import { loadUserCookware } from "@/utils/cookware";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -81,6 +82,7 @@ export default function HomeSearchScreen() {
   const {mode} = useLocalSearchParams<{mode?: string}>();
   const {setPendingSelectedRecipe} = useMealPlanSelection();
   const isSelectionMode = mode === "select";
+  const { isOnline } = useNetwork();
   //console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
 
   const handleSelectRecipe = (recipe: { id: string; [key: string]: unknown }) => {
@@ -382,6 +384,42 @@ export default function HomeSearchScreen() {
       </View>
     );
   };
+
+  // Search requires live API access; show a clear offline state instead of a broken experience.
+  if (!isOnline) {
+    return (
+      <ThemedSafeView className="flex-1 pt-safe-or-20">
+        <View className="px-6 pb-2">
+          <View className="flex-row justify-center items-center gap-2 mb-3">
+            <Button
+              variant="outline"
+              icon={{ name: "filter-outline", color: "--color-icon" }}
+              className="w-14 h-14 rounded-full opacity-40"
+              disabled
+              onPress={() => {}}
+            />
+            <Input
+              className="flex-1 opacity-40"
+              placeholder="Search unavailable offline"
+              iconName="magnify"
+              inputClassName="h-14"
+              editable={false}
+              value=""
+              onChangeText={() => {}}
+            />
+          </View>
+        </View>
+        <View className="flex-1 items-center justify-center px-8 gap-3">
+          <Text className="text-foreground text-center text-lg font-semibold">
+            Search is unavailable offline
+          </Text>
+          <Text className="text-muted-foreground text-center">
+            Connect to the internet to search for recipes.
+          </Text>
+        </View>
+      </ThemedSafeView>
+    );
+  }
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">

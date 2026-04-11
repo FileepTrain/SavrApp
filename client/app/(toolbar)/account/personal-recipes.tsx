@@ -1,14 +1,16 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { ActivityIndicator, FlatList, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Text, View } from "react-native";
 
 import { SwipeableRecipeCard } from "@/components/swipeable-recipe-card";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
+import { useNetwork } from "@/contexts/network-context";
 import { usePersonalRecipes } from "@/contexts/personal-recipes-context";
 
 export default function PersonalRecipesPage() {
   const { recipes: personalRecipes, loading, error, refetch } = usePersonalRecipes();
+  const { isOnline } = useNetwork();
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = async () => {
@@ -34,7 +36,13 @@ export default function PersonalRecipesPage() {
           }}
           className="h-24"
           textClassName="text-xl font-bold text-red-primary"
-          onPress={() => router.push("/account/create-recipe")}
+          onPress={() => {
+            if (!isOnline) {
+              Alert.alert("Offline", "Creating new recipes requires an internet connection.");
+              return;
+            }
+            router.push("/account/create-recipe");
+          }}
         >
           Create New Recipe
         </Button>

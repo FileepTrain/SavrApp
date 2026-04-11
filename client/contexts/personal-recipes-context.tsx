@@ -1,7 +1,10 @@
 "use client";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { CACHE_KEYS, CachedRecipeEntry, readCache, recipeDetailKey, writeCache } from "@/utils/offline-cache";
+import { enqueueMutation } from "@/utils/mutation-queue";
+import { useNetwork } from "@/contexts/network-context";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 
@@ -69,7 +72,8 @@ interface PersonalRecipesContextValue extends PersonalRecipesState {
 
 const PersonalRecipesContext = createContext<PersonalRecipesContextValue | null>(null);
 
-/** Fetch personal recipes */
+// Fetches personal recipes from the server, caches the list, and also caches each
+// recipe's detail page entry so it is available offline without a prior individual visit.
 async function fetchPersonalRecipes(): Promise<PersonalRecipeItem[]> {
   const idToken = await AsyncStorage.getItem("idToken");
   if (!idToken) return [];
@@ -85,7 +89,65 @@ async function fetchPersonalRecipes(): Promise<PersonalRecipeItem[]> {
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || "Failed to fetch recipes");
 
-  return Array.isArray(data?.recipes) ? data.recipes : [];
+  const list: PersonalRecipeItem[] = Array.isArray(data?.recipes) ? data.recipes : [];
+
+  // Persist the full list for the list screen.
+  await writeCache(CACHE_KEYS.PERSONAL_RECIPES, list);
+
+  // Cache each recipe individually so the detail page works offline.
+  // The list endpoint already returns complete recipe data, so no extra requests are needed.
+  await Promise.allSettled(list.map((recipe) => cachePersonalRecipeDetail(recipe)));
+
+  return list;
+}
+
+// Builds a CachedRecipeEntry from a PersonalRecipeItem and writes it to the detail cache.
+async function cachePersonalRecipeDetail(recipe: PersonalRecipeItem): Promise<void> {
+  try {
+    const reviewCount = typeof (recipe as any).reviewCount === "number"
+      ? (recipe as any).reviewCount
+      : (Array.isArray(recipe.reviews) ? recipe.reviews.length : 0);
+    const totalStars = typeof (recipe as any).totalStars === "number"
+      ? (recipe as any).totalStars
+      : (Array.isArray(recipe.reviews)
+        ? (recipe.reviews as any[]).reduce((s: number, rev: any) => s + (rev?.rating ?? 0), 0)
+        : 0);
+    const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+
+    const nutritionNutrients = (recipe as any)?.nutrition?.nutrients;
+    const calories = Array.isArray(nutritionNutrients)
+      ? Math.round(Number(nutritionNutrients.find((n: any) => n?.name === "Calories")?.amount ?? 0)) || undefined
+      : recipe.calories;
+
+    const entry: CachedRecipeEntry = {
+      recipe: {
+        title: recipe.title,
+        image: recipe.image,
+        prepTime: recipe.prepTime,
+        cookTime: recipe.cookTime,
+        readyInMinutes: (recipe.prepTime ?? 0) + (recipe.cookTime ?? 0),
+        servings: recipe.servings,
+        summary: recipe.summary,
+        instructions: recipe.instructions,
+        calories,
+        rating: avgRating,
+        reviewsLength: reviewCount,
+        viewCount: typeof (recipe as any).viewCount === "number" ? (recipe as any).viewCount : 0,
+        price: (recipe as any).price,
+      },
+      ingredients: Array.isArray(recipe.extendedIngredients)
+        ? recipe.extendedIngredients.map((ing) => ({
+          name: ing.name,
+          quantity: Number(ing.amount ?? 0),
+          unit: ing.unit ?? "",
+        }))
+        : [],
+    };
+
+    await writeCache(recipeDetailKey(recipe.id), entry);
+  } catch {
+    // Non-fatal; if caching a single recipe fails the rest are unaffected.
+  }
 }
 
 /** HELPER: append image to FormData */
@@ -110,27 +172,50 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { isOnline, registerReconnectCallback, unregisterReconnectCallback } = useNetwork();
+
+  // Ref keeps isOnline current inside stable useCallback closures, avoiding stale
+  // closure captures that occur when callbacks are registered before a state update commits.
+  const isOnlineRef = useRef(isOnline);
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
+
+  // Stable refetch: no dependency on isOnline state. Reads the ref at call time so
+  // reconnect callbacks always see the correct (post-commit) online status.
   const refetch = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchPersonalRecipes();
-      setRecipes(list);
+      if (isOnlineRef.current) {
+        const list = await fetchPersonalRecipes();
+        setRecipes(list);
+      } else {
+        // Serve cached data while offline; avoid a failed network request.
+        const cached = await readCache<PersonalRecipeItem[]>(CACHE_KEYS.PERSONAL_RECIPES);
+        setRecipes(cached ?? []);
+        if (!cached) setError("No cached recipes available offline.");
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to fetch recipes");
-      setRecipes([]);
+      // Fall back to cache if the server request fails (e.g. flaky connection).
+      const cached = await readCache<PersonalRecipeItem[]>(CACHE_KEYS.PERSONAL_RECIPES);
+      if (cached) {
+        setRecipes(cached);
+      } else {
+        setError(e instanceof Error ? e.message : "Failed to fetch recipes");
+        setRecipes([]);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, []); // Stable -- reads isOnline via ref, not closure
 
-  /** Create recipe in database */
+  /** Create recipe in database - requires an internet connection */
   const createRecipe = useCallback(
     async (data: RecipePayload, imageUri?: string | null) => {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) throw new Error("Session expired");
 
-      // Fail early if payload wrong
       if (!Array.isArray(data.extendedIngredients) || data.extendedIngredients.length === 0) {
         throw new Error("At least one ingredient is required (extendedIngredients).");
       }
@@ -167,7 +252,7 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
     [refetch]
   );
 
-  /** Update recipe in database */
+  /** Update recipe in database - requires an internet connection */
   const updateRecipe = useCallback(
     async (recipeId: string, data: RecipePayload, imageOptions?: UpdateRecipeImageOptions) => {
       const idToken = await AsyncStorage.getItem("idToken");
@@ -210,9 +295,18 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
     [refetch]
   );
 
-  /** Delete recipe from database */
+  // Deletes a recipe. When offline the deletion is queued and the local state is updated
+  // optimistically so the UI reflects the change immediately.
   const deleteRecipe = useCallback(
     async (id: string) => {
+      if (!isOnlineRef.current) {
+        await enqueueMutation({ type: "DELETE_PERSONAL_RECIPE", payload: { id } });
+        const updated = recipes.filter((r) => r.id !== id);
+        setRecipes(updated);
+        await writeCache(CACHE_KEYS.PERSONAL_RECIPES, updated);
+        return;
+      }
+
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) throw new Error("Session expired");
 
@@ -227,12 +321,18 @@ export function PersonalRecipesProvider({ children }: { children: React.ReactNod
       if (!res.ok) throw new Error("Failed to delete recipe");
       await refetch();
     },
-    [refetch]
+    [recipes, refetch] // isOnline read via ref; no dep needed
   );
 
   useEffect(() => {
     refetch();
-  }, [refetch]);
+  }, []);
+
+  // Refresh from server when connectivity is restored.
+  useEffect(() => {
+    registerReconnectCallback("personalRecipes", refetch);
+    return () => unregisterReconnectCallback("personalRecipes");
+  }, [refetch, registerReconnectCallback, unregisterReconnectCallback]);
 
   const value: PersonalRecipesContextValue = {
     recipes,

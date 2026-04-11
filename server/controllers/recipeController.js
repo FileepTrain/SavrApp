@@ -155,7 +155,11 @@ async function _computeAndStoreNutritionForDoc(docRef, recipe) {
     instructions: recipe.instructions || "",
   };
 
-  console.log("[Spoonacular] POST /recipes/analyze", { title: body.title, servings: body.servings, ingredientsCount: ingredientLines.length });
+  console.log("[Spoonacular] POST /recipes/analyze", {
+    title: body.title,
+    servings: body.servings,
+    ingredientsCount: ingredientLines.length,
+  });
 
   const resp = await axios.post(`${SPOON_BASE}/recipes/analyze`, body, {
     params: { includeNutrition: true },
@@ -241,7 +245,9 @@ export const createRecipe = async (req, res) => {
       })),
 
       instructions: recipeData.instructions,
-      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
+      equipment: Array.isArray(recipeData.equipment)
+        ? recipeData.equipment
+        : [],
 
       nutrition: null,
       calories: null,
@@ -411,17 +417,36 @@ export const getAllRecipes = async (filters = {}) => {
   // Limit the number of recipes to fetch between 1 and 200
   const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 200);
   const q = typeof filters.q === "string" ? filters.q.trim().toLowerCase() : "";
-  const offset = Number.isFinite(Number(filters.offset)) ? Number(filters.offset) : 0;
-  const cookwareExclude = Array.isArray(filters.cookware) ? filters.cookware : [];
+  const offset = Number.isFinite(Number(filters.offset))
+    ? Number(filters.offset)
+    : 0;
+  const cookwareExclude = Array.isArray(filters.cookware)
+    ? filters.cookware
+    : [];
   const useMyCookwareOnly = Boolean(filters.useMyCookwareOnly);
-  const userCookware = Array.isArray(filters.userCookware) ? filters.userCookware : [];
-  const userCookwareLower = new Set(userCookware.map((c) => String(c).toLowerCase().trim()).filter(Boolean));
+  const userCookware = Array.isArray(filters.userCookware)
+    ? filters.userCookware
+    : [];
+  const userCookwareLower = new Set(
+    userCookware.map((c) => String(c).toLowerCase().trim()).filter(Boolean),
+  );
   // When My cookware is on, only apply exclude for cookware the user HAS (so adding "bowl" when user doesn't have bowl does nothing extra)
-  const effectiveExclude = useMyCookwareOnly && userCookwareLower.size > 0
-    ? cookwareExclude.filter((c) => userCookwareLower.has(String(c).toLowerCase().trim()))
-    : cookwareExclude;
+  const effectiveExclude =
+    useMyCookwareOnly && userCookwareLower.size > 0
+      ? cookwareExclude.filter((c) =>
+          userCookwareLower.has(String(c).toLowerCase().trim()),
+        )
+      : cookwareExclude;
 
-  console.log("[getAllRecipes] filters:", { budgetMin, budgetMax, limit, q, offset, cookwareExclude: cookwareExclude.length, useMyCookwareOnly });
+  console.log("[getAllRecipes] filters:", {
+    budgetMin,
+    budgetMax,
+    limit,
+    q,
+    offset,
+    cookwareExclude: cookwareExclude.length,
+    useMyCookwareOnly,
+  });
 
   const fetchLimit = 200;
   // Don't orderBy viewCount - Firestore excludes docs that don't have that field, which can return 0 results
@@ -446,13 +471,19 @@ export const getAllRecipes = async (filters = {}) => {
       const matches = tokens.every((token) => text.includes(token));
       if (!matches) return false;
     }
-    const equipmentRaw = Array.isArray(r.equipment) ? r.equipment : Array.isArray(r.cookware) ? r.cookware : [];
+    const equipmentRaw = Array.isArray(r.equipment)
+      ? r.equipment
+      : Array.isArray(r.cookware)
+        ? r.cookware
+        : [];
     const equipmentLower = equipmentRaw
       .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
       .filter(Boolean)
       .map((s) => String(s).toLowerCase().trim());
     if (effectiveExclude.length > 0) {
-      const excludeLower = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+      const excludeLower = new Set(
+        effectiveExclude.map((c) => String(c).toLowerCase().trim()),
+      );
       if (equipmentLower.some((e) => excludeLower.has(e))) return false;
     }
     if (useMyCookwareOnly && userCookwareLower.size > 0) {
@@ -462,10 +493,19 @@ export const getAllRecipes = async (filters = {}) => {
   });
 
   // Sort by viewCount desc (treat missing as 0) so "most viewed first" is preserved
-  filtered.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+  filtered.sort(
+    (a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0),
+  );
 
   const sliced = filtered.slice(offset, offset + limit);
-  console.log("[getAllRecipes] docs from DB:", docs.length, "| after filter:", filtered.length, "| returned (slice):", sliced.length);
+  console.log(
+    "[getAllRecipes] docs from DB:",
+    docs.length,
+    "| after filter:",
+    filtered.length,
+    "| returned (slice):",
+    sliced.length,
+  );
 
   // Return a set number of recipes containing all of its information
   return sliced;
@@ -631,7 +671,9 @@ export const updateRecipe = async (req, res) => {
       extendedIngredients,
 
       instructions: recipeData.instructions,
-      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
+      equipment: Array.isArray(recipeData.equipment)
+        ? recipeData.equipment
+        : [],
 
       nutrition: ingredientsWereProvided ? null : (existing.nutrition ?? null),
       calories: ingredientsWereProvided ? null : (existing.calories ?? null),

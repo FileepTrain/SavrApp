@@ -6,7 +6,7 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "node --env-file=.env --watch app.js",
+    "dev": "nodemon app.js",
     "start": "node app.js"
   },
   "author": "",
@@ -19,5 +19,8 @@
     "firebase-admin": "^12.7.0",
     "multer": "^2.0.2",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
