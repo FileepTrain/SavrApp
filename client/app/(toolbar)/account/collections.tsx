@@ -1,9 +1,12 @@
 import { CollectionTile } from "@/components/collection/collection-tile";
 import { ThemedSafeView } from "@/components/themed-safe-view";
+import { useNetwork } from "@/contexts/network-context";
 import { useCollectionCoverImages } from "@/hooks/use-collection-cover-images";
+import { CACHE_KEYS, clearCache, collectionDetailKey, readCache, writeCache } from "@/utils/offline-cache";
+import { enqueueMutation } from "@/utils/mutation-queue";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +20,11 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+
+function newClientCollectionId(): string {
+  return `local_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 const GAP = 16;
 /** Must match `ThemedSafeView` horizontal padding (`px-6` → 24). */
 const SAFE_H_INSET = 24;
@@ -31,10 +38,23 @@ type CollectionRow = {
   ownerUsername?: string;
 };
 
+function normalizeMineCollectionCache(rows: CollectionRow[]): CollectionRow[] {
+  return rows.map((c) => {
+    const recipeIds = Array.isArray(c.recipeIds) ? c.recipeIds : [];
+    return {
+      ...c,
+      recipeIds,
+      recipeCount:
+        typeof c.recipeCount === "number" ? c.recipeCount : recipeIds.length,
+    };
+  });
+}
+
 type TabId = "mine" | "followed";
 
 export default function CollectionsPage() {
   const router = useRouter();
+  const { isOnline, registerReconnectCallback, unregisterReconnectCallback } = useNetwork();
   const { width: winW } = useWindowDimensions();
   const tileWidth = useMemo(
     () => Math.max(0, Math.floor((winW - SAFE_H_INSET * 2 - GAP) / 2)),
@@ -71,16 +91,29 @@ export default function CollectionsPage() {
       setCollections([]);
       return;
     }
-    const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
-    if (!res.ok) {
-      setCollections([]);
+    if (!isOnline) {
+      const cached = await readCache<CollectionRow[]>(CACHE_KEYS.COLLECTIONS_MINE);
+      setCollections(Array.isArray(cached) ? normalizeMineCollectionCache(cached) : []);
       return;
     }
-    const data = await res.json();
-    setCollections(Array.isArray(data.collections) ? data.collections : []);
-  }, []);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) {
+        const cached = await readCache<CollectionRow[]>(CACHE_KEYS.COLLECTIONS_MINE);
+        setCollections(Array.isArray(cached) ? normalizeMineCollectionCache(cached) : []);
+        return;
+      }
+      const data = await res.json();
+      const list = Array.isArray(data.collections) ? data.collections : [];
+      setCollections(list);
+      await writeCache(CACHE_KEYS.COLLECTIONS_MINE, list);
+    } catch {
+      const cached = await readCache<CollectionRow[]>(CACHE_KEYS.COLLECTIONS_MINE);
+      setCollections(Array.isArray(cached) ? normalizeMineCollectionCache(cached) : []);
+    }
+  }, [isOnline]);
 
   const fetchFollowed = useCallback(async () => {
     const idToken = await AsyncStorage.getItem("idToken");
@@ -88,16 +121,29 @@ export default function CollectionsPage() {
       setFollowed([]);
       return;
     }
-    const res = await fetch(`${SERVER_URL}/api/auth/followed-collections`, {
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
-    if (!res.ok) {
-      setFollowed([]);
+    if (!isOnline) {
+      const cached = await readCache<CollectionRow[]>(CACHE_KEYS.COLLECTIONS_FOLLOWED);
+      setFollowed(Array.isArray(cached) ? cached : []);
       return;
     }
-    const data = await res.json();
-    setFollowed(Array.isArray(data.collections) ? data.collections : []);
-  }, []);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/auth/followed-collections`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) {
+        const cached = await readCache<CollectionRow[]>(CACHE_KEYS.COLLECTIONS_FOLLOWED);
+        setFollowed(Array.isArray(cached) ? cached : []);
+        return;
+      }
+      const data = await res.json();
+      const list = Array.isArray(data.collections) ? data.collections : [];
+      setFollowed(list);
+      await writeCache(CACHE_KEYS.COLLECTIONS_FOLLOWED, list);
+    } catch {
+      const cached = await readCache<CollectionRow[]>(CACHE_KEYS.COLLECTIONS_FOLLOWED);
+      setFollowed(Array.isArray(cached) ? cached : []);
+    }
+  }, [isOnline]);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -117,6 +163,11 @@ export default function CollectionsPage() {
     }, [fetchAll]),
   );
 
+  useEffect(() => {
+    registerReconnectCallback("collections", fetchAll);
+    return () => unregisterReconnectCallback("collections");
+  }, [fetchAll, registerReconnectCallback, unregisterReconnectCallback]);
+
   const handleCreate = async () => {
     const name = newName.trim();
     if (!name) {
@@ -127,6 +178,31 @@ export default function CollectionsPage() {
       setCreating(true);
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
+      if (!isOnline) {
+        const clientCollectionId = newClientCollectionId();
+        await enqueueMutation({
+          type: "CREATE_COLLECTION",
+          payload: { clientCollectionId, name },
+        });
+        const row: CollectionRow = {
+          id: clientCollectionId,
+          name,
+          recipeIds: [],
+          recipeCount: 0,
+        };
+        setCollections((prev) => {
+          const next = [row, ...prev];
+          void writeCache(CACHE_KEYS.COLLECTIONS_MINE, next);
+          return next;
+        });
+        await writeCache(collectionDetailKey("me", clientCollectionId), {
+          name,
+          recipeIds: [] as string[],
+        });
+        setNewName("");
+        setCreateOpen(false);
+        return;
+      }
       const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
         method: "POST",
         headers: {
@@ -160,6 +236,16 @@ export default function CollectionsPage() {
           onPress: async () => {
             const idToken = await AsyncStorage.getItem("idToken");
             if (!idToken) return;
+            if (!isOnline) {
+              await enqueueMutation({ type: "DELETE_COLLECTION", payload: { collectionId: item.id } });
+              setCollections((prev) => {
+                const next = prev.filter((c) => c.id !== item.id);
+                void writeCache(CACHE_KEYS.COLLECTIONS_MINE, next);
+                return next;
+              });
+              await clearCache(collectionDetailKey("me", item.id));
+              return;
+            }
             const res = await fetch(`${SERVER_URL}/api/auth/collections/${item.id}`, {
               method: "DELETE",
               headers: { Authorization: `Bearer ${idToken}` },
@@ -182,6 +268,18 @@ export default function CollectionsPage() {
         onPress: async () => {
           const idToken = await AsyncStorage.getItem("idToken");
           if (!idToken) return;
+          if (!isOnline) {
+            await enqueueMutation({
+              type: "UNFOLLOW_COLLECTION",
+              payload: { ownerUid: owner, collectionId: item.id },
+            });
+            setFollowed((prev) => {
+              const next = prev.filter((c) => !(c.ownerUid === owner && c.id === item.id));
+              void writeCache(CACHE_KEYS.COLLECTIONS_FOLLOWED, next);
+              return next;
+            });
+            return;
+          }
           const res = await fetch(
             `${SERVER_URL}/api/auth/followed-collections/${encodeURIComponent(owner)}/${encodeURIComponent(item.id)}`,
             { method: "DELETE", headers: { Authorization: `Bearer ${idToken}` } },

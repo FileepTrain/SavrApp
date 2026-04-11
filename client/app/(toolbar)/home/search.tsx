@@ -4,6 +4,8 @@ import Input from "@/components/ui/input";
 import { useHomeFilter, DEFAULT_FILTERS } from "@/contexts/home-filter-context";
 import { useNetwork } from "@/contexts/network-context";
 import { loadUserCookware } from "@/utils/cookware";
+import { CommonActions } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,6 +30,12 @@ type SearchResult = {
 };
 
 const API_BASE = "http://10.0.2.2:3000";
+
+function singleQueryParam(v: string | string[] | undefined): string | undefined {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (Array.isArray(v) && v[0] != null && String(v[0]).trim()) return String(v[0]).trim();
+  return undefined;
+}
 const PAGE_SIZE = 10;
 
 type SearchCacheEntry = {
@@ -79,16 +87,39 @@ function getResultKey(item: SearchResult): string {
 }
 
 export default function HomeSearchScreen() {
-  const {mode} = useLocalSearchParams<{mode?: string}>();
-  const {setPendingSelectedRecipe} = useMealPlanSelection();
+  const navigation = useNavigation();
+  const { mode, mealPlanId, mealPlanDate } = useLocalSearchParams<{
+    mode?: string;
+    mealPlanId?: string;
+    mealPlanDate?: string;
+  }>();
+  const { setPendingSelectedRecipe } = useMealPlanSelection();
   const isSelectionMode = mode === "select";
   const { isOnline } = useNetwork();
-  //console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
 
   const handleSelectRecipe = (recipe: { id: string; [key: string]: unknown }) => {
     setPendingSelectedRecipe(recipe);
-    router.back();
-    router.push(`/calendar/meal-plan`)
+    const returnPlanId = singleQueryParam(mealPlanId);
+    const returnDate = singleQueryParam(mealPlanDate);
+    if (returnPlanId || returnDate) {
+      router.navigate({
+        pathname: "/calendar/meal-plan",
+        params: {
+          ...(returnPlanId ? { mealPlanId: returnPlanId } : {}),
+          ...(returnDate ? { date: returnDate } : {}),
+        },
+      });
+      setTimeout(() => {
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: "index" }],
+          }),
+        );
+      }, 0);
+    } else {
+      router.back();
+    }
   };
 
   const { appliedFilters, openFilterModal } = useHomeFilter();

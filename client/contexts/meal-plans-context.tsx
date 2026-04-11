@@ -1,7 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { CACHE_KEYS, CachedRecipeEntry, readCache, recipeDetailKey, writeCache } from "@/utils/offline-cache";
-import { enqueueMutation } from "@/utils/mutation-queue";
+import {
+  CACHE_KEYS,
+  CachedRecipeEntry,
+  readCache,
+  recipeDetailKey,
+  writeCache,
+} from "@/utils/offline-cache";
+import {
+  enqueueMutation,
+  mergePendingMealPlanEdit,
+  removeQueuedMealPlanCreate,
+} from "@/utils/mutation-queue";
 import { useNetwork } from "@/contexts/network-context";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
@@ -25,6 +35,19 @@ export interface CreateMealPlanPayload {
   end_date: string;
 }
 
+function slotToStored(ids: string[]): string | null {
+  const joined = ids.map((x) => String(x).trim()).filter(Boolean).join(",");
+  return joined.length ? joined : null;
+}
+
+function newClientMealPlanId(): string {
+  return `pending_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function isPendingMealPlanId(planId: string): boolean {
+  return planId.startsWith("pending_");
+}
+
 interface MealPlansState {
   mealPlans: MealPlanItem[];
   loading: boolean;
@@ -35,6 +58,8 @@ interface MealPlansContextValue extends MealPlansState {
   refetch: () => Promise<void>;
   setMealPlans: React.Dispatch<React.SetStateAction<MealPlanItem[]>>;
   createMealPlan: (payload: CreateMealPlanPayload) => Promise<void>;
+  updateMealPlan: (planId: string, payload: CreateMealPlanPayload) => Promise<void>;
+  deleteMealPlan: (planId: string) => Promise<void>;
 }
 
 const MealPlansContext = createContext<MealPlansContextValue | null>(null);
@@ -64,15 +89,13 @@ async function fetchAndCacheMealPlans(): Promise<MealPlanItem[]> {
   // Collect all unique recipe IDs across every meal plan slot.
   const recipeIds = new Set<string>();
   for (const plan of list) {
-    if (plan.breakfast) recipeIds.add(plan.breakfast);
-    if (plan.lunch) recipeIds.add(plan.lunch);
-    if (plan.dinner) recipeIds.add(plan.dinner);
+    if (plan.breakfast) plan.breakfast.split(",").forEach((s) => recipeIds.add(s.trim()));
+    if (plan.lunch) plan.lunch.split(",").forEach((s) => recipeIds.add(s.trim()));
+    if (plan.dinner) plan.dinner.split(",").forEach((s) => recipeIds.add(s.trim()));
   }
 
   // Pre-fetch and cache each recipe so the detail page loads offline without a prior manual visit.
-  await Promise.allSettled(
-    Array.from(recipeIds).map((id) => prefetchAndCacheRecipe(id, idToken))
-  );
+  await Promise.allSettled(Array.from(recipeIds).map((id) => prefetchAndCacheRecipe(id, idToken)));
 
   return list;
 }
@@ -92,8 +115,18 @@ async function prefetchAndCacheRecipe(id: string, idToken: string): Promise<void
       const r = data?.recipe;
       if (!r) return;
 
-      const reviewCount = typeof r.reviewCount === "number" ? r.reviewCount : (Array.isArray(r.reviews) ? r.reviews.length : 0);
-      const totalStars = typeof r.totalStars === "number" ? r.totalStars : (Array.isArray(r.reviews) ? r.reviews.reduce((s: number, rev: any) => s + (rev?.rating ?? 0), 0) : 0);
+      const reviewCount =
+        typeof r.reviewCount === "number"
+          ? r.reviewCount
+          : Array.isArray(r.reviews)
+            ? r.reviews.length
+            : 0;
+      const totalStars =
+        typeof r.totalStars === "number"
+          ? r.totalStars
+          : Array.isArray(r.reviews)
+            ? r.reviews.reduce((s: number, rev: any) => s + (rev?.rating ?? 0), 0)
+            : 0;
       const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
 
       const entry: CachedRecipeEntry = {
@@ -107,7 +140,8 @@ async function prefetchAndCacheRecipe(id: string, idToken: string): Promise<void
           summary: r.summary,
           instructions: r.instructions,
           calories: Array.isArray(r?.nutrition?.nutrients)
-            ? Math.round(Number(r.nutrition.nutrients.find((n: any) => n?.name === "Calories")?.amount ?? 0)) || undefined
+            ? Math.round(Number(r.nutrition.nutrients.find((n: any) => n?.name === "Calories")?.amount ?? 0)) ||
+            undefined
             : r.calories,
           rating: avgRating,
           reviewsLength: reviewCount,
@@ -131,7 +165,8 @@ async function prefetchAndCacheRecipe(id: string, idToken: string): Promise<void
       if (!r) return;
 
       const caloriesNutrient = r.nutrition?.nutrients?.find((n: any) => n.name === "Calories");
-      const calories = caloriesNutrient?.amount != null ? Math.round(Number(caloriesNutrient.amount)) : undefined;
+      const calories =
+        caloriesNutrient?.amount != null ? Math.round(Number(caloriesNutrient.amount)) : undefined;
       const reviewCount = typeof r.reviewCount === "number" ? r.reviewCount : 0;
       const totalStars = typeof r.totalStars === "number" ? r.totalStars : 0;
       const avgRating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
@@ -166,6 +201,25 @@ async function prefetchAndCacheRecipe(id: string, idToken: string): Promise<void
   }
 }
 
+function applyMealPlanPatchToList(
+  list: MealPlanItem[],
+  planId: string,
+  payload: CreateMealPlanPayload,
+): MealPlanItem[] {
+  return list.map((p) =>
+    p.id === planId
+      ? {
+        ...p,
+        breakfast: slotToStored(payload.breakfast),
+        lunch: slotToStored(payload.lunch),
+        dinner: slotToStored(payload.dinner),
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+      }
+      : p,
+  );
+}
+
 export function MealPlansProvider({ children }: { children: React.ReactNode }) {
   const [mealPlans, setMealPlans] = useState<MealPlanItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -173,15 +227,11 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
 
   const { isOnline, registerReconnectCallback, unregisterReconnectCallback } = useNetwork();
 
-  // Ref keeps isOnline current inside stable useCallback closures, avoiding stale
-  // closure captures that occur when callbacks are registered before a state update commits.
   const isOnlineRef = useRef(isOnline);
   useEffect(() => {
     isOnlineRef.current = isOnline;
   }, [isOnline]);
 
-  // Stable refetch: no dependency on isOnline state. Reads the ref at call time so
-  // reconnect callbacks always see the correct (post-commit) online status.
   const refetch = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -190,13 +240,11 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
         const list = await fetchAndCacheMealPlans();
         setMealPlans(list);
       } else {
-        // Device is offline; serve the last known list from cache.
         const cached = await readCache<MealPlanItem[]>(CACHE_KEYS.MEAL_PLANS);
         setMealPlans(cached ?? []);
         if (!cached) setError("No cached meal plans available offline.");
       }
     } catch (e) {
-      // Network request failed; fall back to cache rather than showing an empty state.
       const cached = await readCache<MealPlanItem[]>(CACHE_KEYS.MEAL_PLANS);
       if (cached) {
         setMealPlans(cached);
@@ -207,28 +255,31 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []); // Stable -- reads isOnline via ref, not closure
+  }, []);
 
-  // Creates a meal plan. When online this calls the server directly; when offline the operation
-  // is queued for replay and the local state is updated optimistically.
   const createMealPlan = useCallback(
     async (payload: CreateMealPlanPayload) => {
       if (!isOnlineRef.current) {
-        await enqueueMutation({ type: "CREATE_MEAL_PLAN", payload });
+        const clientPlanId = newClientMealPlanId();
+        await enqueueMutation({
+          type: "CREATE_MEAL_PLAN",
+          payload: { ...payload, clientPlanId },
+        });
 
-        // Build a temporary local record so the calendar reflects the new plan immediately.
         const optimisticPlan: MealPlanItem = {
-          id: `pending_${Date.now()}`,
+          id: clientPlanId,
           userID: "",
-          breakfast: payload.breakfast[0] ?? null,
-          lunch: payload.lunch[0] ?? null,
-          dinner: payload.dinner[0] ?? null,
+          breakfast: slotToStored(payload.breakfast),
+          lunch: slotToStored(payload.lunch),
+          dinner: slotToStored(payload.dinner),
           start_date: payload.start_date,
           end_date: payload.end_date,
         };
-        const updated = [...mealPlans, optimisticPlan];
-        setMealPlans(updated);
-        await writeCache(CACHE_KEYS.MEAL_PLANS, updated);
+        setMealPlans((prev) => {
+          const updated = [...prev, optimisticPlan];
+          void writeCache(CACHE_KEYS.MEAL_PLANS, updated);
+          return updated;
+        });
         return;
       }
 
@@ -251,15 +302,101 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
 
       await refetch();
     },
-    [mealPlans, refetch] // isOnline read via ref; no dep needed
+    [refetch],
+  );
+
+  const updateMealPlan = useCallback(
+    async (planId: string, payload: CreateMealPlanPayload) => {
+      if (!isOnlineRef.current) {
+        if (isPendingMealPlanId(planId)) {
+          const merged = await mergePendingMealPlanEdit(planId, payload);
+          if (!merged) {
+            await enqueueMutation({
+              type: "CREATE_MEAL_PLAN",
+              payload: { ...payload, clientPlanId: planId },
+            });
+          }
+        } else {
+          await enqueueMutation({
+            type: "UPDATE_MEAL_PLAN",
+            payload: {
+              planId,
+              breakfast: payload.breakfast,
+              lunch: payload.lunch,
+              dinner: payload.dinner,
+              start_date: payload.start_date,
+              end_date: payload.end_date,
+            },
+          });
+        }
+        setMealPlans((prev) => {
+          const updated = applyMealPlanPatchToList(prev, planId, payload);
+          void writeCache(CACHE_KEYS.MEAL_PLANS, updated);
+          return updated;
+        });
+        return;
+      }
+
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) throw new Error("Not signed in");
+
+      const res = await fetch(`${SERVER_URL}/api/meal-plans/${encodeURIComponent(planId)}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to update meal plan");
+      }
+
+      await refetch();
+    },
+    [refetch],
+  );
+
+  const deleteMealPlan = useCallback(
+    async (planId: string) => {
+      if (!isOnlineRef.current) {
+        if (isPendingMealPlanId(planId)) {
+          await removeQueuedMealPlanCreate(planId);
+        } else {
+          await enqueueMutation({ type: "DELETE_MEAL_PLAN", payload: { planId } });
+        }
+        setMealPlans((prev) => {
+          const updated = prev.filter((p) => p.id !== planId);
+          void writeCache(CACHE_KEYS.MEAL_PLANS, updated);
+          return updated;
+        });
+        return;
+      }
+
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) throw new Error("Not signed in");
+
+      const res = await fetch(`${SERVER_URL}/api/meal-plans/${encodeURIComponent(planId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+
+      if (!res.ok && res.status !== 404) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to delete meal plan");
+      }
+
+      await refetch();
+    },
+    [refetch],
   );
 
   useEffect(() => {
     refetch();
-  }, []);
+  }, [refetch]);
 
-  // refetch is now stable, so registration happens once and the callback always
-  // reads the current isOnline value from the ref.
   useEffect(() => {
     registerReconnectCallback("mealPlans", refetch);
     return () => unregisterReconnectCallback("mealPlans");
@@ -272,6 +409,8 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
     refetch,
     setMealPlans,
     createMealPlan,
+    updateMealPlan,
+    deleteMealPlan,
   };
 
   return <MealPlansContext.Provider value={value}>{children}</MealPlansContext.Provider>;

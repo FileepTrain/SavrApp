@@ -3,6 +3,8 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { useNetwork } from "@/contexts/network-context";
 import { CACHE_KEYS, CachedRecipeEntry, readCache, recipeDetailKey, writeCache } from "@/utils/offline-cache";
+import { CommonActions } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -10,6 +12,12 @@ import { View, Text, ActivityIndicator, FlatList } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 
 const SERVER_URL = "http://10.0.2.2:3000";
+
+function singleQueryParam(v: string | string[] | undefined): string | undefined {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (Array.isArray(v) && v[0] != null && String(v[0]).trim()) return String(v[0]).trim();
+  return undefined;
+}
 
 // Normalises a raw recipe object returned by the favorites API and writes it to the
 // per-recipe detail cache so the detail page can load without a prior individual visit.
@@ -64,7 +72,12 @@ async function cacheFavoriteRecipeDetail(r: any): Promise<void> {
 
 export default function FavoritesPage() {
   const router = useRouter();
-  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const navigation = useNavigation();
+  const { mode, mealPlanId, mealPlanDate } = useLocalSearchParams<{
+    mode?: string;
+    mealPlanId?: string;
+    mealPlanDate?: string;
+  }>();
   const { setPendingSelectedRecipe } = useMealPlanSelection();
   const isSelectionMode = mode === "select";
   const { isOnline, registerReconnectCallback, unregisterReconnectCallback } = useNetwork();
@@ -76,12 +89,31 @@ export default function FavoritesPage() {
     isOnlineRef.current = isOnline;
   }, [isOnline]);
 
-  console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
-
   const handleSelectRecipe = (recipe: { id: string;[key: string]: unknown }) => {
     setPendingSelectedRecipe(recipe);
-    router.back();
-    router.push(`/calendar/meal-plan`);
+    const returnPlanId = singleQueryParam(mealPlanId);
+    const returnDate = singleQueryParam(mealPlanDate);
+    // Cross-tab pickers used to `push` a bare `/calendar/meal-plan`, which dropped `mealPlanId` and forced POST on save.
+    if (returnPlanId || returnDate) {
+      router.navigate({
+        pathname: "/calendar/meal-plan",
+        params: {
+          ...(returnPlanId ? { mealPlanId: returnPlanId } : {}),
+          ...(returnDate ? { date: returnDate } : {}),
+        },
+      });
+      // `navigate` switches to Calendar but leaves Favorites on the Account stack; reset so Account tab opens on its root.
+      setTimeout(() => {
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: "index" }],
+          }),
+        );
+      }, 0);
+    } else {
+      router.back();
+    }
   };
   const [favorites, setFavorites] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);

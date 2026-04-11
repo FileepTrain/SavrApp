@@ -4,7 +4,15 @@ import RecipeRating from "@/components/recipe/recipe-rating";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useNetwork } from "@/contexts/network-context";
 import { Ingredient } from "@/types/ingredient";
-import { CACHE_KEYS, CachedRecipeEntry, readCache, recipeDetailKey, writeCache } from "@/utils/offline-cache";
+import {
+  CACHE_KEYS,
+  CachedRecipeEntry,
+  collectionDetailKey,
+  readCache,
+  recipeDetailKey,
+  writeCache,
+} from "@/utils/offline-cache";
+import { recordRecipeViewHistory, recipeToHistoryEntry } from "@/utils/recipe-view-history";
 import { enqueueMutation } from "@/utils/mutation-queue";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -26,8 +34,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
 
-// Your backend base (Android emulator -> host machine)
-const SERVER_URL = "http://10.0.2.2:3000";
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+
+function newClientCollectionId(): string {
+  return `local_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 // Reads the ID-only favorites list and pushes it to the server.
 // When offline, the caller is responsible for queuing this operation instead.
@@ -102,6 +113,8 @@ type RecipeCollectionRow = {
   id: string;
   name: string;
   recipeIds: string[];
+  /** Kept in sync with `recipeIds.length` for collection grid tiles (offline + cache). */
+  recipeCount: number;
 };
 
 function stripHtml(html?: string) {
@@ -247,24 +260,72 @@ export default function RecipeDetailsPage() {
         setSaveCollections([]);
         return;
       }
+      if (!isOnline) {
+        const cached = await readCache<RecipeCollectionRow[]>(CACHE_KEYS.COLLECTIONS_MINE);
+        const rows = Array.isArray(cached) ? cached : [];
+        setSaveCollections(
+          rows.map((c) => ({
+            ...c,
+            recipeIds: Array.isArray(c.recipeIds) ? c.recipeIds : [],
+            recipeCount:
+              typeof c.recipeCount === "number"
+                ? c.recipeCount
+                : Array.isArray(c.recipeIds)
+                  ? c.recipeIds.length
+                  : 0,
+          })),
+        );
+        return;
+      }
       const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       if (!res.ok) {
-        setSaveCollections([]);
+        const cached = await readCache<RecipeCollectionRow[]>(CACHE_KEYS.COLLECTIONS_MINE);
+        const rows = Array.isArray(cached) ? cached : [];
+        setSaveCollections(
+          rows.map((c) => ({
+            ...c,
+            recipeIds: Array.isArray(c.recipeIds) ? c.recipeIds : [],
+            recipeCount:
+              typeof c.recipeCount === "number"
+                ? c.recipeCount
+                : Array.isArray(c.recipeIds)
+                  ? c.recipeIds.length
+                  : 0,
+          })),
+        );
         return;
       }
       const data = await res.json();
       const list: RecipeCollectionRow[] = Array.isArray(data.collections)
-        ? data.collections.map((c: RecipeCollectionRow) => ({
-          id: c.id,
-          name: c.name,
-          recipeIds: Array.isArray(c.recipeIds) ? c.recipeIds : [],
-        }))
+        ? data.collections.map((c: { id: string; name: string; recipeIds?: string[]; recipeCount?: number }) => {
+            const ids = Array.isArray(c.recipeIds) ? c.recipeIds : [];
+            return {
+              id: c.id,
+              name: c.name,
+              recipeIds: ids,
+              recipeCount: typeof c.recipeCount === "number" ? c.recipeCount : ids.length,
+            };
+          })
         : [];
       setSaveCollections(list);
+      await writeCache(CACHE_KEYS.COLLECTIONS_MINE, list);
     } catch {
-      setSaveCollections([]);
+      const cached = await readCache<RecipeCollectionRow[]>(CACHE_KEYS.COLLECTIONS_MINE);
+      const rows = Array.isArray(cached) ? cached : [];
+      setSaveCollections(
+        rows.map((c) => ({
+          ...c,
+          recipeIds: Array.isArray(c.recipeIds) ? c.recipeIds : [],
+          recipeCount:
+            typeof c.recipeCount === "number"
+              ? c.recipeCount
+              : Array.isArray(c.recipeIds)
+                ? c.recipeIds.length
+                : 0,
+        })),
+      );
     } finally {
       setSaveCollectionsLoading(false);
     }
@@ -291,6 +352,30 @@ export default function RecipeDetailsPage() {
       setSaveActionId(collectionId);
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
+      if (!isOnline) {
+        await enqueueMutation({
+          type: "ADD_COLLECTION_RECIPE",
+          payload: { collectionId, recipeId: id },
+        });
+        setSaveCollections((prev) => {
+          const next = prev.map((c) => {
+            if (c.id !== collectionId) return c;
+            const recipeIds = [...c.recipeIds, id];
+            return { ...c, recipeIds, recipeCount: recipeIds.length };
+          });
+          void writeCache(CACHE_KEYS.COLLECTIONS_MINE, next);
+          return next;
+        });
+        const detailKey = collectionDetailKey("me", collectionId);
+        const cur = await readCache<{ name: string; recipeIds: string[] }>(detailKey);
+        const nextIds = cur?.recipeIds?.includes(id)
+          ? cur.recipeIds
+          : [id, ...(cur?.recipeIds ?? [])];
+        const nm = cur?.name ?? col?.name ?? "";
+        await writeCache(detailKey, { name: nm, recipeIds: nextIds });
+        setSaveModalOpen(false);
+        return;
+      }
       const res = await fetch(`${SERVER_URL}/api/auth/collections/${collectionId}/recipes`, {
         method: "POST",
         headers: {
@@ -300,11 +385,15 @@ export default function RecipeDetailsPage() {
         body: JSON.stringify({ recipeId: id }),
       });
       if (res.ok) {
-        setSaveCollections((prev) =>
-          prev.map((c) =>
-            c.id === collectionId ? { ...c, recipeIds: [...c.recipeIds, id] } : c,
-          ),
-        );
+        setSaveCollections((prev) => {
+          const next = prev.map((c) => {
+            if (c.id !== collectionId) return c;
+            const recipeIds = [...c.recipeIds, id];
+            return { ...c, recipeIds, recipeCount: recipeIds.length };
+          });
+          void writeCache(CACHE_KEYS.COLLECTIONS_MINE, next);
+          return next;
+        });
         setSaveModalOpen(false);
       }
     } finally {
@@ -322,6 +411,32 @@ export default function RecipeDetailsPage() {
       setSaveActionId("__create__");
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
+      if (!isOnline) {
+        const clientCollectionId = newClientCollectionId();
+        await enqueueMutation({
+          type: "CREATE_COLLECTION",
+          payload: { clientCollectionId, name, recipeId: id },
+        });
+        const row: RecipeCollectionRow = {
+          id: clientCollectionId,
+          name,
+          recipeIds: [id],
+          recipeCount: 1,
+        };
+        setSaveCollections((prev) => {
+          const next = [row, ...prev];
+          void writeCache(CACHE_KEYS.COLLECTIONS_MINE, next);
+          return next;
+        });
+        await writeCache(collectionDetailKey("me", clientCollectionId), {
+          name,
+          recipeIds: [id],
+        });
+        setNewCollectionName("");
+        setCreateCollectionStep(false);
+        setSaveModalOpen(false);
+        return;
+      }
       const res = await fetch(`${SERVER_URL}/api/auth/collections`, {
         method: "POST",
         headers: {
@@ -338,14 +453,20 @@ export default function RecipeDetailsPage() {
       const data = await res.json();
       const col = data.collection;
       if (col?.id) {
-        setSaveCollections((prev) => [
-          {
-            id: col.id,
-            name: col.name ?? name,
-            recipeIds: Array.isArray(col.recipeIds) ? col.recipeIds : [id],
-          },
-          ...prev,
-        ]);
+        setSaveCollections((prev) => {
+          const ids = Array.isArray(col.recipeIds) ? col.recipeIds : [id];
+          const next = [
+            {
+              id: col.id,
+              name: col.name ?? name,
+              recipeIds: ids,
+              recipeCount: typeof col.recipeCount === "number" ? col.recipeCount : ids.length,
+            },
+            ...prev,
+          ];
+          void writeCache(CACHE_KEYS.COLLECTIONS_MINE, next);
+          return next;
+        });
       }
       setNewCollectionName("");
       setCreateCollectionStep(false);
@@ -425,6 +546,7 @@ export default function RecipeDetailsPage() {
             setRecipe(cached.recipe);
             // Guard against a malformed cache entry that is missing the ingredients array.
             setIngredients((cached.ingredients ?? []) as Ingredient[]);
+            void recordRecipeViewHistory(recipeToHistoryEntry(id, cached.recipe));
           } else {
             // Recipe was never viewed while online; nothing to show.
             setNotCached(true);
@@ -518,6 +640,7 @@ export default function RecipeDetailsPage() {
 
           setRecipe(displayRecipe);
           setIngredients(mappedIngredients);
+          void recordRecipeViewHistory(recipeToHistoryEntry(id, displayRecipe));
 
           // Cache so this recipe is available when the user is next offline.
           await writeCache<CachedRecipeEntry>(recipeDetailKey(id), {
@@ -573,6 +696,7 @@ export default function RecipeDetailsPage() {
 
           setRecipe(displayRecipe);
           setIngredients(mappedIngredients);
+          void recordRecipeViewHistory(recipeToHistoryEntry(id, displayRecipe));
 
           await writeCache<CachedRecipeEntry>(recipeDetailKey(id), {
             recipe: displayRecipe,
@@ -633,6 +757,7 @@ export default function RecipeDetailsPage() {
 
           setRecipe(displayRecipe);
           setIngredients(mappedIngredients);
+          void recordRecipeViewHistory(recipeToHistoryEntry(id, displayRecipe));
 
           await writeCache<CachedRecipeEntry>(recipeDetailKey(id), {
             recipe: displayRecipe,

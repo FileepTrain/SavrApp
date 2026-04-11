@@ -13,8 +13,10 @@ import {
   View,
 } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import { useMealPlans } from "@/contexts/meal-plans-context";
 import { palettes } from "@/theme";
 import { buildProfileShareWebUrl, openNativeShare } from "@/utils/profile-share";
+import { type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 
@@ -117,6 +119,18 @@ function MealPlanRecipeRow({
   );
 }
 
+function cachedEntryToRow(rid: string, entry: CachedRecipeEntry) {
+  const revLen = entry.recipe.reviewsLength ?? 0;
+  return {
+    id: rid,
+    title: entry.recipe.title,
+    calories: entry.recipe.calories ?? 0,
+    rating: entry.recipe.rating ?? 0,
+    reviews: Array.from({ length: revLen }),
+    image: entry.recipe.image ?? null,
+  };
+}
+
 export function SwipeableMealPlanCard({
   id,
   startDateLabel,
@@ -132,6 +146,7 @@ export function SwipeableMealPlanCard({
   bulkExpandSignal = null,
   shareTargets,
 }: SwipeableMealPlanCardProps) {
+  const { deleteMealPlan } = useMealPlans();
   const colors = useProfilePalette();
   const matchesLinkHighlight =
     linkHighlightPlanId != null && String(linkHighlightPlanId) === String(id);
@@ -208,7 +223,13 @@ export function SwipeableMealPlanCard({
 
         if (cancelled) return;
         const next: Record<string, any> = {};
-        for (const [rid, data] of entries) next[rid] = data;
+        for (const [rid, data] of entries) {
+          if (data) next[rid] = data;
+          else {
+            const cached = await readCache<CachedRecipeEntry>(recipeDetailKey(rid));
+            if (cached) next[rid] = cachedEntryToRow(rid, cached);
+          }
+        }
         setRecipesById(next);
       } catch (e) {
         if (cancelled) return;
@@ -253,30 +274,19 @@ export function SwipeableMealPlanCard({
           Alert.alert("Sign in required", "Please sign in to delete meal plans.");
           return;
         }
-        const res = await fetch(
-          `${SERVER_URL}/api/meal-plans/${encodeURIComponent(id)}`,
-          {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${idToken}` },
-          },
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          Alert.alert(
-            "Could not delete",
-            typeof data?.error === "string" ? data.error : "Please try again.",
-          );
-          return;
-        }
+        await deleteMealPlan(String(id));
         closeSwipe();
         onMealPlanDeleted?.();
-      } catch {
-        Alert.alert("Could not delete", "Something went wrong. Please try again.");
+      } catch (e) {
+        Alert.alert(
+          "Could not delete",
+          e instanceof Error ? e.message : "Something went wrong. Please try again.",
+        );
       } finally {
         setLoading(false);
       }
     },
-    [id, onMealPlanDeleted],
+    [id, deleteMealPlan, onMealPlanDeleted],
   );
 
   const requestDeleteMealPlan = useCallback(

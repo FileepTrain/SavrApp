@@ -717,7 +717,9 @@ export const getRecipeById = async (req, res) => {
           const u = authorSnap.data() || {};
           recipePayload.authorUsername = u.username ?? null;
           const photoPath =
-            typeof u.profilePhotoStoragePath === "string" ? u.profilePhotoStoragePath : null;
+            typeof u.profilePhotoStoragePath === "string"
+              ? u.profilePhotoStoragePath
+              : null;
           if (photoPath) {
             try {
               const bucket = admin.storage().bucket();
@@ -732,7 +734,10 @@ export const getRecipeById = async (req, res) => {
                 recipePayload.authorProfilePhotoUrl = url;
               }
             } catch (photoErr) {
-              console.warn("Author profile photo URL failed:", photoErr?.message);
+              console.warn(
+                "Author profile photo URL failed:",
+                photoErr?.message,
+              );
             }
           }
         }
@@ -1032,7 +1037,10 @@ export const appendRecipeGalleryImage = async (req, res) => {
       req.file.mimetype || "image/jpeg",
     );
 
-    const prev = normalizeGalleryImagesArray(existing.galleryImages, recipeOwnerId);
+    const prev = normalizeGalleryImagesArray(
+      existing.galleryImages,
+      recipeOwnerId,
+    );
     const entry = {
       url: imageUrl,
       uploadedBy: uid,
@@ -1071,8 +1079,7 @@ export const deleteRecipeGalleryImage = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const url =
-      typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
     if (!url) {
       return res.status(400).json({
         error: "url is required",
@@ -1132,7 +1139,8 @@ export const deleteRecipeGalleryImage = async (req, res) => {
 
     if (!canDelete) {
       return res.status(403).json({
-        error: "You can only remove photos you uploaded or if you own this recipe",
+        error:
+          "You can only remove photos you uploaded or if you own this recipe",
         code: "FORBIDDEN",
       });
     }

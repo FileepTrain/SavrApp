@@ -65,9 +65,9 @@ function AccountStackHeader({ navigation, options, route }: NativeStackHeaderPro
       <View className="flex-row items-center justify-end min-w-10">
         {typeof options.headerRight === "function"
           ? options.headerRight({
-              tintColor: undefined,
-              canGoBack: navigation.canGoBack(),
-            })
+            tintColor: undefined,
+            canGoBack: navigation.canGoBack(),
+          })
           : null}
       </View>
     </SafeAreaView>
@@ -107,6 +107,10 @@ export default function AccountStackLayout() {
         <Stack.Screen
           name="collections"
           options={{ title: "Collections" }}
+        />
+        <Stack.Screen
+          name="recipe-history"
+          options={{ title: "View History" }}
         />
         <Stack.Screen
           name="collection/[collectionId]"

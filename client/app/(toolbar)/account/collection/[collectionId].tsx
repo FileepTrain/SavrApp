@@ -1,7 +1,16 @@
 import { CollectionRecipesGrid } from "@/components/collection/collection-recipes-grid";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useNetwork } from "@/contexts/network-context";
 import { fetchRecipeForList } from "@/utils/fetch-recipe-for-list";
+import {
+  CACHE_KEYS,
+  clearCache,
+  collectionDetailKey,
+  readCache,
+  writeCache,
+} from "@/utils/offline-cache";
+import { enqueueMutation } from "@/utils/mutation-queue";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -17,7 +26,43 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+
+type CollectionListRow = {
+  id: string;
+  name: string;
+  recipeIds: string[];
+  recipeCount: number;
+  ownerUid?: string;
+  ownerUsername?: string;
+};
+
+async function patchMineCollectionsListCache(
+  collectionId: string,
+  patch: Partial<Pick<CollectionListRow, "name" | "recipeIds" | "recipeCount">>,
+) {
+  const list = (await readCache<CollectionListRow[]>(CACHE_KEYS.COLLECTIONS_MINE)) ?? [];
+  const next = list.map((row) =>
+    row.id === collectionId
+      ? {
+          ...row,
+          ...patch,
+          recipeCount:
+            patch.recipeCount ??
+            (patch.recipeIds ? patch.recipeIds.length : row.recipeCount),
+        }
+      : row,
+  );
+  await writeCache(CACHE_KEYS.COLLECTIONS_MINE, next);
+}
+
+async function removeMineCollectionFromListCache(collectionId: string) {
+  const list = (await readCache<CollectionListRow[]>(CACHE_KEYS.COLLECTIONS_MINE)) ?? [];
+  await writeCache(
+    CACHE_KEYS.COLLECTIONS_MINE,
+    list.filter((r) => r.id !== collectionId),
+  );
+}
 
 function BottomSheetChrome({
   visible,
@@ -51,6 +96,7 @@ function BottomSheetChrome({
 }
 
 export default function CollectionDetailPage() {
+  const { isOnline } = useNetwork();
   const navigation = useNavigation();
   const router = useRouter();
   const { collectionId, ownerUid: ownerUidParam } = useLocalSearchParams<{
@@ -95,6 +141,8 @@ export default function CollectionDetailPage() {
 
       const usePublic = Boolean(ownerUid && self && ownerUid !== self);
       setIsOthersCollection(usePublic);
+      const detailScope = usePublic ? ownerUid! : "me";
+      const detailKey = collectionDetailKey(detailScope, id);
 
       const url = usePublic
         ? `${SERVER_URL}/api/auth/users/${encodeURIComponent(ownerUid!)}/collections/${encodeURIComponent(id)}/public`
@@ -103,36 +151,90 @@ export default function CollectionDetailPage() {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setRecipeIds([]);
-        setRecipes([]);
+        const cached = await readCache<{ name: string; recipeIds: string[] }>(detailKey);
+        if (cached) {
+          setTitle(cached.name);
+          const ids = Array.isArray(cached.recipeIds) ? cached.recipeIds : [];
+          setRecipeIds(ids);
+          const loaded = await Promise.all(ids.map((rid) => fetchRecipeForList(rid)));
+          setRecipes(loaded.filter((r): r is Record<string, unknown> => r != null));
+        } else {
+          setRecipeIds([]);
+          setRecipes([]);
+        }
+        if (usePublic && ownerUid && self && self !== ownerUid) {
+          if (isOnline) {
+            const st = await fetch(
+              `${SERVER_URL}/api/auth/followed-collections/status?ownerUid=${encodeURIComponent(ownerUid)}&collectionId=${encodeURIComponent(id)}`,
+              { headers: { Authorization: `Bearer ${idToken}` } },
+            );
+            const stData = await st.json().catch(() => ({}));
+            if (st.ok) setFollowing(Boolean(stData.following));
+          } else {
+            const list =
+              (await readCache<CollectionListRow[]>(CACHE_KEYS.COLLECTIONS_FOLLOWED)) ?? [];
+            setFollowing(list.some((c) => c.ownerUid === ownerUid && c.id === id));
+          }
+        } else {
+          setFollowing(false);
+        }
         return;
       }
-      const data = await res.json();
       const col = data.collection;
       setTitle(typeof col?.name === "string" ? col.name : "");
       const ids: string[] = Array.isArray(col?.recipeIds) ? col.recipeIds : [];
       setRecipeIds(ids);
 
+      await writeCache(detailKey, {
+        name: typeof col?.name === "string" ? col.name : "",
+        recipeIds: ids,
+      });
+
       const loaded = await Promise.all(ids.map((rid) => fetchRecipeForList(rid)));
       setRecipes(loaded.filter((r): r is Record<string, unknown> => r != null));
 
       if (usePublic && ownerUid && self && self !== ownerUid) {
-        const st = await fetch(
-          `${SERVER_URL}/api/auth/followed-collections/status?ownerUid=${encodeURIComponent(ownerUid)}&collectionId=${encodeURIComponent(id)}`,
-          { headers: { Authorization: `Bearer ${idToken}` } },
-        );
-        const stData = await st.json().catch(() => ({}));
-        if (st.ok) setFollowing(Boolean(stData.following));
+        if (isOnline) {
+          const st = await fetch(
+            `${SERVER_URL}/api/auth/followed-collections/status?ownerUid=${encodeURIComponent(ownerUid)}&collectionId=${encodeURIComponent(id)}`,
+            { headers: { Authorization: `Bearer ${idToken}` } },
+          );
+          const stData = await st.json().catch(() => ({}));
+          if (st.ok) setFollowing(Boolean(stData.following));
+        } else {
+          const list =
+            (await readCache<CollectionListRow[]>(CACHE_KEYS.COLLECTIONS_FOLLOWED)) ?? [];
+          setFollowing(list.some((c) => c.ownerUid === ownerUid && c.id === id));
+        }
       } else {
         setFollowing(false);
       }
     } catch {
-      setRecipes([]);
+      if (id) {
+        const self = await AsyncStorage.getItem("uid");
+        const usePublic = Boolean(ownerUid && self && ownerUid !== self);
+        const detailScope = usePublic ? ownerUid! : "me";
+        const cached = await readCache<{ name: string; recipeIds: string[] }>(
+          collectionDetailKey(detailScope, id),
+        );
+        if (cached) {
+          setTitle(cached.name);
+          const ids = Array.isArray(cached.recipeIds) ? cached.recipeIds : [];
+          setRecipeIds(ids);
+          const loaded = await Promise.all(ids.map((rid) => fetchRecipeForList(rid)));
+          setRecipes(loaded.filter((r): r is Record<string, unknown> => r != null));
+        } else {
+          setRecipes([]);
+        }
+      } else {
+        setRecipes([]);
+      }
     } finally {
       setLoading(false);
     }
-  }, [id, ownerUid]);
+  }, [id, ownerUid, isOnline]);
 
   useEffect(() => {
     void load();
@@ -150,6 +252,41 @@ export default function CollectionDetailPage() {
     if (!idToken) return;
     setFollowBusy(true);
     try {
+      if (!isOnline) {
+        if (following) {
+          await enqueueMutation({
+            type: "UNFOLLOW_COLLECTION",
+            payload: { ownerUid, collectionId: id },
+          });
+          setFollowing(false);
+          const list =
+            (await readCache<CollectionListRow[]>(CACHE_KEYS.COLLECTIONS_FOLLOWED)) ?? [];
+          await writeCache(
+            CACHE_KEYS.COLLECTIONS_FOLLOWED,
+            list.filter((c) => !(c.ownerUid === ownerUid && c.id === id)),
+          );
+        } else {
+          await enqueueMutation({
+            type: "FOLLOW_COLLECTION",
+            payload: { ownerUid, collectionId: id },
+          });
+          setFollowing(true);
+          const list =
+            (await readCache<CollectionListRow[]>(CACHE_KEYS.COLLECTIONS_FOLLOWED)) ?? [];
+          const exists = list.some((c) => c.ownerUid === ownerUid && c.id === id);
+          if (!exists) {
+            const row: CollectionListRow = {
+              id,
+              name: title || "Collection",
+              recipeIds: [...recipeIds],
+              recipeCount: recipeIds.length,
+              ownerUid,
+            };
+            await writeCache(CACHE_KEYS.COLLECTIONS_FOLLOWED, [...list, row]);
+          }
+        }
+        return;
+      }
       if (following) {
         const res = await fetch(
           `${SERVER_URL}/api/auth/followed-collections/${encodeURIComponent(ownerUid)}/${encodeURIComponent(id)}`,
@@ -170,7 +307,7 @@ export default function CollectionDetailPage() {
     } finally {
       setFollowBusy(false);
     }
-  }, [ownerUid, id, selfUid, following]);
+  }, [ownerUid, id, selfUid, following, isOnline, title, recipeIds]);
 
   useLayoutEffect(() => {
     if (loading) return;
@@ -242,6 +379,14 @@ export default function CollectionDetailPage() {
     }
     try {
       setSaving(true);
+      if (!isOnline && isOwnCollection && id) {
+        await enqueueMutation({ type: "PATCH_COLLECTION", payload: { collectionId: id, name } });
+        setTitle(name);
+        await patchMineCollectionsListCache(id, { name });
+        await writeCache(collectionDetailKey("me", id), { name, recipeIds: [...recipeIds] });
+        setRenameOpen(false);
+        return;
+      }
       const ok = await patchCollection({ name });
       if (!ok) {
         Alert.alert("Could not save", "Try again.");
@@ -258,6 +403,18 @@ export default function CollectionDetailPage() {
     const next = [recipeId, ...recipeIds.filter((r) => r !== recipeId)];
     try {
       setSaving(true);
+      if (!isOnline && isOwnCollection && id) {
+        await enqueueMutation({
+          type: "PATCH_COLLECTION",
+          payload: { collectionId: id, recipeIds: next },
+        });
+        setRecipeIds(next);
+        await writeCache(collectionDetailKey("me", id), { name: title, recipeIds: next });
+        await patchMineCollectionsListCache(id, { recipeIds: next, recipeCount: next.length });
+        const loaded = await Promise.all(next.map((rid) => fetchRecipeForList(rid)));
+        setRecipes(loaded.filter((r): r is Record<string, unknown> => r != null));
+        return;
+      }
       const ok = await patchCollection({ recipeIds: next });
       if (!ok) {
         Alert.alert("Could not update cover", "Try again.");
@@ -283,7 +440,19 @@ export default function CollectionDetailPage() {
           style: "destructive",
           onPress: async () => {
             const idToken = await AsyncStorage.getItem("idToken");
-            if (!idToken) return;
+            if (!idToken || !id) return;
+            if (!isOnline && isOwnCollection) {
+              await enqueueMutation({
+                type: "REMOVE_COLLECTION_RECIPE",
+                payload: { collectionId: id, recipeId },
+              });
+              const next = recipeIds.filter((r) => r !== recipeId);
+              setRecipeIds(next);
+              setRecipes((prev) => prev.filter((r) => String((r as { id?: string }).id) !== recipeId));
+              await writeCache(collectionDetailKey("me", id), { name: title, recipeIds: next });
+              await patchMineCollectionsListCache(id, { recipeIds: next, recipeCount: next.length });
+              return;
+            }
             const res = await fetch(
               `${SERVER_URL}/api/auth/collections/${id}/recipes/${encodeURIComponent(recipeId)}`,
               { method: "DELETE", headers: { Authorization: `Bearer ${idToken}` } },
@@ -308,6 +477,17 @@ export default function CollectionDetailPage() {
           onPress: async () => {
             const idToken = await AsyncStorage.getItem("idToken");
             if (!idToken || !id) return;
+            if (!isOnline) {
+              await enqueueMutation({ type: "DELETE_COLLECTION", payload: { collectionId: id } });
+              await removeMineCollectionFromListCache(id);
+              await clearCache(collectionDetailKey("me", id));
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                router.replace("/account/collections");
+              }
+              return;
+            }
             const res = await fetch(`${SERVER_URL}/api/auth/collections/${id}`, {
               method: "DELETE",
               headers: { Authorization: `Bearer ${idToken}` },

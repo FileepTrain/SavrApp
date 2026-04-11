@@ -68,10 +68,10 @@ export default function AccountPage() {
         onPress={
           uid
             ? () =>
-                router.push({
-                  pathname: "/profile/[userId]",
-                  params: { userId: uid },
-                })
+              router.push({
+                pathname: "/profile/[userId]",
+                params: { userId: uid },
+              })
             : undefined
         }
       />
@@ -104,6 +104,13 @@ export default function AccountPage() {
           subtitle="Organize saved recipes"
           iconName="folder-outline"
           onPress={() => router.push("/account/collections")}
+        />
+
+        <AccountMenuItem
+          title="View History"
+          subtitle="Previously viewed recipes"
+          iconName="history"
+          onPress={() => router.push("/account/recipe-history")}
         />
 
         <AccountMenuItem

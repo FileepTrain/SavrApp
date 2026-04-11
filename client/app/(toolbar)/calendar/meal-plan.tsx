@@ -4,6 +4,7 @@ import type { Recipe } from "@/contexts/meal-plan-selection-context";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { useMealPlans } from "@/contexts/meal-plans-context";
 import { useNetwork } from "@/contexts/network-context";
+import { CACHE_KEYS, type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
 import { useFocusEffect } from "@react-navigation/native";
@@ -46,26 +47,57 @@ function normalizeRecipeFromApi(json: unknown, fallbackId: string): Recipe {
   };
 }
 
+/** Fills title/image/etc. from the offline recipe detail cache when the API did not return a row. */
+async function recipeFromDetailCache(rid: string): Promise<Recipe | null> {
+  const cached = await readCache<CachedRecipeEntry>(recipeDetailKey(rid));
+  if (!cached?.recipe?.title) return null;
+  const r = cached.recipe;
+  const revLen = typeof r.reviewsLength === "number" ? r.reviewsLength : 0;
+  return {
+    id: rid,
+    title: r.title,
+    calories: typeof r.calories === "number" ? r.calories : undefined,
+    rating: typeof r.rating === "number" ? r.rating : undefined,
+    reviews: revLen > 0 ? Array.from({ length: revLen }, () => ({})) : undefined,
+    image: r.image ?? undefined,
+  };
+}
+
+async function hydrateRecipesFromDetailCache(ids: string[], byId: Record<string, Recipe>): Promise<void> {
+  await Promise.all(
+    ids.map(async (rid) => {
+      const existing = byId[rid];
+      if (existing?.title) return;
+      const fromCache = await recipeFromDetailCache(rid);
+      if (fromCache) byId[rid] = fromCache;
+    }),
+  );
+}
+
 const CAL_SLIDER_MIN = 100;
 const CAL_SLIDER_MAX = 1200;
 const CAL_SLIDER_STEP = 25;
 
 type MealSlot = "Breakfast" | "Lunch" | "Dinner";
 
+function singleQueryParam(v: string | string[] | undefined): string | undefined {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (Array.isArray(v) && v[0] != null && String(v[0]).trim()) return String(v[0]).trim();
+  return undefined;
+}
+
 export default function MealPlanPage() {
-  const params = useLocalSearchParams<{ date?: string; mealPlanId?: string }>();
+  const routeParams = useLocalSearchParams<{ date?: string; mealPlanId?: string }>();
+
   const mealPlanIdParam = useMemo(() => {
-    const raw = params.mealPlanId;
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-    if (Array.isArray(raw) && raw[0]) return String(raw[0]).trim();
-    return null;
-  }, [params.mealPlanId]);
+    const id = singleQueryParam(routeParams.mealPlanId);
+    return id ?? null;
+  }, [routeParams.mealPlanId]);
+
   const dateParam = useMemo(() => {
-    const raw = params.date;
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-    if (Array.isArray(raw) && raw[0]) return String(raw[0]).trim();
-    return null;
-  }, [params.date]);
+    const d = singleQueryParam(routeParams.date);
+    return d ?? null;
+  }, [routeParams.date]);
 
   const [start_date, setStartDate] = useState(new Date());
   const [end_date, setEndDate] = useState(new Date());
@@ -92,99 +124,153 @@ export default function MealPlanPage() {
   const [count, setCount] = useState<Record<string, number>>({});
 
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
-  const { refetch: refetchMealPlans, createMealPlan } = useMealPlans();
+  const { refetch: refetchMealPlans, createMealPlan, updateMealPlan } = useMealPlans();
   const { isOnline } = useNetwork();
 
-
+  // Load existing plan only when `mealPlanId` changes
   useEffect(() => {
-    if (mealPlanIdParam) {
-      let cancelled = false;
-      const run = async () => {
-        setLoadingPlan(true);
-        try {
-          const idToken = await AsyncStorage.getItem("idToken");
-          if (!idToken) {
-            Alert.alert("Not signed in", "Sign in to edit meal plans.");
-            return;
-          }
-          const res = await fetch(
-            `${SERVER_URL}/api/meal-plans/${encodeURIComponent(mealPlanIdParam)}`,
-            {
-              method: "GET",
-              headers: {
-                Authorization: `Bearer ${idToken}`,
-                "Content-Type": "application/json",
-              },
+    if (!mealPlanIdParam) return undefined;
+
+    let cancelled = false;
+    const run = async () => {
+      setLoadingPlan(true);
+      try {
+        const idToken = await AsyncStorage.getItem("idToken");
+        if (!idToken) {
+          Alert.alert("Not signed in", "Sign in to edit meal plans.");
+          return;
+        }
+        const res = await fetch(
+          `${SERVER_URL}/api/meal-plans/${encodeURIComponent(mealPlanIdParam)}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
             },
-          );
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const cachedList = await readCache<Array<{ id: string; breakfast?: string | null; lunch?: string | null; dinner?: string | null; start_date?: string | null; end_date?: string | null }>>(CACHE_KEYS.MEAL_PLANS);
+          const plan = cachedList?.find((p) => String(p.id) === String(mealPlanIdParam));
+          if (!plan) {
             throw new Error(typeof data?.error === "string" ? data.error : "Failed to load meal plan");
           }
-          const plan = data?.mealPlan;
-          if (!plan || cancelled) return;
-
           const start = plan.start_date ? new Date(plan.start_date) : new Date();
           const end = plan.end_date ? new Date(plan.end_date) : new Date();
           if (!cancelled) {
             setStartDate(start);
             setEndDate(end);
           }
-
-          const bIds = parseRecipeIds(plan.breakfast);
-          const lIds = parseRecipeIds(plan.lunch);
-          const dIds = parseRecipeIds(plan.dinner);
+          const bIds = parseRecipeIds(plan.breakfast ?? null);
+          const lIds = parseRecipeIds(plan.lunch ?? null);
+          const dIds = parseRecipeIds(plan.dinner ?? null);
           const allIds = Array.from(new Set([...bIds, ...lIds, ...dIds]));
-
-          const fetchOne = async (recipeId: string) => {
-            const isPersonal = !/^\d+$/.test(recipeId);
-            const url = isPersonal
-              ? `${SERVER_URL}/api/recipes/${encodeURIComponent(recipeId)}`
-              : `${SERVER_URL}/api/external-recipes/${encodeURIComponent(recipeId)}/details`;
-            const r = await fetch(url, {
-              method: "GET",
-              headers: {
-                Authorization: `Bearer ${idToken}`,
-                "Content-Type": "application/json",
-              },
-            });
-            const json = await r.json().catch(() => ({}));
-            if (!r.ok) return null;
-            return normalizeRecipeFromApi(json, recipeId);
-          };
-
-          const entries = await Promise.all(allIds.map(async (rid) => [rid, await fetchOne(rid)] as const));
-          if (cancelled) return;
           const byId: Record<string, Recipe> = {};
-          for (const [rid, rec] of entries) {
-            if (rec) byId[rid] = rec;
-          }
-
-          setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
-          setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
-          setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
-        } catch (e) {
+          await hydrateRecipesFromDetailCache(allIds, byId);
           if (!cancelled) {
+            setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
+            setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
+            setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
+          }
+          return;
+        }
+        const plan = data?.mealPlan;
+        if (!plan || cancelled) return;
+
+        const start = plan.start_date ? new Date(plan.start_date) : new Date();
+        const end = plan.end_date ? new Date(plan.end_date) : new Date();
+        if (!cancelled) {
+          setStartDate(start);
+          setEndDate(end);
+        }
+
+        const bIds = parseRecipeIds(plan.breakfast);
+        const lIds = parseRecipeIds(plan.lunch);
+        const dIds = parseRecipeIds(plan.dinner);
+        const allIds = Array.from(new Set([...bIds, ...lIds, ...dIds]));
+
+        const fetchOne = async (recipeId: string) => {
+          const isPersonal = !/^\d+$/.test(recipeId);
+          const url = isPersonal
+            ? `${SERVER_URL}/api/recipes/${encodeURIComponent(recipeId)}`
+            : `${SERVER_URL}/api/external-recipes/${encodeURIComponent(recipeId)}/details`;
+          const r = await fetch(url, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+          });
+          const json = await r.json().catch(() => ({}));
+          if (!r.ok) return null;
+          return normalizeRecipeFromApi(json, recipeId);
+        };
+
+        const entries = await Promise.all(allIds.map(async (rid) => [rid, await fetchOne(rid)] as const));
+        if (cancelled) return;
+        const byId: Record<string, Recipe> = {};
+        for (const [rid, rec] of entries) {
+          if (rec) byId[rid] = rec;
+        }
+        await hydrateRecipesFromDetailCache(allIds, byId);
+
+        setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
+        setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
+        setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
+      } catch (e) {
+        if (!cancelled && mealPlanIdParam) {
+          const cachedList = await readCache<
+            Array<{
+              id: string;
+              breakfast?: string | null;
+              lunch?: string | null;
+              dinner?: string | null;
+              start_date?: string | null;
+              end_date?: string | null;
+            }>
+          >(CACHE_KEYS.MEAL_PLANS);
+          const plan = cachedList?.find((p) => String(p.id) === String(mealPlanIdParam));
+          if (plan) {
+            const start = plan.start_date ? new Date(plan.start_date) : new Date();
+            const end = plan.end_date ? new Date(plan.end_date) : new Date();
+            setStartDate(start);
+            setEndDate(end);
+            const bIds = parseRecipeIds(plan.breakfast ?? null);
+            const lIds = parseRecipeIds(plan.lunch ?? null);
+            const dIds = parseRecipeIds(plan.dinner ?? null);
+            const allIds = Array.from(new Set([...bIds, ...lIds, ...dIds]));
+            const byId: Record<string, Recipe> = {};
+            await hydrateRecipesFromDetailCache(allIds, byId);
+            setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
+            setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
+            setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
+          } else if (!cancelled) {
             Alert.alert("Error", e instanceof Error ? e.message : "Failed to load meal plan.");
           }
-        } finally {
-          if (!cancelled) setLoadingPlan(false);
+        } else if (!cancelled) {
+          Alert.alert("Error", e instanceof Error ? e.message : "Failed to load meal plan.");
         }
-      };
-      void run();
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (dateParam) {
-      const d = dateOnlyToLocalDate(dateParam);
-      if (d) {
-        setStartDate(d);
-        setEndDate(d);
+      } finally {
+        if (!cancelled) setLoadingPlan(false);
       }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [mealPlanIdParam]);
+
+  // Preset dates for "new plan" only — never override dates loaded for an existing plan.
+  useEffect(() => {
+    if (mealPlanIdParam) return;
+    if (!dateParam) return;
+    const d = dateOnlyToLocalDate(dateParam);
+    if (d) {
+      setStartDate(d);
+      setEndDate(d);
     }
-    return undefined;
   }, [mealPlanIdParam, dateParam]);
 
   const increment = (id: string) => {
@@ -215,23 +301,15 @@ export default function MealPlanPage() {
         start_date: start_date.toISOString(),
         end_date: end_date.toISOString(),
       };
-      const url = mealPlanIdParam
-        ? `${SERVER_URL}/api/meal-plans/${encodeURIComponent(mealPlanIdParam)}`
-        : `${SERVER_URL}/api/meal-plans`;
-      const method = mealPlanIdParam ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to save meal plan");
+      if (mealPlanIdParam) {
+        await updateMealPlan(mealPlanIdParam, body);
+      } else {
+        await createMealPlan(body);
       }
-      Alert.alert("Saved", mealPlanIdParam ? "Your meal plan has been updated." : "Your meal plan has been saved.");
+      Alert.alert(
+        "Saved",
+        mealPlanIdParam ? "Your meal plan has been updated." : "Your meal plan has been saved.",
+      );
       await refetchMealPlans();
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to save meal plan.");
@@ -246,22 +324,24 @@ export default function MealPlanPage() {
     dinnerRecipe,
     mealPlanIdParam,
     refetchMealPlans,
+    createMealPlan,
+    updateMealPlan,
   ]);
 
   useFocusEffect(
     useCallback(() => {
       if (pendingSelectedRecipe && pendingMealSlot) {
         if (pendingMealSlot === "Breakfast") {
-          setBreakfastRecipe(prev => [...prev, pendingSelectedRecipe]);
+          setBreakfastRecipe((prev) => [...prev, pendingSelectedRecipe]);
         } else if (pendingMealSlot === "Lunch") {
-          setLunchRecipe(prev => [...prev, pendingSelectedRecipe]);
+          setLunchRecipe((prev) => [...prev, pendingSelectedRecipe]);
         } else if (pendingMealSlot === "Dinner") {
-          setDinnerRecipe(prev => [...prev, pendingSelectedRecipe]);
+          setDinnerRecipe((prev) => [...prev, pendingSelectedRecipe]);
         }
         setPendingSelectedRecipe(null);
         setPendingMealSlot(null);
       }
-    }, [pendingSelectedRecipe, pendingMealSlot, setPendingSelectedRecipe])
+    }, [pendingSelectedRecipe, pendingMealSlot, setPendingSelectedRecipe]),
   );
 
   const openAddRecipeModal = (slot: MealSlot) => {
@@ -575,7 +655,11 @@ export default function MealPlanPage() {
                       setVisible(false);
                       router.push({
                         pathname: "/account/favorites",
-                        params: { mode: "select" },
+                        params: {
+                          mode: "select",
+                          ...(mealPlanIdParam ? { mealPlanId: mealPlanIdParam } : {}),
+                          ...(dateParam ? { mealPlanDate: dateParam } : {}),
+                        },
                       });
                     }}
                     icon={{ name: "heart-outline", position: "left" }}
@@ -591,7 +675,11 @@ export default function MealPlanPage() {
                         setVisible(false);
                         router.push({
                           pathname: "/home/search",
-                          params: { mode: "select" },
+                          params: {
+                            mode: "select",
+                            ...(mealPlanIdParam ? { mealPlanId: mealPlanIdParam } : {}),
+                            ...(dateParam ? { mealPlanDate: dateParam } : {}),
+                          },
                         });
                       }}
                       icon={{ name: "magnify", position: "left" }}
