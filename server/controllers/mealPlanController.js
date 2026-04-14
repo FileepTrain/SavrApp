@@ -3,6 +3,34 @@ import admin from "firebase-admin";
 function mealSlotToStored(value) {
   if (value == null) return null;
   if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    const first = value[0];
+    const isObjectSlot =
+      first != null &&
+      typeof first === "object" &&
+      !Array.isArray(first) &&
+      (Object.prototype.hasOwnProperty.call(first, "id") ||
+        Object.prototype.hasOwnProperty.call(first, "recipeId"));
+    if (isObjectSlot) {
+      const normalized = value
+        .map((raw) => {
+          if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
+          const id = String(raw.id ?? raw.recipeId ?? "").trim();
+          if (!id) return null;
+          const baseRaw = Number(raw.baseServings ?? raw.base_servings ?? 1);
+          const targetRaw = Number(raw.targetServings ?? raw.target_servings ?? 1);
+          const batchRaw = Number(raw.batchMultiplier ?? raw.batch_multiplier ?? raw.batches ?? 1);
+          const baseServings =
+            Number.isFinite(baseRaw) && Math.floor(baseRaw) >= 1 ? Math.floor(baseRaw) : 1;
+          const targetServings =
+            Number.isFinite(targetRaw) && Math.floor(targetRaw) >= 1 ? Math.floor(targetRaw) : 1;
+          const batchMultiplier =
+            Number.isFinite(batchRaw) && Math.floor(batchRaw) >= 1 ? Math.floor(batchRaw) : 1;
+          return { id, baseServings, targetServings, batchMultiplier };
+        })
+        .filter(Boolean);
+      return normalized.length ? JSON.stringify(normalized) : null;
+    }
     const joined = value.map((x) => String(x).trim()).filter(Boolean).join(",");
     return joined.length ? joined : null;
   }

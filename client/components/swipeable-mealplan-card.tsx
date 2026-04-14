@@ -17,6 +17,7 @@ import { useMealPlans } from "@/contexts/meal-plans-context";
 import { palettes } from "@/theme";
 import { buildProfileShareWebUrl, openNativeShare } from "@/utils/profile-share";
 import { type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
+import { parseMealSlotStored } from "@/utils/meal-plan-slot";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 
@@ -48,11 +49,7 @@ export interface SwipeableMealPlanCardProps {
 }
 
 function parseRecipeIds(input?: string | null): string[] {
-  if (!input) return [];
-  return input
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  return parseMealSlotStored(input ?? null).map((e) => e.id);
 }
 
 type Palette = (typeof palettes)["brand"]["light"];

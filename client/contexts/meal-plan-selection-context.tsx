@@ -7,6 +7,8 @@ export type Recipe = {
   rating?: number;
   reviews?: unknown[];
   image?: string;
+  /** Total servings the recipe yields (batch size). */
+  servings?: number;
   [key: string]: unknown;
 };
 

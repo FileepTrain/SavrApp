@@ -5,15 +5,16 @@ import {
   readCache,
   writeCache,
 } from "@/utils/offline-cache";
+import type { MealPlanSlotEntry } from "@/utils/meal-plan-slot";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 const QUEUE_KEY = "MUTATION_QUEUE";
 
 // Offline meal plan create may include clientPlanId so the queue entry can be merged or removed before sync.
 export type CreateMealPlanQueuedPayload = {
-  breakfast: string[];
-  lunch: string[];
-  dinner: string[];
+  breakfast: MealPlanSlotEntry[];
+  lunch: MealPlanSlotEntry[];
+  dinner: MealPlanSlotEntry[];
   start_date: string;
   end_date: string;
   clientPlanId?: string;
@@ -27,9 +28,9 @@ export type QueuedMutation =
       type: "UPDATE_MEAL_PLAN";
       payload: {
         planId: string;
-        breakfast: string[];
-        lunch: string[];
-        dinner: string[];
+        breakfast: MealPlanSlotEntry[];
+        lunch: MealPlanSlotEntry[];
+        dinner: MealPlanSlotEntry[];
         start_date: string;
         end_date: string;
       };

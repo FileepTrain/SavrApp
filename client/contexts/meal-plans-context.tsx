@@ -13,6 +13,11 @@ import {
   removeQueuedMealPlanCreate,
 } from "@/utils/mutation-queue";
 import { useNetwork } from "@/contexts/network-context";
+import {
+  mealSlotEntriesFromPlanField,
+  slotEntriesToStoredString,
+  type MealPlanSlotEntry,
+} from "@/utils/meal-plan-slot";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 
@@ -28,16 +33,17 @@ export interface MealPlanItem {
 
 // Payload shape for creating a new meal plan (matches the server's POST /api/meal-plans body).
 export interface CreateMealPlanPayload {
-  breakfast: string[];
-  lunch: string[];
-  dinner: string[];
+  breakfast: MealPlanSlotEntry[];
+  lunch: MealPlanSlotEntry[];
+  dinner: MealPlanSlotEntry[];
   start_date: string;
   end_date: string;
 }
 
-function slotToStored(ids: string[]): string | null {
-  const joined = ids.map((x) => String(x).trim()).filter(Boolean).join(",");
-  return joined.length ? joined : null;
+export type { MealPlanSlotEntry } from "@/utils/meal-plan-slot";
+
+function slotToStored(entries: MealPlanSlotEntry[]): string | null {
+  return slotEntriesToStoredString(entries);
 }
 
 function newClientMealPlanId(): string {
@@ -89,9 +95,9 @@ async function fetchAndCacheMealPlans(): Promise<MealPlanItem[]> {
   // Collect all unique recipe IDs across every meal plan slot.
   const recipeIds = new Set<string>();
   for (const plan of list) {
-    if (plan.breakfast) plan.breakfast.split(",").forEach((s) => recipeIds.add(s.trim()));
-    if (plan.lunch) plan.lunch.split(",").forEach((s) => recipeIds.add(s.trim()));
-    if (plan.dinner) plan.dinner.split(",").forEach((s) => recipeIds.add(s.trim()));
+    for (const e of mealSlotEntriesFromPlanField(plan.breakfast)) recipeIds.add(e.id);
+    for (const e of mealSlotEntriesFromPlanField(plan.lunch)) recipeIds.add(e.id);
+    for (const e of mealSlotEntriesFromPlanField(plan.dinner)) recipeIds.add(e.id);
   }
 
   // Pre-fetch and cache each recipe so the detail page loads offline without a prior manual visit.

@@ -15,15 +15,77 @@ import Button from "@/components/ui/button";
 import { SwipeableRecipeCardRemovable } from "@/components/swipeable-recipe-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  mealSlotEntriesFromPlanField,
+  type MealPlanSlotEntry,
+} from "@/utils/meal-plan-slot";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 
-function parseRecipeIds(input?: string | null): string[] {
-  if (!input) return [];
-  return input
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+function mergeRecipeWithSlotEntry(recipe: Recipe, entry: MealPlanSlotEntry): Recipe {
+  const fromRecipe =
+    typeof recipe.servings === "number" &&
+    Number.isFinite(recipe.servings) &&
+    recipe.servings > 0
+      ? Math.floor(recipe.servings)
+      : undefined;
+  return {
+    ...recipe,
+    servings: fromRecipe ?? entry.baseServings,
+  };
+}
+
+function countRecordFromSlots(
+  b: MealPlanSlotEntry[],
+  l: MealPlanSlotEntry[],
+  d: MealPlanSlotEntry[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of [...b, ...l, ...d]) out[e.id] = e.targetServings;
+  return out;
+}
+
+function batchRecordFromSlots(
+  b: MealPlanSlotEntry[],
+  l: MealPlanSlotEntry[],
+  d: MealPlanSlotEntry[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of [...b, ...l, ...d]) out[e.id] = e.batchMultiplier;
+  return out;
+}
+
+function getRecipeBaseServings(recipe: Recipe): number {
+  const n = typeof recipe.servings === "number" ? recipe.servings : Number(recipe.servings);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+}
+
+function maxEstimatedPlanDaysFromSlots(
+  breakfast: Recipe[],
+  lunch: Recipe[],
+  dinner: Recipe[],
+  targetPerDay: Record<string, number>,
+  batchMultiplier: Record<string, number>,
+): number {
+  const lists = [breakfast, lunch, dinner];
+  let max = 0;
+  for (const list of lists) {
+    for (const recipe of list) {
+      const base = getRecipeBaseServings(recipe);
+      const target = targetPerDay[recipe.id] || 1;
+      const batch = batchMultiplier[recipe.id] || 1;
+      const days = target > 0 ? Math.floor((base * batch) / target) : 0;
+      max = Math.max(max, days);
+    }
+  }
+  return max;
+}
+
+function endDateFromStartAndMaxDays(start: Date, maxDays: number): Date {
+  const out = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  if (maxDays <= 0) return out;
+  out.setDate(out.getDate() + maxDays - 1);
+  return out;
 }
 
 function dateOnlyToLocalDate(ymd: string): Date | null {
@@ -37,6 +99,11 @@ function normalizeRecipeFromApi(json: unknown, fallbackId: string): Recipe {
   const body = json as { recipe?: Recipe } | Recipe | null;
   const r = body && typeof body === "object" && "recipe" in body ? (body as { recipe?: Recipe }).recipe : (body as Recipe | null);
   if (!r || typeof r !== "object") return { id: fallbackId };
+  const servingsRaw = (r as Recipe).servings;
+  const servings =
+    typeof servingsRaw === "number" && Number.isFinite(servingsRaw) && servingsRaw > 0
+      ? Math.floor(servingsRaw)
+      : undefined;
   return {
     id: String((r as Recipe).id ?? fallbackId),
     title: (r as Recipe).title,
@@ -44,6 +111,7 @@ function normalizeRecipeFromApi(json: unknown, fallbackId: string): Recipe {
     rating: typeof (r as Recipe).rating === "number" ? (r as Recipe).rating : undefined,
     reviews: Array.isArray((r as Recipe).reviews) ? (r as Recipe).reviews : undefined,
     image: (r as Recipe).image ?? ((r as Recipe).imageUrl as string | undefined),
+    servings,
   };
 }
 
@@ -53,6 +121,10 @@ async function recipeFromDetailCache(rid: string): Promise<Recipe | null> {
   if (!cached?.recipe?.title) return null;
   const r = cached.recipe;
   const revLen = typeof r.reviewsLength === "number" ? r.reviewsLength : 0;
+  const servings =
+    typeof r.servings === "number" && Number.isFinite(r.servings) && r.servings > 0
+      ? Math.floor(r.servings)
+      : undefined;
   return {
     id: rid,
     title: r.title,
@@ -60,6 +132,7 @@ async function recipeFromDetailCache(rid: string): Promise<Recipe | null> {
     rating: typeof r.rating === "number" ? r.rating : undefined,
     reviews: revLen > 0 ? Array.from({ length: revLen }, () => ({})) : undefined,
     image: r.image ?? undefined,
+    servings,
   };
 }
 
@@ -104,7 +177,7 @@ export default function MealPlanPage() {
   const [loadingPlan, setLoadingPlan] = useState(() => !!mealPlanIdParam);
 
   const [showPicker, setShowPicker] = useState(false);
-  const [activeField, setActiveField] = useState<"start" | "end" | null>(null);
+  const [activeField, setActiveField] = useState<"start" | null>(null);
 
   const [visible, setVisible] = useState(false);
   const [pendingMealSlot, setPendingMealSlot] = useState<MealSlot | null>(null);
@@ -121,7 +194,10 @@ export default function MealPlanPage() {
   const [calorieMin, setCalorieMin] = useState(400);
   const [calorieMax, setCalorieMax] = useState(700);
 
+  // target servings per day (by recipe id)
   const [count, setCount] = useState<Record<string, number>>({});
+  /** Ingredient batch multiplier (× base recipe); min 1. */
+  const [batchCount, setBatchCount] = useState<Record<string, number>>({});
 
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
   const { refetch: refetchMealPlans, createMealPlan, updateMealPlan } = useMealPlans();
@@ -152,27 +228,38 @@ export default function MealPlanPage() {
         );
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const cachedList = await readCache<Array<{ id: string; breakfast?: string | null; lunch?: string | null; dinner?: string | null; start_date?: string | null; end_date?: string | null }>>(CACHE_KEYS.MEAL_PLANS);
+          const cachedList = await readCache<
+            {
+              id: string;
+              breakfast?: string | null;
+              lunch?: string | null;
+              dinner?: string | null;
+              start_date?: string | null;
+              end_date?: string | null;
+            }[]
+          >(CACHE_KEYS.MEAL_PLANS);
           const plan = cachedList?.find((p) => String(p.id) === String(mealPlanIdParam));
           if (!plan) {
             throw new Error(typeof data?.error === "string" ? data.error : "Failed to load meal plan");
           }
           const start = plan.start_date ? new Date(plan.start_date) : new Date();
-          const end = plan.end_date ? new Date(plan.end_date) : new Date();
           if (!cancelled) {
             setStartDate(start);
-            setEndDate(end);
           }
-          const bIds = parseRecipeIds(plan.breakfast ?? null);
-          const lIds = parseRecipeIds(plan.lunch ?? null);
-          const dIds = parseRecipeIds(plan.dinner ?? null);
-          const allIds = Array.from(new Set([...bIds, ...lIds, ...dIds]));
+          const bEntries = mealSlotEntriesFromPlanField(plan.breakfast);
+          const lEntries = mealSlotEntriesFromPlanField(plan.lunch);
+          const dEntries = mealSlotEntriesFromPlanField(plan.dinner);
+          const allIds = Array.from(new Set([...bEntries, ...lEntries, ...dEntries].map((e) => e.id)));
           const byId: Record<string, Recipe> = {};
           await hydrateRecipesFromDetailCache(allIds, byId);
           if (!cancelled) {
-            setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
-            setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
-            setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
+            setCount(countRecordFromSlots(bEntries, lEntries, dEntries));
+            setBatchCount(batchRecordFromSlots(bEntries, lEntries, dEntries));
+            setBreakfastRecipe(
+              bEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)),
+            );
+            setLunchRecipe(lEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
+            setDinnerRecipe(dEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
           }
           return;
         }
@@ -180,16 +267,14 @@ export default function MealPlanPage() {
         if (!plan || cancelled) return;
 
         const start = plan.start_date ? new Date(plan.start_date) : new Date();
-        const end = plan.end_date ? new Date(plan.end_date) : new Date();
         if (!cancelled) {
           setStartDate(start);
-          setEndDate(end);
         }
 
-        const bIds = parseRecipeIds(plan.breakfast);
-        const lIds = parseRecipeIds(plan.lunch);
-        const dIds = parseRecipeIds(plan.dinner);
-        const allIds = Array.from(new Set([...bIds, ...lIds, ...dIds]));
+        const bEntries = mealSlotEntriesFromPlanField(plan.breakfast);
+        const lEntries = mealSlotEntriesFromPlanField(plan.lunch);
+        const dEntries = mealSlotEntriesFromPlanField(plan.dinner);
+        const allIds = Array.from(new Set([...bEntries, ...lEntries, ...dEntries].map((e) => e.id)));
 
         const fetchOne = async (recipeId: string) => {
           const isPersonal = !/^\d+$/.test(recipeId);
@@ -216,36 +301,44 @@ export default function MealPlanPage() {
         }
         await hydrateRecipesFromDetailCache(allIds, byId);
 
-        setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
-        setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
-        setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
+        if (!cancelled) {
+          setCount(countRecordFromSlots(bEntries, lEntries, dEntries));
+          setBatchCount(batchRecordFromSlots(bEntries, lEntries, dEntries));
+          setBreakfastRecipe(
+            bEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)),
+          );
+          setLunchRecipe(lEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
+          setDinnerRecipe(dEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
+        }
       } catch (e) {
         if (!cancelled && mealPlanIdParam) {
           const cachedList = await readCache<
-            Array<{
+            {
               id: string;
               breakfast?: string | null;
               lunch?: string | null;
               dinner?: string | null;
               start_date?: string | null;
               end_date?: string | null;
-            }>
+            }[]
           >(CACHE_KEYS.MEAL_PLANS);
           const plan = cachedList?.find((p) => String(p.id) === String(mealPlanIdParam));
           if (plan) {
             const start = plan.start_date ? new Date(plan.start_date) : new Date();
-            const end = plan.end_date ? new Date(plan.end_date) : new Date();
             setStartDate(start);
-            setEndDate(end);
-            const bIds = parseRecipeIds(plan.breakfast ?? null);
-            const lIds = parseRecipeIds(plan.lunch ?? null);
-            const dIds = parseRecipeIds(plan.dinner ?? null);
-            const allIds = Array.from(new Set([...bIds, ...lIds, ...dIds]));
+            const bEntries = mealSlotEntriesFromPlanField(plan.breakfast);
+            const lEntries = mealSlotEntriesFromPlanField(plan.lunch);
+            const dEntries = mealSlotEntriesFromPlanField(plan.dinner);
+            const allIds = Array.from(new Set([...bEntries, ...lEntries, ...dEntries].map((e) => e.id)));
             const byId: Record<string, Recipe> = {};
             await hydrateRecipesFromDetailCache(allIds, byId);
-            setBreakfastRecipe(bIds.map((rid) => byId[rid] ?? { id: rid }));
-            setLunchRecipe(lIds.map((rid) => byId[rid] ?? { id: rid }));
-            setDinnerRecipe(dIds.map((rid) => byId[rid] ?? { id: rid }));
+            setCount(countRecordFromSlots(bEntries, lEntries, dEntries));
+            setBatchCount(batchRecordFromSlots(bEntries, lEntries, dEntries));
+            setBreakfastRecipe(
+              bEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)),
+            );
+            setLunchRecipe(lEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
+            setDinnerRecipe(dEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
           } else if (!cancelled) {
             Alert.alert("Error", e instanceof Error ? e.message : "Failed to load meal plan.");
           }
@@ -262,16 +355,35 @@ export default function MealPlanPage() {
     };
   }, [mealPlanIdParam]);
 
-  // Preset dates for "new plan" only — never override dates loaded for an existing plan.
+  // Preset start date for "new plan" only — end date is derived from recipes.
   useEffect(() => {
     if (mealPlanIdParam) return;
     if (!dateParam) return;
     const d = dateOnlyToLocalDate(dateParam);
     if (d) {
       setStartDate(d);
-      setEndDate(d);
     }
   }, [mealPlanIdParam, dateParam]);
+
+  // End date follows the longest estimated stretch across all meals (inclusive of start).
+  useEffect(() => {
+    if (loadingPlan) return;
+    const maxDays = maxEstimatedPlanDaysFromSlots(
+      breakfastRecipe,
+      lunchRecipe,
+      dinnerRecipe,
+      count,
+      batchCount,
+    );
+    const nextEnd = endDateFromStartAndMaxDays(start_date, maxDays);
+    setEndDate((prev) =>
+      prev.getFullYear() === nextEnd.getFullYear() &&
+        prev.getMonth() === nextEnd.getMonth() &&
+        prev.getDate() === nextEnd.getDate()
+        ? prev
+        : nextEnd,
+    );
+  }, [loadingPlan, start_date, breakfastRecipe, lunchRecipe, dinnerRecipe, count, batchCount]);
 
   const increment = (id: string) => {
     setCount((prev) => ({
@@ -286,6 +398,19 @@ export default function MealPlanPage() {
     }));
   };
 
+  const incrementBatch = (id: string) => {
+    setBatchCount((prev) => ({
+      ...prev,
+      [id]: (prev[id] ?? 1) + 1,
+    }));
+  };
+  const decrementBatch = (id: string) => {
+    setBatchCount((prev) => ({
+      ...prev,
+      [id]: Math.max(1, (prev[id] ?? 1) - 1),
+    }));
+  };
+
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
@@ -294,10 +419,16 @@ export default function MealPlanPage() {
         Alert.alert("Not signed in", "Sign in to save meal plans.");
         return;
       }
+      const toSlotEntry = (r: Recipe): MealPlanSlotEntry => ({
+        id: r.id,
+        baseServings: getRecipeBaseServings(r),
+        targetServings: count[r.id] || 1,
+        batchMultiplier: batchCount[r.id] || 1,
+      });
       const body = {
-        breakfast: breakfastRecipe.map((r) => r.id),
-        lunch: lunchRecipe.map((r) => r.id),
-        dinner: dinnerRecipe.map((r) => r.id),
+        breakfast: breakfastRecipe.map(toSlotEntry),
+        lunch: lunchRecipe.map(toSlotEntry),
+        dinner: dinnerRecipe.map(toSlotEntry),
         start_date: start_date.toISOString(),
         end_date: end_date.toISOString(),
       };
@@ -322,6 +453,8 @@ export default function MealPlanPage() {
     breakfastRecipe,
     lunchRecipe,
     dinnerRecipe,
+    count,
+    batchCount,
     mealPlanIdParam,
     refetchMealPlans,
     createMealPlan,
@@ -354,23 +487,27 @@ export default function MealPlanPage() {
 
     if (!selectedDate) return;
     if (activeField === "start") {
-      if (selectedDate > end_date) {
-        setEndDate(selectedDate);
-      }
       setStartDate(selectedDate);
-    } else if (activeField === "end") {
-      setEndDate(selectedDate);
     }
   };
 
   const handleDelete = (recipeId: string, meal: MealSlot) => {
-    //delete from meals array
+    setCount((prev) => {
+      const next = { ...prev };
+      delete next[recipeId];
+      return next;
+    });
+    setBatchCount((prev) => {
+      const next = { ...prev };
+      delete next[recipeId];
+      return next;
+    });
     if (meal === "Breakfast") {
-      setBreakfastRecipe(prev => prev.filter(recipe => recipe.id !== recipeId));
+      setBreakfastRecipe((prev) => prev.filter((recipe) => recipe.id !== recipeId));
     } else if (meal === "Lunch") {
-      setLunchRecipe(prev => prev.filter(recipe => recipe.id !== recipeId));
+      setLunchRecipe((prev) => prev.filter((recipe) => recipe.id !== recipeId));
     } else if (meal === "Dinner") {
-      setDinnerRecipe(prev => prev.filter(recipe => recipe.id !== recipeId));
+      setDinnerRecipe((prev) => prev.filter((recipe) => recipe.id !== recipeId));
     }
   };
 
@@ -396,6 +533,8 @@ export default function MealPlanPage() {
         calories: typeof r?.calories === "number" ? r.calories : undefined,
         rating: typeof r?.rating === "number" ? r.rating : undefined,
         image: r?.image ?? undefined,
+        servings:
+          typeof r?.servings === "number" && r.servings > 0 ? Math.floor(r.servings) : undefined,
       });
 
       console.log(meals.breakfast, meals.lunch, meals.dinner);
@@ -460,7 +599,39 @@ export default function MealPlanPage() {
         {recipeData.map((recipe: Recipe) => (
           <View key={recipe.id}>
             {renderRecipeCard(recipe, meal)}
-            <View className="flex-row">
+            {(() => {
+              const base = getRecipeBaseServings(recipe);
+              const target = count[recipe.id] || 1;
+              const batch = batchCount[recipe.id] || 1;
+              const days = target > 0 ? Math.floor((base * batch) / target) : 0;
+              return (
+                <Text className="text-sm text-muted-foreground px-0.5">
+                  Est. {days} day{days === 1 ? "" : "s"} ({batch}× batch, serves {base} ÷{" "}
+                  {target}/day).
+                </Text>
+              );
+            })()}
+            <View className="flex-row items-center">
+              <Text className="flex-1 text-base">Batches (×):</Text>
+              <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-2">
+                <Pressable
+                  onPress={() => decrementBatch(recipe.id)}
+                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                >
+                  <Text className="text-lg">&lt;</Text>
+                </Pressable>
+                <Text className="min-w-[24px] text-center font-medium text-gray-800">
+                  {batchCount[recipe.id] || 1}
+                </Text>
+                <Pressable
+                  onPress={() => incrementBatch(recipe.id)}
+                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                >
+                  <Text className="text-lg">&gt;</Text>
+                </Pressable>
+              </View>
+            </View>
+            <View className="flex-row items-center mt-1">
               <Text className="flex-1 text-base">Servings per day:</Text>
 
               <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-2">
@@ -548,40 +719,35 @@ export default function MealPlanPage() {
               </Pressable>
             </View>
 
-            <Text className="py-4"> Plan Duration </Text>
-            {/* Plan Duration container */}
+            <Text className="py-4"> Plan duration </Text>
             <View className="flex-row gap-4 w-full">
-
-              {/* start */}
-              <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
+              <Pressable
+                className="flex-1 bg-white p-4 rounded-lg shadow-sm"
                 onPress={() => {
                   setActiveField("start");
                   setShowPicker(true);
                 }}
               >
-                <Text> Start Date </Text>
-                <Text> {start_date.toDateString()} </Text>
+                <Text> Start date </Text>
+                <Text>{start_date.toDateString()}</Text>
               </Pressable>
 
-              {/* End */}
-              <Pressable className="flex-1 bg-white p-4 rounded-lg shadow-sm"
-                onPress={() => {
-                  setActiveField("end");
-                  setShowPicker(true);
-                }}
-              >
-                <Text> End Date </Text>
-                <Text> {end_date.toDateString()} </Text>
-              </Pressable>
+              <View className="flex-1 bg-white p-4 rounded-lg shadow-sm opacity-95">
+                <Text> End date </Text>
+                <Text>{end_date.toDateString()}</Text>
+                <Text className="text-xs text-muted-foreground mt-1">
+                  Set by longest recipe stretch (all meals).
+                </Text>
+              </View>
 
-              {showPicker && (
+              {showPicker && activeField === "start" ? (
                 <DateTimePicker
-                  value={activeField === "start" ? start_date : end_date}
+                  value={start_date}
                   mode="date"
                   display="calendar"
                   onChange={onChange}
                 />
-              )}
+              ) : null}
             </View>
 
             <View className="py-3">
