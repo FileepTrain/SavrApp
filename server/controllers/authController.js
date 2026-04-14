@@ -1206,3 +1206,86 @@ export const getFollowCollectionStatus = async (req, res) => {
     });
   }
 };
+
+/**
+ * OAuth Login
+ */
+export const oauthLogin = async (req, res) => {
+  try {
+    // ✅ already verified by middleware
+    const uid = req.user.uid;
+    const email = req.user.email || "";
+    const displayName = req.user.username || "";
+
+    const db = admin.firestore();
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
+
+    let isNewUser = false;
+    let finalUsername = displayName;
+
+    if (!userDoc.exists) {
+      isNewUser = true;
+
+      const baseUsername =
+        displayName.trim() ||
+        email.split("@")[0] ||
+        `user_${uid.slice(0, 8)}`;
+
+      finalUsername = baseUsername;
+      let suffix = 1;
+
+      // 🔥 KEEP your uniqueness logic
+      while (true) {
+        const usernameDoc = await db
+          .collection("usernames")
+          .doc(finalUsername)
+          .get();
+
+        if (!usernameDoc.exists) break;
+
+        finalUsername = `${baseUsername}${suffix}`;
+        suffix += 1;
+      }
+
+      const batch = db.batch();
+
+      batch.set(userRef, {
+        email,
+        username: finalUsername,
+        onboarding: false,
+        onboarded: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      batch.set(db.collection("usernames").doc(finalUsername), {
+        uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+    } else {
+      // existing user → get username
+      finalUsername = userDoc.data().username;
+    }
+
+    return res.json({
+      success: true,
+      uid,
+      email,
+      username: finalUsername,
+      onboarded: userDoc.exists
+        ? userDoc.data().onboarded
+        : false,
+      isNewUser,
+      message: "OAuth login successful",
+    });
+  } catch (error) {
+    console.error("OAuth login failed:", error);
+    return res.status(500).json({
+      error: "OAuth login failed",
+      code: "OAUTH_FAILED",
+    });
+  }
+};

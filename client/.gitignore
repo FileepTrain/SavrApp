@@ -42,3 +42,5 @@ app-example
 # generated native folders
 /ios
 #Location app logic is in /android
+
+google-services.json

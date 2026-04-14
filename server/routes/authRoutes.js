@@ -21,6 +21,7 @@ import {
   unfollowRecipeCollection,
   listFollowedRecipeCollections,
   getFollowCollectionStatus,
+  oauthLogin,
 } from "../controllers/authController.js";
 import { uploadProfileImage } from "../middleware/multer.js";
 import {
@@ -90,5 +91,8 @@ router.put("/update-preferences", verifyToken, updatePreferences);
 
 // DELETE /api/auth/delete-account - Delete user account
 router.delete("/delete-account", verifyToken, deleteAccount);
+
+// OAuth
+router.post("/oauth-login", verifyToken, oauthLogin);
 
 export default router;

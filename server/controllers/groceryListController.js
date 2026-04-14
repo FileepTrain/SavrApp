@@ -87,7 +87,7 @@ export const addItemToGroceryList = async (req, res) => {
           updatedItem.ingredient,
           locationId,
           5,
-          "cheapest_unit",
+          "cheapest",
           false,
           updatedItem.amount,
           updatedItem.unit
