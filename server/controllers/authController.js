@@ -132,6 +132,15 @@ export const login = async (req, res) => {
 
     const { idToken, refreshToken, localId, displayName } =
       firebaseResponse.data;
+    
+    // Verify token using firebase
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    if (!decodedToken.email_verified) {
+      return res.status(403).json({
+        error: "Please verify your email before signing in.",
+        code: "EMAIL_NOT_VERIFIED",
+      })
+    }
 
     let userData = {};
     try {

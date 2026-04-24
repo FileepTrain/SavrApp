@@ -11,6 +11,8 @@ import { hrefFromRedirectTo, mergeLoginLooseParamsIntoRedirect } from "@/utils/h
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
+import { signInWithEmailAndPassword, sendEmailVerification, signOut } from "firebase/auth";
+import { auth } from "@/firebase/firebase";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
@@ -73,6 +75,23 @@ const LoginPage = () => {
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.code === "EMAIL_NOT_VERIFIED") {
+          try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            await sendEmailVerification(userCredential.user);
+            await signOut(auth);
+            Alert.alert(
+              "Verify your email!",
+              "Your email is not verified. We've sent you a new verification link."
+            );
+          } catch (err) {
+            Alert.alert(
+              "Email not verified",
+              "Please check your inbox and verify your email before signing in."
+          );
+          }
+          return;
+        }
         throw new Error(data.error || "Login failed");
       }
 
@@ -96,6 +115,32 @@ const LoginPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResendVerification = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Enter email and password first.");
+      return;
+    }
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(userCredential.user);
+      await signOut(auth);
+
+      Alert.alert("Success", "Verification email sent.");
+    } catch (err) {
+      Alert.alert("Error", "Could not resend verification email.");
+    }
+  };
+
+  const getDeviceId = async () => {
+    let deviceId = await AsyncStorage.getItem("deviceId");
+
+    if (!deviceId) {
+      deviceId = Math.random().toString(36).substring(2);
+      await AsyncStorage.setItem("deviceId", deviceId);
+    }
+    return deviceId;
   };
 
   return (
@@ -131,7 +176,9 @@ const LoginPage = () => {
             value={password}
             onChangeText={setPassword}
           />
-          <Text className="text-right text-foreground font-medium">
+          <Text className="text-right text-foreground font-medium"
+          onPress={() => router.push("/forgot-password")}
+          >
             Forgot Password?
           </Text>
           <Button size="lg" onPress={handleLogin} disabled={loading} textClassName="font-medium text-lg">

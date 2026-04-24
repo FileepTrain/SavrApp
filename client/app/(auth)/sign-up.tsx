@@ -9,6 +9,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
+import { signInWithEmailAndPassword, sendEmailVerification, signOut } from "firebase/auth";
+import { auth } from "@/firebase/firebase";
 
 const SERVER_URL = "http://10.0.2.2:3000";
 
@@ -73,34 +75,41 @@ const SignUpPage = () => {
         throw new Error(regData.error || "Registration failed");
       }
 
-      // Auto-login right after register
-      const loginRes = await fetch(`${SERVER_URL}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      // Verify Email used in sign-up + force user to log in after verifying
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(userCredential.user);
+      await signOut(auth);
+      Alert.alert("Verify your email!", "A verification link has been sent to your email. Please verify your account before logging in.");
+      router.replace("/login");
+      
+      // Original Auto-Login Setup
+      // const loginRes = await fetch(`${SERVER_URL}/api/auth/login`, {
+      //   method: "POST",
+      //   headers: { "Content-Type": "application/json" },
+      //   body: JSON.stringify({ email, password }),
+      // });
 
-      const loginData = await loginRes.json();
+      // const loginData = await loginRes.json();
 
-      if (!loginRes.ok) {
-        throw new Error(loginData.error || "Login after signup failed");
-      }
+      // if (!loginRes.ok) {
+      //   throw new Error(loginData.error || "Login after signup failed");
+      // }
 
-      await AsyncStorage.multiSet([
-        ["idToken", loginData.idToken],
-        ["uid", loginData.uid],
-        ["username", loginData.username ?? username],
-        ["email", loginData.email ?? email],
-        ["onboarded", loginData.onboarded ? "true" : "false"],
-      ]);
+      // await AsyncStorage.multiSet([
+      //   ["idToken", loginData.idToken],
+      //   ["uid", loginData.uid],
+      //   ["username", loginData.username ?? username],
+      //   ["email", loginData.email ?? email],
+      //   ["onboarded", loginData.onboarded ? "true" : "false"],
+      // ]);
 
-      // Determine redirect route: onboarding if user is not onboarded, home if user is onboarded
-      const onboarded = loginData.onboarded;
-      if (!onboarded) {
-        router.replace("/onboarding");
-      } else {
-        router.replace("/home");
-      }
+      // // Determine redirect route: onboarding if user is not onboarded, home if user is onboarded
+      // const onboarded = loginData.onboarded;
+      // if (!onboarded) {
+      //   router.replace("/onboarding");
+      // } else {
+      //   router.replace("/home");
+      // }
     } catch (err: any) {
       Alert.alert("Sign Up failed", err.message);
     } finally {
