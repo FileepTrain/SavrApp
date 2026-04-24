@@ -46,7 +46,19 @@ export type QueuedMutation =
   | { type: "ADD_COLLECTION_RECIPE"; payload: { collectionId: string; recipeId: string } }
   | { type: "REMOVE_COLLECTION_RECIPE"; payload: { collectionId: string; recipeId: string } }
   | { type: "FOLLOW_COLLECTION"; payload: { ownerUid: string; collectionId: string } }
-  | { type: "UNFOLLOW_COLLECTION"; payload: { ownerUid: string; collectionId: string } };
+  | { type: "UNFOLLOW_COLLECTION"; payload: { ownerUid: string; collectionId: string } }
+  | {
+      type: "UPSERT_RECIPE_NOTES";
+      payload: {
+        recipeId: string;
+        text: string;
+        substitutions: {
+          originalIngredient: { name: string; amount: number; unit: string; spoonacularId?: number };
+          substituteIngredients: { name: string; amount: number; unit: string }[];
+          rawText: string;
+        }[];
+      };
+    };
 
 async function readQueue(): Promise<QueuedMutation[]> {
   try {
@@ -318,6 +330,19 @@ async function replayMutation(mutation: QueuedMutation, idToken: string): Promis
         { method: "DELETE", headers },
       );
       return { ok: res.ok || res.status === 404 };
+    }
+
+    case "UPSERT_RECIPE_NOTES": {
+      const { recipeId, text, substitutions } = mutation.payload;
+      const res = await fetch(
+        `${SERVER_URL}/api/auth/recipe-notes/${encodeURIComponent(recipeId)}`,
+        {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ text, substitutions }),
+        },
+      );
+      return { ok: res.ok };
     }
 
   }

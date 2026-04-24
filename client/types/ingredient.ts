@@ -4,6 +4,7 @@ export const IngredientSchema = z.object({
   name: z.string().min(1, "Name is required"),
   amount: z.coerce.number().min(1, "Amount must be greater than 0"),
   unit: z.string().min(1, "Unit is required"),
+  spoonacularId: z.number().int().positive().optional(),
 });
 
 // Inferred TypeScript type from Zod schema

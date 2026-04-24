@@ -31,6 +31,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { RecipeNotesModal } from "@/components/recipe/recipe-notes-modal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
 
@@ -190,6 +191,17 @@ export default function RecipeDetailsPage() {
   const [newCollectionName, setNewCollectionName] = useState("");
   const [saveActionId, setSaveActionId] = useState<string | null>(null);
   const [createCollectionStep, setCreateCollectionStep] = useState(false);
+  // Notes feature
+  const [notesModalOpen, setNotesModalOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [substitutions, setSubstitutions] = useState<
+    {
+      originalIngredient: { name: string; amount: number; unit: string; spoonacularId?: number };
+      substituteIngredients: { name: string; amount: number; unit: string }[];
+      rawText: string;
+    }[]
+  >([]);
+
   /** Personal recipe creator (from API userId + authorUsername + optional photo). */
   const [recipeAuthor, setRecipeAuthor] = useState<{
     userId: string;
@@ -300,14 +312,14 @@ export default function RecipeDetailsPage() {
       const data = await res.json();
       const list: RecipeCollectionRow[] = Array.isArray(data.collections)
         ? data.collections.map((c: { id: string; name: string; recipeIds?: string[]; recipeCount?: number }) => {
-            const ids = Array.isArray(c.recipeIds) ? c.recipeIds : [];
-            return {
-              id: c.id,
-              name: c.name,
-              recipeIds: ids,
-              recipeCount: typeof c.recipeCount === "number" ? c.recipeCount : ids.length,
-            };
-          })
+          const ids = Array.isArray(c.recipeIds) ? c.recipeIds : [];
+          return {
+            id: c.id,
+            name: c.name,
+            recipeIds: ids,
+            recipeCount: typeof c.recipeCount === "number" ? c.recipeCount : ids.length,
+          };
+        })
         : [];
       setSaveCollections(list);
       await writeCache(CACHE_KEYS.COLLECTIONS_MINE, list);
@@ -336,6 +348,35 @@ export default function RecipeDetailsPage() {
     setCreateCollectionStep(false);
     setNewCollectionName("");
     void fetchCollectionsForSave();
+  };
+
+  const closeAndSaveNotes = async () => {
+    setNotesModalOpen(false);
+    if (!id) return;
+
+    // Always keep the local cache in sync for offline access.
+    await AsyncStorage.setItem(`recipe_note_${id}`, noteText);
+    await AsyncStorage.setItem(`recipe_substitutions_${id}`, JSON.stringify(substitutions));
+
+    if (isOnline) {
+      try {
+        const idToken = await AsyncStorage.getItem("idToken");
+        if (!idToken) return;
+        await fetch(`${SERVER_URL}/api/auth/recipe-notes/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text: noteText, substitutions }),
+        });
+      } catch {
+        // Network failure — the local cache is still up to date; enqueue for retry.
+        await enqueueMutation({ type: "UPSERT_RECIPE_NOTES", payload: { recipeId: id, text: noteText, substitutions } });
+      }
+    } else {
+      await enqueueMutation({ type: "UPSERT_RECIPE_NOTES", payload: { recipeId: id, text: noteText, substitutions } });
+    }
   };
 
   const collectionContainsRecipe = (c: RecipeCollectionRow) =>
@@ -539,6 +580,36 @@ export default function RecipeDetailsPage() {
         const favoriteIds: string[] = raw ? JSON.parse(raw) : [];
         setIsFavorited(favoriteIds.includes(id));
 
+        if (isOnline) {
+          try {
+            const notesRes = await fetch(
+              `${SERVER_URL}/api/auth/recipe-notes/${encodeURIComponent(id)}`,
+              { headers: { Authorization: `Bearer ${idToken}` } },
+            );
+            if (notesRes.ok) {
+              const notesData = await notesRes.json();
+              const text = typeof notesData.text === "string" ? notesData.text : "";
+              const subs = Array.isArray(notesData.substitutions) ? notesData.substitutions : [];
+              setNoteText(text);
+              setSubstitutions(subs);
+              // Keep local cache in sync.
+              await AsyncStorage.setItem(`recipe_note_${id}`, text);
+              await AsyncStorage.setItem(`recipe_substitutions_${id}`, JSON.stringify(subs));
+            }
+          } catch {
+            // Fall back to local cache on network error.
+            const savedNote = await AsyncStorage.getItem(`recipe_note_${id}`);
+            setNoteText(savedNote ?? "");
+            const savedSubs = await AsyncStorage.getItem(`recipe_substitutions_${id}`);
+            setSubstitutions(savedSubs ? JSON.parse(savedSubs) : []);
+          }
+        } else {
+          const savedNote = await AsyncStorage.getItem(`recipe_note_${id}`);
+          setNoteText(savedNote ?? "");
+          const savedSubs = await AsyncStorage.getItem(`recipe_substitutions_${id}`);
+          setSubstitutions(savedSubs ? JSON.parse(savedSubs) : []);
+        }
+
         if (!isOnline) {
           // Attempt to serve the recipe from the per-recipe cache.
           const cached = await readCache<CachedRecipeEntry>(recipeDetailKey(id));
@@ -634,8 +705,9 @@ export default function RecipeDetailsPage() {
 
           const mappedIngredients: Ingredient[] = ext.map((ing: any) => ({
             name: ing.name,
-            quantity: Number(ing.amount ?? 0),
+            amount: Number(ing.amount ?? 0),
             unit: ing.unit ?? "",
+            spoonacularId: typeof ing.id === "number" ? ing.id : undefined,
           }));
 
           setRecipe(displayRecipe);
@@ -690,8 +762,9 @@ export default function RecipeDetailsPage() {
 
           const mappedIngredients: Ingredient[] = ext.map((ing: any) => ({
             name: ing.name,
-            quantity: Number(ing.amount ?? 0),
+            amount: Number(ing.amount ?? 0),
             unit: ing.unit ?? "",
+            spoonacularId: typeof ing.id === "number" ? ing.id : undefined,
           }));
 
           setRecipe(displayRecipe);
@@ -753,6 +826,7 @@ export default function RecipeDetailsPage() {
             name: ing.name,
             amount: Number((ing.amount ?? 1).toFixed(2)),
             unit: ing.unit ?? "serving",
+            spoonacularId: typeof ing.id === "number" ? ing.id : undefined,
           }));
 
           setRecipe(displayRecipe);
@@ -858,6 +932,12 @@ export default function RecipeDetailsPage() {
 
         {/* Favorite Button */}
         <View className="absolute right-4 top-20 flex-row gap-2">
+          <TouchableOpacity
+            onPress={() => setNotesModalOpen(true)}
+            className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+          >
+            <IconSymbol name="pencil-outline" size={20} color="--color-red-primary" />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={openSaveModal}
             className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
@@ -1055,7 +1135,7 @@ export default function RecipeDetailsPage() {
               {isIngredientsOpen ? (
                 <View className="bg-background rounded-xl p-4 shadow gap-2">
                   {ingredients.length > 0 ? (
-                    <IngredientsList list={ingredients} />
+                    <IngredientsList list={ingredients} substitutions={substitutions} />
                   ) : (
                     <Text className="text-foreground font-medium">
                       No ingredients available
@@ -1291,6 +1371,16 @@ export default function RecipeDetailsPage() {
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
+
+      <RecipeNotesModal
+        visible={notesModalOpen}
+        onRequestClose={() => void closeAndSaveNotes()}
+        noteText={noteText}
+        onNoteTextChange={setNoteText}
+        substitutions={substitutions}
+        onSubstitutionsChange={setSubstitutions}
+        ingredients={ingredients}
+      />
     </View>
   );
 }

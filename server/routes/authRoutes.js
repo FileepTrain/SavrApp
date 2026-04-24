@@ -30,6 +30,10 @@ import {
   uploadProfilePhoto,
   getPublicCollection,
 } from "../controllers/userProfileController.js";
+import {
+  getRecipeNotes,
+  upsertRecipeNotes,
+} from "../controllers/recipeNotesController.js";
 
 const router = express.Router();
 
@@ -88,6 +92,10 @@ router.get("/get-preferences", verifyToken, getPreferences);
 
 // PUT /api/auth/update-preferences - Update user preferences (partial body OK)
 router.put("/update-preferences", verifyToken, updatePreferences);
+
+// Recipe notes
+router.get("/recipe-notes/:recipeId", verifyToken, getRecipeNotes);
+router.put("/recipe-notes/:recipeId", verifyToken, upsertRecipeNotes);
 
 // DELETE /api/auth/delete-account - Delete user account
 router.delete("/delete-account", verifyToken, deleteAccount);
