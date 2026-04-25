@@ -4,6 +4,7 @@ import { ToolbarSubstackScreenHeader } from "@/components/toolbar-substack-scree
 import { Stack, useRouter } from "expo-router";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
+import { Platform } from "react-native";
 
 function singleParam(v: unknown): string | undefined {
   if (typeof v === "string" && v.trim()) return v.trim();
@@ -57,13 +58,13 @@ function AccountStackHeader(props: NativeStackHeaderProps) {
 }
 
 export default function AccountStackLayout() {
+  const isWeb = Platform.OS === "web";
   return (
     <PersonalRecipesProvider>
       <Stack
         screenOptions={{
           headerShown: true,
-          /** Opaque header avoids web layout bugs where transparent mode under-measures custom headers. */
-          headerTransparent: false,
+          headerTransparent: !isWeb,
           header: (props) => <AccountStackHeader {...props} />,
         }}
       >

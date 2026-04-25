@@ -7,12 +7,11 @@ import { useMealPlanFilter } from "@/contexts/meal-plan-filter-context";
 import { useMealPlans } from "@/contexts/meal-plans-context";
 import { useNetwork } from "@/contexts/network-context";
 import { CACHE_KEYS, type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView, Switch } from "react-native";
+import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView, Switch, Platform } from "react-native";
 import { useThemePalette } from "@/components/theme-provider";
 import Button from "@/components/ui/button";
 import { SwipeableRecipeCardRemovable } from "@/components/swipeable-recipe-card";
@@ -25,6 +24,17 @@ import {
 import { loadUserCookware } from "@/utils/cookware";
 
 import { SERVER_URL } from "@/utils/server-url";
+
+const NativeDateTimePicker =
+  Platform.OS === "web"
+    ? null
+    : // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require("@react-native-community/datetimepicker").default as React.ComponentType<{
+        value: Date;
+        mode: "date";
+        display: "calendar";
+        onChange: (event: unknown, selectedDate?: Date) => void;
+      }>);
 
 function mergeRecipeWithSlotEntry(recipe: Recipe, entry: MealPlanSlotEntry): Recipe {
   const fromRecipe =
@@ -802,8 +812,8 @@ export default function MealPlanPage() {
                 </Text>
               </View>
 
-              {showPicker && activeField === "start" ? (
-                <DateTimePicker
+              {showPicker && activeField === "start" && NativeDateTimePicker ? (
+                <NativeDateTimePicker
                   value={start_date}
                   mode="date"
                   display="calendar"

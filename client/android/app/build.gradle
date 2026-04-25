@@ -181,4 +181,12 @@ dependencies {
     }
 }
 
-apply plugin: 'com.google.gms.google-services'
+// google-services.json is gitignored. The plugin only reads android/app/google-services.json.
+// Add the file from Firebase (Project settings → Your apps → Android), either here or as
+// client/google-services.json then run: npx expo prebuild (copies per app.json android.googleServicesFile).
+def googleServicesJson = file("google-services.json")
+if (googleServicesJson.exists()) {
+    apply plugin: 'com.google.gms.google-services'
+} else {
+    logger.lifecycle("Skipping Google Services plugin: android/app/google-services.json missing. Add client/google-services.json and run expo prebuild, or copy the file into android/app/.")
+}

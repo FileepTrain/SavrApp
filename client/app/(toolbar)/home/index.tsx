@@ -31,7 +31,7 @@ export default function HomeScreen() {
 
   const gridInner = Math.max(0, contentWidth - H_PADDING);
   const numColumns =
-    !isWebDesktop ? 2 : gridInner >= 1000 ? 4 : gridInner >= 720 ? 3 : 2;
+    Platform.OS !== "web" ? 2 : !isWebDesktop ? 2 : gridInner >= 1000 ? 4 : gridInner >= 720 ? 3 : 2;
   const gridGap = 16;
   const tileWidth =
     numColumns > 0
@@ -159,7 +159,9 @@ export default function HomeScreen() {
           numColumns={numColumns}
           columnWrapperStyle={
             numColumns > 1
-              ? { gap: gridGap, justifyContent: "flex-start" }
+              ? Platform.OS === "web" && isWebDesktop
+                ? { gap: gridGap, justifyContent: "flex-start" }
+                : { gap: gridGap, justifyContent: "center" }
               : undefined
           }
           contentContainerStyle={{
