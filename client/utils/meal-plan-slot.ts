@@ -10,6 +10,7 @@ export type MealPlanSlotEntry = {
   targetServings: number;
   /** Cook this many recipe batches (ingredients scale × this). */
   batchMultiplier: number;
+  title?: string; // needed for export only
 };
 
 function clampPositiveInt(n: number, fallback: number): number {

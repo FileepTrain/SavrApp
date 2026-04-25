@@ -12,6 +12,9 @@ import { useMealPlans } from "@/contexts/meal-plans-context";
 import { SwipeableMealPlanCard } from "@/components/swipeable-mealplan-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useThemePalette } from "@/components/theme-provider";
+import { generateICS } from "@/services/calendarExport";
+import { Alert } from "react-native";
+import { SERVER_URL } from '@/utils/server-url';
 
 const dateOnlyFromISO = (iso: string): string => {
   const d = new Date(iso);
@@ -47,6 +50,102 @@ export default function CalendarPage() {
   useEffect(() => {
     void AsyncStorage.getItem("uid").then(setCalendarOwnerUid);
   }, []);
+
+  const handleExportCalendar = async () => {
+  try {
+    console.log("mealPlans FULL:", mealPlans);
+    if (!mealPlans || mealPlans.length === 0) {
+      Alert.alert("No Data", "No meal plans available to export.");
+      return;
+    }
+
+    // Build ICS-friendly data
+    const days: {
+      date: Date;
+      breakfast: { title: string }[];
+      lunch: { title: string }[];
+      dinner: { title: string }[];
+    }[] = [];
+
+    mealPlans.forEach((plan) => {
+      if (!plan.start_date || !plan.end_date) return;
+
+      const start = new Date(plan.start_date);
+      const end = new Date(plan.end_date);
+
+      const current = new Date(start);
+
+      while (current <= end) {
+        let breakfastArr: { title: string }[] = [];
+        let lunchArr: { title: string }[] = [];
+        let dinnerArr: { title: string }[] = [];
+
+        try {
+          const parsedBreakfast = plan.breakfast ? JSON.parse(plan.breakfast) : [];
+          const parsedLunch = plan.lunch ? JSON.parse(plan.lunch) : [];
+          const parsedDinner = plan.dinner ? JSON.parse(plan.dinner) : [];
+
+          breakfastArr = parsedBreakfast.map((r: any) => ({
+            title: r.title || "Unknown Recipe",
+          }));
+
+          lunchArr = parsedLunch.map((r: any) => ({
+            title: r.title || "Unknown Recipe",
+          }));
+
+          dinnerArr = parsedDinner.map((r: any) => ({
+            title: r.title || "Unknown Recipe",
+          }));
+        } catch (e) {
+          console.error("JSON parse error:", e);
+        }
+
+        days.push({
+          date: new Date(current),
+          breakfast: breakfastArr,
+          lunch: lunchArr,
+          dinner: dinnerArr,
+        });
+
+        current.setDate(current.getDate() + 1);
+  }
+    });
+
+    if (days.length === 0) {
+      Alert.alert("No Data", "No valid meal plans to export.");
+      return;
+    }
+
+    const ics = await generateICS(days);
+
+    const token = await AsyncStorage.getItem("idToken");
+
+    if (!token) {
+      Alert.alert("Error", "You are not authenticated.");
+      return;
+    }
+
+    const res = await fetch(`${SERVER_URL}/api/auth/send-calendar`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ icsContent: ics }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to send email");
+    }
+
+    Alert.alert("Success", "Calendar sent to your email!");
+  } catch (err: any) {
+    console.error("Export error:", err);
+    Alert.alert("Error", err.message || "Export failed");
+  }
+};
 
   const mealPlansForSelectedDay = useMemo(() => {
     const d = selectedDate;
@@ -300,7 +399,16 @@ export default function CalendarPage() {
                 Create Meal Plan
               </Button>
             </View>
-
+            <View className="py-3">
+              <Button
+                variant="outline"
+                className="h-16"
+                textClassName="text-lg font-semibold"
+                onPress={handleExportCalendar}
+              >
+                Export Calendar
+              </Button>
+            </View>
             {
               loading ? (
                 <ActivityIndicator size="large" color="red" />

@@ -22,6 +22,7 @@ import {
   listFollowedRecipeCollections,
   getFollowCollectionStatus,
   oauthLogin,
+  sendCalendarEmail,
 } from "../controllers/authController.js";
 import { uploadProfileImage } from "../middleware/multer.js";
 import {
@@ -102,5 +103,8 @@ router.delete("/delete-account", verifyToken, deleteAccount);
 
 // OAuth
 router.post("/oauth-login", verifyToken, oauthLogin);
+
+// External Calendar - Send to user email
+router.post("/send-calendar", verifyToken, sendCalendarEmail)
 
 export default router;

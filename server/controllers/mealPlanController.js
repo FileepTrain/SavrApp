@@ -26,7 +26,7 @@ function mealSlotToStored(value) {
             Number.isFinite(targetRaw) && Math.floor(targetRaw) >= 1 ? Math.floor(targetRaw) : 1;
           const batchMultiplier =
             Number.isFinite(batchRaw) && Math.floor(batchRaw) >= 1 ? Math.floor(batchRaw) : 1;
-          return { id, baseServings, targetServings, batchMultiplier };
+          return { id, baseServings, targetServings, batchMultiplier, title: raw.title ?? null, };
         })
         .filter(Boolean);
       return normalized.length ? JSON.stringify(normalized) : null;

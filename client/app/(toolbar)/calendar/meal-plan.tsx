@@ -445,6 +445,7 @@ export default function MealPlanPage() {
         baseServings: getRecipeBaseServings(r),
         targetServings: count[r.id] || 1,
         batchMultiplier: batchCount[r.id] || 1,
+        title: r.title,
       });
       const body = {
         breakfast: breakfastRecipe.map(toSlotEntry),

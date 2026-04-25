@@ -1,6 +1,7 @@
 import admin from "firebase-admin";
 import axios from "axios";
 import { ensureUserFirestoreFromAuth } from "../utils/ensureUserFirestoreRecord.js";
+import { Resend } from "resend";
 
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
 
@@ -1221,7 +1222,6 @@ export const getFollowCollectionStatus = async (req, res) => {
  */
 export const oauthLogin = async (req, res) => {
   try {
-    // ✅ already verified by middleware
     const uid = req.user.uid;
     const email = req.user.email || "";
     const displayName = req.user.username || "";
@@ -1244,7 +1244,6 @@ export const oauthLogin = async (req, res) => {
       finalUsername = baseUsername;
       let suffix = 1;
 
-      // 🔥 KEEP your uniqueness logic
       while (true) {
         const usernameDoc = await db
           .collection("usernames")
@@ -1296,5 +1295,50 @@ export const oauthLogin = async (req, res) => {
       error: "OAuth login failed",
       code: "OAUTH_FAILED",
     });
+  }
+};
+
+/**
+ * Send Calendar Email (External Calendar Support)
+ */
+const resend = new Resend(process.env.RESEND_API_KEY);
+export const sendCalendarEmail = async (req, res) => {
+  const { icsContent } = req.body;
+  const userEmail = req.user.email;
+
+  console.log("sendCalendarEmail HIT");
+  console.log("User email:", userEmail);
+  console.log("ICS length:", icsContent?.length);
+
+  if (!icsContent) {
+    return res.status(400).json({ error: "Missing calendar data" });
+  }
+
+  try {
+    const response = await resend.emails.send({
+      from: "Savr <onboarding@resend.dev>",
+      to: "rileydonovanst@gmail.com", // HUGE LIMITATION REGARDING RESEND. WILL BRING UP LATER.
+      //to: userEmail, Need domain to send to user email, otherwise it's stuck on a dev email for now.
+      subject: "Your Meal Plan Calendar",
+      text: "Your meal plan is attached.",
+      attachments: [
+        {
+          filename: "mealplan.ics",
+          content: icsContent,
+        },
+      ],
+    });
+
+    console.log("Resend response:", response);
+
+    if (response.error) {
+      console.error("Resend API error:", response.error);
+      return res.status(500).json({ error: response.error.message });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Resend error FULL:", err);
+    return res.status(500).json({ error: "Failed to send email" });
   }
 };
