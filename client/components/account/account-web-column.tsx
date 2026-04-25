@@ -28,7 +28,7 @@ export function AccountWebColumn({ children, className, desktopMaxWidth }: Accou
 
   return (
     <View
-      className={`w-full self-center ${className ?? ""}`}
+      className={`${isWebDesktop ? "w-full self-center" : "w-full"} ${className ?? ""}`}
       style={{ maxWidth: maxW ?? undefined }}
     >
       {children}

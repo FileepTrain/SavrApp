@@ -1,12 +1,14 @@
 import { ToolbarSubstackScreenHeader } from "@/components/toolbar-substack-screen-header";
 import { Stack } from "expo-router";
+import { Platform } from "react-native";
 
 export default function RecipeLayout() {
+  const isWeb = Platform.OS === "web";
   return (
     <Stack
       screenOptions={{
         headerShown: true,
-        headerTransparent: false,
+        headerTransparent: !isWeb,
         header: (props) => <ToolbarSubstackScreenHeader {...props} columnVariant="recipe" />,
       }}
     >

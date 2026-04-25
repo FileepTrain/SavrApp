@@ -2,11 +2,10 @@ import { View, Text, Image } from "react-native";
 import React from "react";
 import Button from "./ui/button";
 import { images } from "@/constants";
-import {GoogleSignIn} from "@/services/googleAuth";
-import AsyncStorage from "@react-native-async-storage/async-storage"
-import {router} from "expo-router";
-
-const SERVER_URL = "http://10.0.2.2:3000"
+import { GoogleSignIn } from "@/services/googleAuth";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
+import { SERVER_URL } from "@/utils/server-url";
 
 const ContinueWithGoogle = () => {
   return (

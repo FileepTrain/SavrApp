@@ -4,6 +4,7 @@ import { ALL_COOKWARE_SORTED, loadUserCookware } from "@/utils/cookware";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -39,6 +40,7 @@ export function AddCookwareModal({
   summaryAndInstructions = "",
 }: AddCookwareModalProps) {
   const theme = useThemePalette();
+  const isWeb = Platform.OS === "web";
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const hasOpenedRef = useRef(false);
@@ -110,9 +112,12 @@ export function AddCookwareModal({
             {/* Header - match add-ingredient */}
             <View
               className="w-full h-[62px] flex-row items-center justify-between px-6"
-              style={{ backgroundColor: theme["--color-red-primary"] }}
+              style={isWeb ? { backgroundColor: theme["--color-red-primary"] } : undefined}
             >
-              <Text className="text-lg font-bold tracking-[0.5px]" style={{ color: theme["--color-background"] }}>
+              <Text
+                className={`text-lg font-bold tracking-[0.5px] ${isWeb ? "" : "text-background"}`}
+                style={isWeb ? { color: theme["--color-background"] } : undefined}
+              >
                 Add Cookware
               </Text>
               <Pressable onPress={() => handleBackdropClose()}>
@@ -175,8 +180,8 @@ export function AddCookwareModal({
                           style={
                             isSelected
                               ? {
-                                  backgroundColor: theme["--color-red-primary"],
-                                  borderColor: theme["--color-red-primary"],
+                                  backgroundColor: isWeb ? theme["--color-red-primary"] : "#ef4444",
+                                  borderColor: isWeb ? theme["--color-red-primary"] : "#ef4444",
                                 }
                               : { borderColor: "#CCCCCC", backgroundColor: "#ffffff" }
                           }
@@ -201,7 +206,11 @@ export function AddCookwareModal({
                 disabled={selected.size === 0}
                 className="rounded-xl h-14 items-center justify-center"
                 style={{
-                  backgroundColor: selected.size === 0 ? "#d1d5db" : theme["--color-red-primary"],
+                  backgroundColor: selected.size === 0
+                    ? "#d1d5db"
+                    : isWeb
+                      ? theme["--color-red-primary"]
+                      : "#ef4444",
                 }}
               >
                 <Text

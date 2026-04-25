@@ -59,6 +59,7 @@ export function AddIngredientModal({
   namePlaceholder = "Type and search…",
 }: AddIngredientModalProps) {
   const theme = useThemePalette();
+  const isWeb = Platform.OS === "web";
   const [itemName, setItemName] = useState("");
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -293,7 +294,7 @@ export function AddIngredientModal({
               {/* Header — inline red: NativeWind `bg-red-primary` does not apply inside Modal on web */}
               <View
                 className="w-full h-[62px] flex-row items-center justify-between px-6"
-                style={{ backgroundColor: theme["--color-red-primary"] }}
+                style={isWeb ? { backgroundColor: theme["--color-red-primary"] } : undefined}
               >
                 <Text className="text-lg font-bold tracking-[0.5px]" style={{ color: "#ffffff" }}>
                   {title}
@@ -326,7 +327,7 @@ export function AddIngredientModal({
                       onPress={runSearch}
                       className="h-[52px] w-[52px] rounded-full items-center justify-center shadow-xl"
                       style={{
-                        backgroundColor: theme["--color-red-primary"],
+                        backgroundColor: isWeb ? theme["--color-red-primary"] : "#ef4444",
                         elevation: 5,
                         opacity: isLocked ? 0.6 : 1,
                       }}
@@ -448,7 +449,7 @@ export function AddIngredientModal({
                     onPress={handleConfirm}
                     className="flex-1 h-[52px] rounded-xl items-center justify-center shadow-xl"
                     style={{
-                      backgroundColor: theme["--color-red-primary"],
+                      backgroundColor: isWeb ? theme["--color-red-primary"] : "#ef4444",
                       elevation: 5,
                       opacity: selectedId && unitOptions.length > 0 && !loadingUnits ? 1 : 0.6,
                     }}

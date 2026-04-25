@@ -4,7 +4,7 @@ import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import React from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { Platform, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 /** Matches `ThemedSafeView` default horizontal padding (`px-6`). */
@@ -41,6 +41,28 @@ export function ToolbarSubstackScreenHeader({
   const innerHorizontalPad = columnVariant === "recipe" ? 0 : TOOLBAR_SUBSTACK_INNER_PAD;
 
   const handleBack = onPressBack ?? (() => navigation.goBack());
+
+  // Keep Android/iOS visuals identical to pre-desktop commit.
+  if (Platform.OS !== "web") {
+    return (
+      <SafeAreaView className="px-4 pt-7 flex-row items-center min-h-[52px]">
+        <TouchableOpacity onPress={handleBack} className="mr-3">
+          <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
+        </TouchableOpacity>
+        <Text className="flex-1 text-2xl font-bold text-foreground" numberOfLines={1}>
+          {options.title ?? ""}
+        </Text>
+        <View className="flex-row items-center justify-end min-w-10">
+          {typeof options.headerRight === "function"
+            ? options.headerRight({
+                tintColor: undefined,
+                canGoBack: navigation.canGoBack(),
+              })
+            : null}
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
