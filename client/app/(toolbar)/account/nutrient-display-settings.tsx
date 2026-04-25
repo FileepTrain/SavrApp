@@ -1,3 +1,5 @@
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import {
   loadNutrientDisplayPrefs,
@@ -25,9 +27,11 @@ export default function NutrientDisplaySettingsPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
+      <AccountWebColumn className="flex-1">
+        <AccountSubpageBody>
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <Text className="text-[16px] text-muted-foreground">Loading...</Text>
+          <Text className="text-[14px] text-muted-foreground tracking-[0.5px]">Loading…</Text>
         </View>
       ) : (
         <NutrientDisplaySection
@@ -39,6 +43,8 @@ export default function NutrientDisplaySettingsPage() {
           }}
         />
       )}
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

@@ -6,7 +6,7 @@ import { CACHE_KEYS, CachedRecipeEntry, readCache, recipeDetailKey, writeCache }
 import { enqueueMutation } from "@/utils/mutation-queue";
 import { useNetwork } from "@/contexts/network-context";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 /** Ingredient shape your backend expects */
 export interface ExtendedIngredient {

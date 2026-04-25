@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 export const allergies = [
   "Gluten",

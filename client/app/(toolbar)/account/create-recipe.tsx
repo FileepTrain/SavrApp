@@ -3,6 +3,8 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
 
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -115,11 +117,13 @@ export default function CreateRecipePage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
+      <AccountWebColumn className="flex-1">
+        <AccountSubpageBody>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <View className="gap-4 p-4">
+        <View className="gap-4 pb-6">
           {/* Photo */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Recipe Photo</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Recipe Photo</Text>
             <TouchableOpacity
               className="bg-muted-background border border-muted-background h-36 items-center justify-center rounded-xl gap-2"
               onPress={pickImage}
@@ -129,15 +133,15 @@ export default function CreateRecipePage() {
               ) : (
                 <>
                   <IconSymbol name="camera-outline" size={32} color="--color-muted-foreground" />
-                  <Text className="text-muted-foreground text-lg font-medium">Add Photo</Text>
+                  <Text className="text-muted-foreground text-[14px] font-medium tracking-[0.5px]">Add Photo</Text>
                 </>
               )}
             </TouchableOpacity>
           </View>
 
           {/* Title */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Recipe Name</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Recipe Name</Text>
             <Input
               inputClassName="bg-background border border-muted-background rounded-lg"
               placeholder="Enter recipe name"
@@ -147,8 +151,8 @@ export default function CreateRecipePage() {
           </View>
 
           {/* Summary */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Recipe Description</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Recipe Description</Text>
             <Input
               multiline
               maxLength={100}
@@ -161,8 +165,8 @@ export default function CreateRecipePage() {
           </View>
 
           <View className="flex-row gap-4">
-            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">Prep Time (minutes)</Text>
+            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-sm">
+              <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Prep Time (minutes)</Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
@@ -172,8 +176,8 @@ export default function CreateRecipePage() {
               />
             </View>
 
-            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">Cook Time (minutes)</Text>
+            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-sm">
+              <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Cook Time (minutes)</Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
@@ -184,8 +188,8 @@ export default function CreateRecipePage() {
             </View>
           </View>
 
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Total Servings</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Total Servings</Text>
             <Input
               inputClassName="bg-background border border-muted-background rounded-lg"
               placeholder="e.g., 4"
@@ -196,8 +200,8 @@ export default function CreateRecipePage() {
           </View>
 
           {/* Ingredients */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Ingredients</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Ingredients</Text>
 
             {recipeIngredients.length > 0 && (
               <IngredientsList
@@ -214,7 +218,7 @@ export default function CreateRecipePage() {
               variant="primary"
               icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-icon" }}
               className="bg-muted-background rounded-xl"
-              textClassName="text-lg font-medium text-icon"
+              textClassName="text-[16px] font-medium tracking-[0.5px] text-icon"
               onPress={() => setIsIngredientModalVisible(true)}
             >
               Add Ingredient
@@ -231,8 +235,8 @@ export default function CreateRecipePage() {
           />
 
           {/* Instructions */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Instructions</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Instructions</Text>
             <Input
               multiline
               textAlignVertical="top"
@@ -244,8 +248,8 @@ export default function CreateRecipePage() {
           </View>
 
           {/* Cookware */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Cookware</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Cookware</Text>
 
             {recipeCookware.length > 0 && (
               <View className="flex-row flex-wrap gap-2">
@@ -271,7 +275,7 @@ export default function CreateRecipePage() {
               variant="primary"
               icon={{ name: "plus-circle-outline", position: "left", size: 20, color: "--color-icon" }}
               className="bg-muted-background rounded-xl"
-              textClassName="text-lg font-medium text-icon"
+              textClassName="text-[16px] font-medium tracking-[0.5px] text-icon"
               onPress={() => setIsCookwareModalVisible(true)}
             >
               Add Cookware
@@ -293,7 +297,7 @@ export default function CreateRecipePage() {
           <Button
             variant="default"
             className="h-16 rounded-xl"
-            textClassName="text-lg font-medium text-primary"
+            textClassName="text-[16px] font-medium tracking-[0.5px] text-primary"
             onPress={handleCreateRecipe}
             disabled={loading}
           >
@@ -301,6 +305,8 @@ export default function CreateRecipePage() {
           </Button>
         </View>
       </ScrollView>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

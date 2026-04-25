@@ -8,6 +8,13 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import {
+  AccountSubpageBody,
+  accountCardShellClassName,
+  accountEmptyStateClassName,
+  accountPrimaryCtaTextClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
@@ -17,7 +24,7 @@ import { useNetwork } from "@/contexts/network-context";
 import { CACHE_KEYS, readCache, writeCache } from "@/utils/offline-cache";
 import { enqueueMutation } from "@/utils/mutation-queue";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 type PantryItem = {
   id: string;
@@ -249,38 +256,43 @@ export default function PantryPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <View className="gap-4">
-        <Button
-          variant="primary"
-          icon={{
-            name: "plus-circle-outline",
-            position: "left",
-            size: 20,
-            color: "--color-red-primary",
-          }}
-          className="h-24"
-          textClassName="text-xl font-bold text-red-primary"
-          // Block opening the create modal when offline and explain why.
-          onPress={() => {
-            if (!isOnlineRef.current) {
-              Alert.alert("Offline", "Adding pantry items requires an internet connection.");
-              return;
-            }
-            setEditingItem(null);
-            setIsAddOpen(true);
-          }}
-        >
-          Add Pantry Item
-        </Button>
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        <View className="gap-4 flex-1">
+        <View className={accountCardShellClassName}>
+          <Button
+            variant="primary"
+            icon={{
+              name: "plus-circle-outline",
+              position: "left",
+              size: 20,
+              color: "--color-red-primary",
+            }}
+            className="h-[77px] rounded-none"
+            textClassName={accountPrimaryCtaTextClassName}
+            // Block opening the create modal when offline and explain why.
+            onPress={() => {
+              if (!isOnlineRef.current) {
+                Alert.alert("Offline", "Adding pantry items requires an internet connection.");
+                return;
+              }
+              setEditingItem(null);
+              setIsAddOpen(true);
+            }}
+          >
+            Add Pantry Item
+          </Button>
+        </View>
 
         {loading ? (
           <ActivityIndicator size="large" color="red" />
         ) : (
           <FlatList
+            style={{ flex: 1 }}
             data={pantryItems}
             keyExtractor={(item) => item.id}
             ListEmptyComponent={
-              <Text className="text-center text-foreground opacity-60 mt-6">
+              <Text className={`${accountEmptyStateClassName} mt-6`}>
                 No pantry items yet.
               </Text>
             }
@@ -318,7 +330,9 @@ export default function PantryPage() {
               : null
           }
         />
-      </View>
+        </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

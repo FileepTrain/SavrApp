@@ -1,4 +1,6 @@
 // app/account/edit-profile.tsx
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -7,7 +9,7 @@ import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 export default function EditProfilesPage() {
     const [username, setUsername] = useState("");
@@ -135,7 +137,9 @@ export default function EditProfilesPage() {
 
     return (
         <ThemedSafeView className="flex-1 pt-safe-or-20">
-            <View className="gap-5 px-4 h-full">
+            <AccountWebColumn className="flex-1">
+            <AccountSubpageBody>
+            <View className="gap-5 h-full">
                 {/*Username bubble*/}
                 <Input
                     label="Current Username"
@@ -158,7 +162,7 @@ export default function EditProfilesPage() {
                         size="lg"
                         onPress={handleSave}
                         disabled={loading}
-                        textClassName="font-medium text-lg"
+                        textClassName="text-[16px] font-medium tracking-[0.5px]"
                     >
                         {loading ? "Saving..." : "Save Changes"}
                     </Button>
@@ -171,7 +175,7 @@ export default function EditProfilesPage() {
                         size="lg"
                         variant="destructive"
                         className="mb-6"
-                        textClassName="font-medium text-lg"
+                        textClassName="text-[16px] font-medium tracking-[0.5px]"
                         onPress={() =>
                             Alert.alert(
                                 "Permanently Delete Account?",
@@ -188,6 +192,8 @@ export default function EditProfilesPage() {
                     </Button>
                 </View>
             </View>
+            </AccountSubpageBody>
+            </AccountWebColumn>
         </ThemedSafeView>
     );
 }

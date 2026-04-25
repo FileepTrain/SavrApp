@@ -1,13 +1,15 @@
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View, Pressable, FlatList } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useState } from "react";
+import { AccountWebColumn } from "@/components/account/account-web-column";
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { AddIngredientModal, ExtendedIngredient } from "@/components/add-ingredient-modal";
 import * as Location from "expo-location";
 
-const SERVER_URL = "http://10.0.2.2:3000"
+import { SERVER_URL } from '@/utils/server-url';
 
 type GroceryItem = {
   id: string;
@@ -73,7 +75,7 @@ export default function GroceryListPage() {
       setLoading(true);
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
-      const res = await fetch("http://10.0.2.2:3000/api/grocery-list", {
+      const res = await fetch(`${SERVER_URL}/api/grocery-list`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${idToken}`,
@@ -109,7 +111,7 @@ export default function GroceryListPage() {
     try {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
-      const res = await fetch("http://10.0.2.2:3000/api/grocery-list/items", {
+      const res = await fetch(`${SERVER_URL}/api/grocery-list/items`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${idToken}`,
@@ -138,7 +140,7 @@ export default function GroceryListPage() {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
       const res = await fetch(
-        `http://10.0.2.2:3000/api/grocery-list/items/${itemId}`,
+        `${SERVER_URL}/api/grocery-list/items/${itemId}`,
         {
           method: "DELETE",
           headers: {
@@ -157,10 +159,12 @@ export default function GroceryListPage() {
    * UI
    */
   return (
-    <ThemedSafeView>
-      <View className="gap-4 flex-1 px-4">
-        <Text className="text-foreground text-2xl font-semibold">Grocery List</Text>
-
+    <ThemedSafeView className="flex-1 bg-app-background">
+      <AccountWebColumn className="flex-1 min-h-0">
+        <View className="px-4 pt-2">
+          <Text className="text-foreground text-2xl font-semibold">Grocery List</Text>
+        </View>
+        <AccountSubpageBody className="gap-4 flex-1">
         {/* Location Button */}
         <View className="flex-row items-center">
           <Button
@@ -251,7 +255,8 @@ export default function GroceryListPage() {
             />
           )}
         </View>
-      </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
 
       {/* Ingredient Modal */}
       <AddIngredientModal

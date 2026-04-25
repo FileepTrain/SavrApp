@@ -1,3 +1,8 @@
+import {
+  AccountSubpageBody,
+  accountEmptyStateClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { RecipeCard } from "@/components/recipe-card";
 import {
@@ -35,20 +40,22 @@ export default function RecipeHistoryPage() {
 
   return (
     <ThemedSafeView className="flex-1 bg-app-background pt-safe-or-20">
-      <View className="flex-1">
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        <View className="flex-1">
         {loading ? (
           <View className="flex-1 items-center justify-center">
-            <Text className="text-[16px] text-muted-foreground">Loading...</Text>
+            <Text className={accountEmptyStateClassName}>Loading…</Text>
           </View>
         ) : items.length === 0 ? (
-          <View className="flex-1 px-6 justify-center">
-            <Text className="text-center text-muted-foreground text-base">
+          <View className="flex-1 px-2 justify-center">
+            <Text className={accountEmptyStateClassName}>
               Recipes you viewed will appear here.
             </Text>
           </View>
         ) : (
           // Create a list of recipe cards for each item in the history
-          <ScrollView className="flex-1 px-4 pt-2" showsVerticalScrollIndicator={false}>
+          <ScrollView className="flex-1 pt-2" showsVerticalScrollIndicator={false}>
             <View className="gap-3 pb-4">
               {items.map((item) => (
                 <RecipeCard
@@ -67,7 +74,7 @@ export default function RecipeHistoryPage() {
         )}
 
         {/* Quick action: Clear history button */}
-        <View className="p-4 pb-2 border-t border-background">
+        <View className="pt-3 pb-2 border-t border-muted-background">
           <View className="flex-row gap-3">
             <Pressable
               onPress={handleClear}
@@ -75,11 +82,13 @@ export default function RecipeHistoryPage() {
               className={`flex-1 bg-background rounded-xl h-12 items-center justify-center shadow-sm ${loading || items.length === 0 ? "opacity-40" : ""
                 }`}
             >
-              <Text className="text-foreground font-medium">Clear history</Text>
+              <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Clear history</Text>
             </Pressable>
           </View>
         </View>
-      </View>
+        </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

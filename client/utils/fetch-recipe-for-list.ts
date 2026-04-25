@@ -8,7 +8,7 @@ import {
 } from "@/utils/offline-cache";
 import type { RecipeViewHistoryEntry } from "@/utils/recipe-view-history";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 function isExternalFirestoreRecipeId(id: string): boolean {
   return id.startsWith("spoonacular_");

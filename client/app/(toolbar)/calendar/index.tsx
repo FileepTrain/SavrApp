@@ -1,4 +1,5 @@
 // app/(toolbar)/calendar/index.tsx
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -153,12 +154,17 @@ export default function CalendarPage() {
   }, [mealPlans, selectedDate, theme]);
 
   return (
-    <ThemedSafeView>
-      <ScrollView>
+    <ThemedSafeView className="flex-1 bg-app-background">
+      <AccountWebColumn className="flex-1 min-h-0">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+          <View className="px-4 pt-2">
+            <Text className="text-foreground text-2xl font-semibold">Calendar</Text>
+          </View>
 
-        <View className="gap-4 flex-1">
-          <View className="bg-background rounded-xl shadow-sm p-1">
-
+          <View className="gap-4 flex-1 px-4 pb-4">
+          {/* Wider than body text: breakout uses the horizontal padding band so only the month grid grows. */}
+          <View className="-mx-4">
+            <View className="bg-background rounded-xl shadow-sm p-1">
             <Calendar
               key={theme["--color-foreground"] || selectedDate}
               enableSwipeMonths
@@ -168,7 +174,6 @@ export default function CalendarPage() {
               }}
               markingType="multi-period"
               markedDates={markedDates}
-              style={{ minHeight: 380 }}
               customHeaderTitle={<Text className="text-foreground text-xl font-semibold">{visibleMonth.toLocaleDateString("en-US", {
                 year: "numeric",
                 month: "long",
@@ -203,13 +208,20 @@ export default function CalendarPage() {
 
                 return (
                   <Pressable
-                    className={`rounded-xl w-full h-14 py-0.5 gap-1 ${bgClass}`}
+                    className={`relative rounded-xl w-full ${bgClass}`}
+                    style={{ aspectRatio: 1 }}
                     onPress={() => setSelectedDate(date.dateString)}
                   >
-                    <Text className={textClass + " ml-1"}>{date.day}</Text>
+                    <Text className={`${textClass} mt-1.5 ml-2`} style={{ zIndex: 1 }}>
+                      {date.day}
+                    </Text>
 
                     {marking && marking.periods && marking.periods.length > 0 && (
-                      <View className="flex-col gap-0.5">
+                      <View
+                        className="absolute w-full flex-col gap-0.5 justify-center px-1"
+                        style={{ top: 0, bottom: 0, left: 0 }}
+                        pointerEvents="none"
+                      >
                         {marking.periods.map(
                           (
                             p: { color: string; startingDay?: boolean; endingDay?: boolean },
@@ -219,6 +231,8 @@ export default function CalendarPage() {
                             // Determine whether the period is the start or end of the marking to style the corners
                             const isStart = !!p.startingDay;
                             const isEnd = !!p.endingDay;
+                            // Pull bars slightly past the cell edge on continuation days so multi-day strips read as one line across columns (calendar has a small gap between cells).
+                            const bridge = 3;
 
                             return (
                               <View
@@ -230,8 +244,8 @@ export default function CalendarPage() {
                                   borderBottomLeftRadius: isStart ? radius : 0,
                                   borderTopRightRadius: isEnd ? radius : 0,
                                   borderBottomRightRadius: isEnd ? radius : 0,
-                                  marginLeft: isStart ? 4 : 0,
-                                  marginRight: isEnd ? 4 : 0,
+                                  marginLeft: isStart ? 4 : -bridge,
+                                  marginRight: isEnd ? 4 : -bridge,
                                 }}
                               />
                             );
@@ -242,39 +256,24 @@ export default function CalendarPage() {
                   </Pressable>
                 );
               }}
-              theme={
-                {
-                  calendarBackground: "transparent",
-                  textSectionTitleColor: theme["--color-muted-foreground"],
-                  // todayTextColor: theme["--color-red-primary"],
-                  // textSectionTitleColor: theme["--color-foreground"],
-                  // textDisabledColor: theme["--color-muted-foreground"],
-                  // dayTextColor: theme["--color-foreground"],
-                  // disabledTextColor: theme["--color-muted-foreground"],
-                  // // Target class names for advanced styling
-                  // "stylesheet.day.basic": {
-                  //   base: {
-                  //     width: 48,
-                  //     height: 48,
-                  //     borderRadius: 12,
-                  //   },
-                  //   today: {
-                  //     borderRadius: 12,
-                  //   },
-                  //   selected: {
-                  //     borderRadius: 12,
-                  //   },
-                  //   text: {
-                  //     textAlign: "center",
-                  //     color: theme["--color-foreground"],
-                  //   },
-                  // },
-                }
-              }
+              theme={{
+                calendarBackground: "transparent",
+                textSectionTitleColor: theme["--color-muted-foreground"],
+                // Let custom `dayComponent` control proportions: stretch cell so `aspectRatio: 1` on the inner Pressable can drive row height.
+                "stylesheet.day.basic": {
+                  base: {
+                    width: "100%",
+                    height: "100%",
+                    alignItems: "stretch",
+                    justifyContent: "stretch",
+                  },
+                },
+              }}
             />
+            </View>
           </View>
 
-          <View className="flex-1 px-4">
+          <View className="flex-1">
             <Text className="text-foreground text-xl font-semibold">
               {toLocalDate(selectedDate).toLocaleDateString("en-US", {
                 year: "numeric",
@@ -350,9 +349,10 @@ export default function CalendarPage() {
                 />
               )
             }
-          </View >
-        </View >
-      </ScrollView>
-    </ThemedSafeView >
+          </View>
+          </View>
+        </ScrollView>
+      </AccountWebColumn>
+    </ThemedSafeView>
   );
 }

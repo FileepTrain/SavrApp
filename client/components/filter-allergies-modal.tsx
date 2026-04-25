@@ -1,4 +1,5 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useThemePalette } from "@/components/theme-provider";
 import { allergies, loadAllergies } from "@/utils/diet-preferences";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -27,6 +28,7 @@ export function FilterAllergiesModal({
   onApply,
   draftSelection,
 }: FilterAllergiesModalProps) {
+  const theme = useThemePalette();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [profileAllergies, setProfileAllergies] = useState<Set<string>>(new Set());
@@ -99,12 +101,25 @@ export function FilterAllergiesModal({
       >
         <Pressable onPress={() => { }} style={{ flex: 1, marginHorizontal: 16, marginVertical: 24 }}>
           <View
-            style={{ flex: 1, maxWidth: 400, alignSelf: "center", width: "100%" }}
-            className="bg-background rounded-xl overflow-hidden shadow-xl"
+            style={{
+              flex: 1,
+              maxWidth: 400,
+              alignSelf: "center",
+              width: "100%",
+              backgroundColor: theme["--color-background"],
+              borderRadius: 12,
+              overflow: "hidden",
+            }}
+            className="shadow-xl"
           >
             {/* Header */}
-            <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
-              <Text className="text-white text-lg font-bold tracking-[0.5px]">Filter by allergies</Text>
+            <View
+              className="w-full h-[62px] flex-row items-center justify-between px-6"
+              style={{ backgroundColor: theme["--color-red-primary"] }}
+            >
+              <Text className="text-lg font-bold tracking-[0.5px]" style={{ color: "#ffffff" }}>
+                Filter by allergies
+              </Text>
               <Pressable onPress={handleBackdropClose}>
                 <IconSymbol name="close" size={24} color="--color-background" />
               </Pressable>
@@ -152,10 +167,23 @@ export function FilterAllergiesModal({
                           {item}
                         </Text>
                         <View
-                          className={`w-8 h-8 rounded-full items-center justify-center ${isSelected ? "bg-red-primary" : "border-2 border-muted-background bg-background"
+                          className={`w-8 h-8 rounded-full items-center justify-center ${isSelected ? "" : "border-2 border-muted-background"
                             }`}
+                          style={
+                            isSelected
+                              ? { backgroundColor: theme["--color-red-primary"] }
+                              : {
+                                  borderColor: theme["--color-muted-background"],
+                                  borderWidth: 2,
+                                  backgroundColor: theme["--color-background"],
+                                }
+                          }
                         >
-                          {isSelected && <Text className="text-white text-base font-bold">✓</Text>}
+                          {isSelected && (
+                            <Text className="text-base font-bold" style={{ color: "#ffffff" }}>
+                              ✓
+                            </Text>
+                          )}
                         </View>
                       </Pressable>
                     );
@@ -168,9 +196,12 @@ export function FilterAllergiesModal({
             <View className="p-4 border-t border-muted-background">
               <Pressable
                 onPress={handleApply}
-                className="rounded-xl h-14 items-center justify-center bg-red-primary"
+                className="rounded-xl h-14 items-center justify-center"
+                style={{ backgroundColor: theme["--color-red-primary"] }}
               >
-                <Text className="text-lg font-semibold text-white">Apply</Text>
+                <Text className="text-lg font-semibold" style={{ color: "#ffffff" }}>
+                  Apply
+                </Text>
               </Pressable>
             </View>
           </View>

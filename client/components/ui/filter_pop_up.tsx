@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   TouchableOpacity,
+  Dimensions,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import Button from "@/components/ui/button";
@@ -53,6 +54,7 @@ export default function FilterModal({
     () => `$${draft.budgetMin}-${draft.budgetMax}`,
     [draft.budgetMin, draft.budgetMax]
   );
+  const sheetMaxHeight = Math.round(Dimensions.get("window").height * 0.85);
 
   const removeAllergy = (item: string) => {
     onChangeDraft({
@@ -77,8 +79,29 @@ export default function FilterModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent={true}>
-      <Pressable onPress={onCancel} className="flex-1 bg-black/30 items-center justify-center px-6 py-8">
-        <Pressable onPress={() => { }} className="w-full max-w-[420px] max-h-[85%] bg-background rounded-2xl overflow-hidden">
+      <Pressable
+        onPress={onCancel}
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingHorizontal: 24,
+          paddingVertical: 32,
+          backgroundColor: "rgba(0,0,0,0.35)",
+        }}
+      >
+        <View
+          onStartShouldSetResponder={() => true}
+          style={{
+            width: "100%",
+            maxWidth: 420,
+            maxHeight: sheetMaxHeight,
+            backgroundColor: theme["--color-background"],
+            borderRadius: 16,
+            overflow: "hidden",
+            flexDirection: "column",
+          }}
+        >
           {/* Header */}
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-muted-background">
             <Text className="text-xl font-bold text-foreground">Filter by</Text>
@@ -87,7 +110,12 @@ export default function FilterModal({
             </Pressable>
           </View>
 
-          <ScrollView className="px-5 py-4" showsVerticalScrollIndicator={true} style={{ maxHeight: "100%" }}>
+          <ScrollView
+            className="px-5 py-4"
+            showsVerticalScrollIndicator={true}
+            style={{ flex: 1, minHeight: 0 }}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Budget */}
             <View className="mb-6">
               <View className="flex-row items-center justify-between mb-2">
@@ -251,8 +279,9 @@ export default function FilterModal({
             <View className="mt-6 gap-3 pb-2">
               <Button
                 variant="default"
+                portalSafe
                 className="h-14 rounded-xl"
-                textClassName="text-base font-semibold text-primary"
+                textClassName="text-base font-semibold"
                 onPress={onApply}
               >
                 Apply Filters
@@ -260,15 +289,16 @@ export default function FilterModal({
 
               <Button
                 variant="muted"
+                portalSafe
                 className="h-14 rounded-xl"
-                textClassName="text-base font-semibold text-foreground"
+                textClassName="text-base font-semibold"
                 onPress={onReset}
               >
                 Reset Filters
               </Button>
             </View>
           </ScrollView>
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );

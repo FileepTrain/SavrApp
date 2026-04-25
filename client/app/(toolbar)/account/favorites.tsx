@@ -1,4 +1,9 @@
 //app/(toolbar)/account/favorites.tsx
+import {
+  AccountSubpageBody,
+  accountEmptyStateClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { useNetwork } from "@/contexts/network-context";
@@ -11,7 +16,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { View, Text, ActivityIndicator, FlatList } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 function singleQueryParam(v: string | string[] | undefined): string | undefined {
   if (typeof v === "string" && v.trim()) return v.trim();
@@ -222,21 +227,24 @@ export default function FavoritesPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      {isSelectionMode && (
-        <Text className="text-center text-muted-foreground mb-2">
-          Tap a recipe to add it to your meal plan
-        </Text>
-      )}
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        {isSelectionMode && (
+          <Text className={`${accountEmptyStateClassName} mb-2`}>
+            Tap a recipe to add it to your meal plan
+          </Text>
+        )}
 
-      <View className="gap-4">
+        <View className="gap-4 flex-1">
         {loading ?
           <ActivityIndicator size="large" color="red" />
           :
           <FlatList
+            style={{ flex: 1 }}
             data={favorites}
             keyExtractor={(item) => item.id}
             ListEmptyComponent={
-              <Text className="text-center text-foreground opacity-60 mt-6">
+              <Text className={`${accountEmptyStateClassName} mt-6`}>
                 {isOnline ? "No favorited recipes yet." : "No favorited recipes available offline."}
               </Text>
             }
@@ -262,7 +270,9 @@ export default function FavoritesPage() {
             )}
           />
         }
-      </View>
+        </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

@@ -1,5 +1,13 @@
+import {
+  ACCOUNT_SUBPAGE_BODY_H_INSET,
+  AccountSubpageBody,
+  accountEmptyStateClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { CollectionTile } from "@/components/collection/collection-tile";
+import { useThemePalette } from "@/components/theme-provider";
 import { ThemedSafeView } from "@/components/themed-safe-view";
+import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
 import { useNetwork } from "@/contexts/network-context";
 import { useCollectionCoverImages } from "@/hooks/use-collection-cover-images";
 import { CACHE_KEYS, clearCache, collectionDetailKey, readCache, writeCache } from "@/utils/offline-cache";
@@ -20,7 +28,7 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 function newClientCollectionId(): string {
   return `local_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -53,13 +61,18 @@ function normalizeMineCollectionCache(rows: CollectionRow[]): CollectionRow[] {
 type TabId = "mine" | "followed";
 
 export default function CollectionsPage() {
+  const theme = useThemePalette();
   const router = useRouter();
   const { isOnline, registerReconnectCallback, unregisterReconnectCallback } = useNetwork();
   const { width: winW } = useWindowDimensions();
-  const tileWidth = useMemo(
-    () => Math.max(0, Math.floor((winW - SAFE_H_INSET * 2 - GAP) / 2)),
-    [winW],
-  );
+  const accountColumnWidth = useAccountWebColumnWidth();
+  const tileWidth = useMemo(() => {
+    const inner =
+      accountColumnWidth != null
+        ? accountColumnWidth - ACCOUNT_SUBPAGE_BODY_H_INSET
+        : Math.max(0, winW - SAFE_H_INSET * 2 - ACCOUNT_SUBPAGE_BODY_H_INSET);
+    return Math.max(0, Math.floor((inner - GAP) / 2));
+  }, [winW, accountColumnWidth]);
 
   const [tab, setTab] = useState<TabId>("mine");
   const [collections, setCollections] = useState<CollectionRow[]>([]);
@@ -379,23 +392,26 @@ export default function CollectionsPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <View className="px-4 pb-3">
-        <View className="flex-row gap-1 bg-background rounded-xl h-11 p-1 shadow-sm">
-          {tabButton("mine", "My collections")}
-          {tabButton("followed", "Followed collections")}
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        <View className="pb-3">
+          <View className="flex-row gap-1 bg-background rounded-xl h-11 p-1 shadow-sm">
+            {tabButton("mine", "My collections")}
+            {tabButton("followed", "Followed collections")}
+          </View>
         </View>
-      </View>
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="red" />
-        </View>
-      ) : tab === "mine" ? (
-        <FlatList
-          data={mineGridData}
-          keyExtractor={(r) => r.id}
-          numColumns={2}
-          columnWrapperStyle={{ gap: GAP }}
+        {loading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color="red" />
+          </View>
+        ) : tab === "mine" ? (
+          <FlatList
+            style={{ flex: 1 }}
+            data={mineGridData}
+            keyExtractor={(r) => r.id}
+            numColumns={2}
+            columnWrapperStyle={{ gap: GAP }}
           contentContainerStyle={{
             paddingBottom: 24,
             rowGap: GAP,
@@ -403,76 +419,88 @@ export default function CollectionsPage() {
           }}
           ListHeaderComponent={
             emptyMine ? (
-              <Text className="text-center text-muted-foreground px-6 pb-4 text-sm">
+              <Text className={`${accountEmptyStateClassName} px-2 pb-4`}>
                 No collections yet. Tap the tile below to create one, or save a recipe from its page.
               </Text>
             ) : null
           }
-          renderItem={renderMineItem}
-        />
-      ) : (
-        <FlatList
-          data={followed}
-          keyExtractor={(r) => `${r.ownerUid ?? ""}_${r.id}`}
-          numColumns={2}
-          columnWrapperStyle={{ gap: GAP }}
+            renderItem={renderMineItem}
+          />
+        ) : (
+          <FlatList
+            style={{ flex: 1 }}
+            data={followed}
+            keyExtractor={(r) => `${r.ownerUid ?? ""}_${r.id}`}
+            numColumns={2}
+            columnWrapperStyle={{ gap: GAP }}
           contentContainerStyle={{
             paddingBottom: 24,
             rowGap: GAP,
             flexGrow: emptyFollowed ? 1 : 0,
           }}
           ListEmptyComponent={
-            <View className="flex-1 px-8 pt-8 items-center">
-              <Text className="text-center text-muted-foreground text-sm">
+            <View className="flex-1 px-2 pt-8 items-center">
+              <Text className={accountEmptyStateClassName}>
                 No followed collections yet. Open someone’s profile, go to Collections, and tap
                 Follow on a board you like.
               </Text>
             </View>
           }
-          renderItem={renderFollowedItem}
-        />
-      )}
+            renderItem={renderFollowedItem}
+          />
+        )}
 
-      <Modal visible={createOpen} animationType="slide" transparent>
-        <Pressable
-          className="flex-1 bg-black/40 justify-end"
-          onPress={() => !creating && setCreateOpen(false)}
-        >
+        <Modal visible={createOpen} animationType="slide" transparent>
           <Pressable
-            className="bg-background rounded-t-3xl p-5 gap-4"
-            onPress={(e) => e.stopPropagation()}
+            style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+            onPress={() => !creating && setCreateOpen(false)}
           >
-            <Text className="text-xl font-bold text-foreground">New collection</Text>
-            <TextInput
-              placeholder="Collection name"
-              placeholderTextColor="#888"
-              value={newName}
-              onChangeText={setNewName}
-              className="border border-border rounded-xl px-4 py-3 text-foreground text-base"
-              editable={!creating}
-            />
-            <View className="flex-row gap-3">
-              <TouchableOpacity
-                className="flex-1 py-3 rounded-xl bg-muted-background items-center"
-                onPress={() => !creating && setCreateOpen(false)}
-              >
-                <Text className="font-medium text-foreground">Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="flex-1 py-3 rounded-xl bg-red-primary items-center"
-                onPress={handleCreate}
-                disabled={creating}
-              >
-                {creating ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="font-semibold text-white">Create</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            <Pressable
+              style={{
+                backgroundColor: theme["--color-background"],
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                padding: 20,
+                gap: 16,
+              }}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text className="text-xl font-bold text-foreground">New collection</Text>
+              <TextInput
+                placeholder="Collection name"
+                placeholderTextColor="#888"
+                value={newName}
+                onChangeText={setNewName}
+                className="border border-border rounded-xl px-4 py-3 text-foreground text-base"
+                editable={!creating}
+              />
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  className="flex-1 py-3 rounded-xl bg-muted-background items-center"
+                  onPress={() => !creating && setCreateOpen(false)}
+                >
+                  <Text className="font-medium text-foreground">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="flex-1 py-3 rounded-xl items-center"
+                  style={{ backgroundColor: theme["--color-red-primary"] }}
+                  onPress={handleCreate}
+                  disabled={creating}
+                >
+                  {creating ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="font-semibold" style={{ color: "#ffffff" }}>
+                      Create
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Pressable>
           </Pressable>
-        </Pressable>
-      </Modal>
+        </Modal>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

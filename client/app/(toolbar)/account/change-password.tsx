@@ -1,4 +1,6 @@
 // app/account/change-password.tsx
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -7,7 +9,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 export default function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -67,7 +69,9 @@ export default function ChangePasswordPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20 app-background">
-      <View className="gap-5 px-4">
+      <AccountWebColumn className="flex-1">
+        <AccountSubpageBody>
+      <View className="gap-5">
 
         {/* Current password (For UX only) */}
         <Input
@@ -99,13 +103,13 @@ export default function ChangePasswordPage() {
           size="lg"
           onPress={handleChangePassword}
           disabled={loading}
-          textClassName="font-medium text-lg"
+          textClassName="text-[16px] font-medium tracking-[0.5px]"
         >
           {loading ? "Changing Password..." : "Change Password"}
         </Button>
       </View>
-
-      {/* Change Password button */}
-    </ThemedSafeView >
+        </AccountSubpageBody>
+      </AccountWebColumn>
+    </ThemedSafeView>
   );
 }

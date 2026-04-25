@@ -20,6 +20,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -32,10 +33,13 @@ import {
   View,
 } from "react-native";
 import { RecipeNotesModal } from "@/components/recipe/recipe-notes-modal";
+import { useThemePalette } from "@/components/theme-provider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
+import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
+import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
 
 function newClientCollectionId(): string {
   return `local_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -165,10 +169,14 @@ function parseGalleryImagesFromApi(
 }
 
 export default function RecipeDetailsPage() {
+  const theme = useThemePalette();
+  const saveModalMaxHeight = Math.round(Dimensions.get("window").height * 0.88);
   const router = useRouter();
   const navigation = useNavigation();
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
   const { isOnline } = useNetwork();
+  const { isWebDesktop } = useWebDesktopLayout();
+  const recipeDesktopColumnWidth = useRecipeWebColumnWidth();
 
   const insets = useSafeAreaInsets();
 
@@ -862,12 +870,14 @@ export default function RecipeDetailsPage() {
   if (notCached) {
     return (
       <View className="flex-1 bg-app-background items-center justify-center px-8 gap-4">
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
-        >
-          <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
-        </TouchableOpacity>
+        {!isWebDesktop ? (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+          >
+            <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
+          </TouchableOpacity>
+        ) : null}
         <IconSymbol name="wifi-off" size={48} color="--color-muted-foreground" />
         <Text className="text-foreground text-center text-lg font-semibold">
           Recipe not available offline
@@ -879,10 +889,309 @@ export default function RecipeDetailsPage() {
     );
   }
 
+  const renderRecipeDetailBody = () => (
+    <>
+    {/* TITLE + SUBTEXT */}
+    <View className="gap-2">
+      <Text className="text-3xl font-bold text-center text-red-primary">
+        {recipe?.title || "Recipe Name"}
+      </Text>
+
+      {recipeAuthor ? (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          className="flex-row items-center justify-center gap-2 py-0.5"
+          onPress={() =>
+            router.push({
+              pathname: "/profile/[userId]",
+              params: { userId: recipeAuthor.userId },
+            })
+          }
+        >
+          <Text className="text-muted-foreground text-xs">by</Text>
+          {recipeAuthor.profilePhotoUrl ? (
+            <Image
+              source={{ uri: recipeAuthor.profilePhotoUrl }}
+              style={{ width: 22, height: 22, borderRadius: 11 }}
+              resizeMode="cover"
+            />
+          ) : (
+            <View className="w-[22px] h-[22px] rounded-full bg-red-primary/15 items-center justify-center">
+              <Text className="text-[10px] font-bold text-red-primary">
+                {(recipeAuthor.username || "?").trim().slice(0, 1).toUpperCase() || "?"}
+              </Text>
+            </View>
+          )}
+          <Text className="text-foreground text-xs font-medium max-w-[70%]" numberOfLines={1}>
+            {recipeAuthor.username || "Savr creator"}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+
+      <View className="flex-row items-center justify-center gap-4 flex-wrap">
+        <RecipeRating
+          rating={recipe?.rating ?? 0}
+          reviewsLength={recipe?.reviewsLength ?? 0}
+        />
+        <Text className="text-muted-foreground text-sm font-medium">
+          {(recipe?.viewCount ?? 0).toLocaleString()} views
+        </Text>
+        <Text className="text-muted-foreground text-sm font-medium">
+          Calories: {recipe?.calories != null ? recipe.calories : "—"}
+        </Text>
+        <Text className="text-muted-foreground text-sm font-medium">
+          Avg. ${recipe?.price != null ? recipe.price.toFixed(2) : "—"}
+        </Text>
+      </View>
+    </View>
+
+    <View className="bg-background rounded-xl shadow h-20 w-full items-center justify-evenly flex-row">
+      <View className="justify-center items-center">
+        <Text className="text-foreground font-bold">
+          {recipe?.prepTime != null
+            ? `${recipe.prepTime} min`
+            : recipe?.readyInMinutes != null
+              ? `${recipe.readyInMinutes} min`
+              : "—"}
+        </Text>
+        <Text className="text-muted-foreground text-sm">
+          {recipe?.prepTime != null ? "Prep" : "Total"}
+        </Text>
+      </View>
+
+      <View className="justify-center items-center">
+        <Text className="text-foreground font-bold">
+          {recipe?.cookTime != null ? `${recipe.cookTime} min` : "—"}
+        </Text>
+        <Text className="text-muted-foreground text-sm">Cook</Text>
+      </View>
+
+      <View className="justify-center items-center">
+        <Text className="text-foreground font-bold">
+          {recipe?.servings ?? 0}
+        </Text>
+        <Text className="text-muted-foreground text-sm">Servings</Text>
+      </View>
+    </View>
+
+    {/* Description */}
+    <Text className="text-foreground">
+      {stripHtml(recipe?.summary ?? "") || "No description available"}
+    </Text>
+
+    {/* BUTTON ROW */}
+    <View className="flex-row justify-between gap-2">
+      <TouchableOpacity
+        className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
+        onPress={() =>
+          router.push({
+            pathname: "/recipe/nutrition",
+            params: { recipeId: id },
+          })
+        }
+      >
+        <IconSymbol
+          name="invoice-list-outline"
+          size={18}
+          color="--color-foreground"
+        />
+        <Text className="font-medium text-foreground">Nutrition</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
+        onPress={() =>
+          router.push({
+            pathname: "/recipe/reviews",
+            params: { recipeId: id },
+          })
+        }
+      >
+        <IconSymbol name="chat-outline" size={18} color="--color-foreground" />
+        <Text className="font-medium text-foreground">Reviews</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
+        onPress={shareRecipeLink}
+      >
+        <IconSymbol
+          name="share-variant-outline"
+          size={18}
+          color="--color-foreground"
+        />
+        <Text className="font-medium text-foreground">Share</Text>
+      </TouchableOpacity>
+    </View>
+
+    {/* TOGGLE BUTTONS */}
+    <View className="flex-row justify-around items-center bg-background rounded-xl h-10 p-1 shadow">
+      <TouchableOpacity
+        className={`w-1/2 py-1 rounded-lg ${isIngredientsOpen ? "bg-red-primary" : "bg-background"
+          }`}
+        onPress={() => setIsIngredientsOpen(true)}
+      >
+        <Text
+          className={`text-center ${isIngredientsOpen ? "text-white" : "text-foreground"
+            }`}
+        >
+          Ingredients
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        className={`w-1/2 py-1 rounded-lg ${!isIngredientsOpen ? "bg-red-primary" : "bg-background"
+          }`}
+        onPress={() => setIsIngredientsOpen(false)}
+      >
+        <Text
+          className={`text-center ${!isIngredientsOpen ? "text-white" : "text-foreground"
+            }`}
+        >
+          Instructions
+        </Text>
+      </TouchableOpacity>
+    </View>
+
+    {/* CONTENT SECTIONS */}
+    <View className="gap-2">
+      {isIngredientsOpen ? (
+        <View className="bg-background rounded-xl p-4 shadow gap-2">
+          {ingredients.length > 0 ? (
+            <IngredientsList list={ingredients} substitutions={substitutions} />
+          ) : (
+            <Text className="text-foreground font-medium">
+              No ingredients available
+            </Text>
+          )}
+        </View>
+      ) : (
+        <View className="bg-background rounded-xl p-4 shadow gap-2">
+          <Text className="text-foreground font-medium">
+            {stripHtml(recipe?.instructions) || "No instructions available"}
+          </Text>
+        </View>
+      )}
+
+      {/* Cookware / Equipment */}
+      {recipe?.equipment && recipe.equipment.length > 0 && (
+        <View className="bg-background rounded-xl p-4 shadow gap-2">
+          <Text className="text-lg font-semibold text-foreground">
+            Cookware Needed
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {recipe.equipment.map((item, idx) => (
+              <View
+                key={idx}
+                className="flex-row items-center gap-2 bg-background border border-muted-background rounded-xl px-3 py-2"
+              >
+                {item.image ? (
+                  <Image
+                    source={{ uri: item.image }}
+                    className="w-8 h-8 rounded"
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <IconSymbol
+                    name="pot-steam-outline"
+                    size={20}
+                    color="--color-icon"
+                  />
+                )}
+                <Text className="text-foreground font-medium">
+                  {item.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      <View className="bg-background rounded-xl p-4 shadow gap-3">
+        <Text className="text-lg font-semibold text-foreground">
+          Similar Recipes
+        </Text>
+
+        {/* Similar recipes require a live API call; hide the section when offline */}
+        {!isOnline ? (
+          <Text className="text-muted-foreground">
+            Similar recipes are not available offline.
+          </Text>
+        ) : similarLoading ? (
+          <View className="py-4 items-center justify-center">
+            <ActivityIndicator size="small" color="red" />
+          </View>
+        ) : similarRecipes.length > 0 ? (
+          similarRecipes.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              className="flex-row items-center bg-white rounded-xl p-3 shadow"
+              onPress={() =>
+                router.push({
+                  pathname: "/recipe/[recipeId]",
+                  params: { recipeId: String(item.id) },
+                })
+              }
+            >
+              {item.image ? (
+                <Image
+                  source={{ uri: item.image }}
+                  className="w-20 h-20 rounded-xl mr-3"
+                  resizeMode="cover"
+                />
+              ) : (
+                <View className="w-20 h-20 rounded-xl mr-3 bg-muted-background items-center justify-center">
+                  <IconSymbol
+                    name="image-outline"
+                    size={24}
+                    color="--color-icon"
+                  />
+                </View>
+              )}
+
+              <View className="flex-1">
+                <Text className="text-red-primary font-bold text-base">
+                  {item.title}
+                </Text>
+                <Text className="text-foreground mt-1">
+                  {item.calories != null
+                    ? `${item.calories} calories`
+                    : "Calories unavailable"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <Text className="text-muted-foreground">
+            No similar recipes found.
+          </Text>
+        )}
+      </View>
+    </View>
+    </>
+  );
+
   return (
-    <View className="flex-1 bg-app-background gap-6">
-      {/* HEADER: Recipe Image + Favorite Button + Back Button */}
-      <View className="relative">
+    <View className="flex-1 bg-app-background">
+      {isWebDesktop ? (
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator
+          contentContainerStyle={{
+            alignItems: "center",
+            paddingHorizontal: 24,
+            paddingTop: insets.top + 12,
+            paddingBottom: insets.bottom + 24,
+          }}
+        >
+          <View
+            className="w-full"
+            style={{
+              maxWidth: recipeDesktopColumnWidth ?? undefined,
+              width: "100%",
+            }}
+          >
+            <View className="relative w-full overflow-hidden rounded-b-2xl">
         <RecipeHeroGallery
           items={recipeGalleryItems}
           recipeId={id}
@@ -890,16 +1199,17 @@ export default function RecipeDetailsPage() {
           serverUrl={SERVER_URL}
           currentUserId={currentUserId}
           recipeOwnerId={recipeOwnerId}
+          heroSlideWidth={recipeDesktopColumnWidth}
           onAppendGalleryEntry={(entry) => {
             setRecipe((prev) =>
               prev
                 ? {
-                  ...prev,
-                  galleryImages: [
-                    ...(prev.galleryImages ?? []),
-                    { url: entry.url, uploadedBy: entry.uploadedBy || null },
-                  ],
-                }
+                    ...prev,
+                    galleryImages: [
+                      ...(prev.galleryImages ?? []),
+                      { url: entry.url, uploadedBy: entry.uploadedBy || null },
+                    ],
+                  }
                 : null,
             );
           }}
@@ -916,338 +1226,125 @@ export default function RecipeDetailsPage() {
             });
           }}
         />
-
-        <TouchableOpacity
-          onPress={() => {
-            if (navigation.canGoBack()) {
-              router.back();
-              return;
-            }
-            router.replace("/home");
-          }}
-          className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
-        >
-          <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
-        </TouchableOpacity>
-
-        {/* Favorite Button */}
-        <View className="absolute right-4 top-20 flex-row gap-2">
-          <TouchableOpacity
-            onPress={() => setNotesModalOpen(true)}
-            className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
-          >
-            <IconSymbol name="pencil-outline" size={20} color="--color-red-primary" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={openSaveModal}
-            className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
-          >
-            <IconSymbol name="bookmark-outline" size={22} color="--color-red-primary" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={toggleFavorite}
-            className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
-          >
-            <IconSymbol
-              name={isFavorited ? "cards-heart" : "cards-heart-outline"}
-              size={24}
-              color="--color-red-primary"
-              style={{ transform: [{ translateY: 1 }, { translateX: 0.5 }] }}
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View
-        className="flex-1"
-        style={{
-          paddingLeft: insets.left,
-          paddingRight: insets.right,
-          paddingBottom: insets.bottom,
-        }}
-      >
-        <ScrollView showsVerticalScrollIndicator={false} className="px-6">
-          <View className="gap-4">
-            {/* TITLE + SUBTEXT */}
-            <View className="gap-2">
-              <Text className="text-3xl font-bold text-center text-red-primary">
-                {recipe?.title || "Recipe Name"}
-              </Text>
-
-              {recipeAuthor ? (
+              <View className="absolute right-3 flex-row gap-2" style={{ top: insets.top + 8 }}>
                 <TouchableOpacity
-                  activeOpacity={0.85}
-                  className="flex-row items-center justify-center gap-2 py-0.5"
-                  onPress={() =>
-                    router.push({
-                      pathname: "/profile/[userId]",
-                      params: { userId: recipeAuthor.userId },
-                    })
-                  }
+                  onPress={() => setNotesModalOpen(true)}
+                  className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
                 >
-                  <Text className="text-muted-foreground text-xs">by</Text>
-                  {recipeAuthor.profilePhotoUrl ? (
-                    <Image
-                      source={{ uri: recipeAuthor.profilePhotoUrl }}
-                      style={{ width: 22, height: 22, borderRadius: 11 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View className="w-[22px] h-[22px] rounded-full bg-red-primary/15 items-center justify-center">
-                      <Text className="text-[10px] font-bold text-red-primary">
-                        {(recipeAuthor.username || "?").trim().slice(0, 1).toUpperCase() || "?"}
-                      </Text>
-                    </View>
-                  )}
-                  <Text className="text-foreground text-xs font-medium max-w-[70%]" numberOfLines={1}>
-                    {recipeAuthor.username || "Savr creator"}
-                  </Text>
+                  <IconSymbol name="pencil-outline" size={20} color="--color-red-primary" />
                 </TouchableOpacity>
-              ) : null}
-
-              <View className="flex-row items-center justify-center gap-4 flex-wrap">
-                <RecipeRating
-                  rating={recipe?.rating ?? 0}
-                  reviewsLength={recipe?.reviewsLength ?? 0}
-                />
-                <Text className="text-muted-foreground text-sm font-medium">
-                  {(recipe?.viewCount ?? 0).toLocaleString()} views
-                </Text>
-                <Text className="text-muted-foreground text-sm font-medium">
-                  Calories: {recipe?.calories != null ? recipe.calories : "—"}
-                </Text>
-                <Text className="text-muted-foreground text-sm font-medium">
-                  Avg. ${recipe?.price != null ? recipe.price.toFixed(2) : "—"}
-                </Text>
-              </View>
-            </View>
-
-            <View className="bg-background rounded-xl shadow h-20 w-full items-center justify-evenly flex-row">
-              <View className="justify-center items-center">
-                <Text className="text-foreground font-bold">
-                  {recipe?.prepTime != null
-                    ? `${recipe.prepTime} min`
-                    : recipe?.readyInMinutes != null
-                      ? `${recipe.readyInMinutes} min`
-                      : "—"}
-                </Text>
-                <Text className="text-muted-foreground text-sm">
-                  {recipe?.prepTime != null ? "Prep" : "Total"}
-                </Text>
-              </View>
-
-              <View className="justify-center items-center">
-                <Text className="text-foreground font-bold">
-                  {recipe?.cookTime != null ? `${recipe.cookTime} min` : "—"}
-                </Text>
-                <Text className="text-muted-foreground text-sm">Cook</Text>
-              </View>
-
-              <View className="justify-center items-center">
-                <Text className="text-foreground font-bold">
-                  {recipe?.servings ?? 0}
-                </Text>
-                <Text className="text-muted-foreground text-sm">Servings</Text>
-              </View>
-            </View>
-
-            {/* Description */}
-            <Text className="text-foreground">
-              {stripHtml(recipe?.summary ?? "") || "No description available"}
-            </Text>
-
-            {/* BUTTON ROW */}
-            <View className="flex-row justify-between gap-2">
-              <TouchableOpacity
-                className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
-                onPress={() =>
-                  router.push({
-                    pathname: "/recipe/nutrition",
-                    params: { recipeId: id },
-                  })
-                }
-              >
-                <IconSymbol
-                  name="invoice-list-outline"
-                  size={18}
-                  color="--color-foreground"
-                />
-                <Text className="font-medium text-foreground">Nutrition</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
-                onPress={() =>
-                  router.push({
-                    pathname: "/recipe/reviews",
-                    params: { recipeId: id },
-                  })
-                }
-              >
-                <IconSymbol name="chat-outline" size={18} color="--color-foreground" />
-                <Text className="font-medium text-foreground">Reviews</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                className="flex-1 bg-background rounded-xl shadow h-12 flex-row items-center justify-center gap-2"
-                onPress={shareRecipeLink}
-              >
-                <IconSymbol
-                  name="share-variant-outline"
-                  size={18}
-                  color="--color-foreground"
-                />
-                <Text className="font-medium text-foreground">Share</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* TOGGLE BUTTONS */}
-            <View className="flex-row justify-around items-center bg-background rounded-xl h-10 p-1 shadow">
-              <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${isIngredientsOpen ? "bg-red-primary" : "bg-background"
-                  }`}
-                onPress={() => setIsIngredientsOpen(true)}
-              >
-                <Text
-                  className={`text-center ${isIngredientsOpen ? "text-white" : "text-foreground"
-                    }`}
+                <TouchableOpacity
+                  onPress={openSaveModal}
+                  className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
                 >
-                  Ingredients
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                className={`w-1/2 py-1 rounded-lg ${!isIngredientsOpen ? "bg-red-primary" : "bg-background"
-                  }`}
-                onPress={() => setIsIngredientsOpen(false)}
-              >
-                <Text
-                  className={`text-center ${!isIngredientsOpen ? "text-white" : "text-foreground"
-                    }`}
+                  <IconSymbol name="bookmark-outline" size={22} color="--color-red-primary" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={toggleFavorite}
+                  className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
                 >
-                  Instructions
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* CONTENT SECTIONS */}
-            <View className="gap-2">
-              {isIngredientsOpen ? (
-                <View className="bg-background rounded-xl p-4 shadow gap-2">
-                  {ingredients.length > 0 ? (
-                    <IngredientsList list={ingredients} substitutions={substitutions} />
-                  ) : (
-                    <Text className="text-foreground font-medium">
-                      No ingredients available
-                    </Text>
-                  )}
-                </View>
-              ) : (
-                <View className="bg-background rounded-xl p-4 shadow gap-2">
-                  <Text className="text-foreground font-medium">
-                    {stripHtml(recipe?.instructions) || "No instructions available"}
-                  </Text>
-                </View>
-              )}
-
-              {/* Cookware / Equipment */}
-              {recipe?.equipment && recipe.equipment.length > 0 && (
-                <View className="bg-background rounded-xl p-4 shadow gap-2">
-                  <Text className="text-lg font-semibold text-foreground">
-                    Cookware Needed
-                  </Text>
-                  <View className="flex-row flex-wrap gap-2">
-                    {recipe.equipment.map((item, idx) => (
-                      <View
-                        key={idx}
-                        className="flex-row items-center gap-2 bg-background border border-muted-background rounded-xl px-3 py-2"
-                      >
-                        {item.image ? (
-                          <Image
-                            source={{ uri: item.image }}
-                            className="w-8 h-8 rounded"
-                            resizeMode="contain"
-                          />
-                        ) : (
-                          <IconSymbol
-                            name="pot-steam-outline"
-                            size={20}
-                            color="--color-icon"
-                          />
-                        )}
-                        <Text className="text-foreground font-medium">
-                          {item.name}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              <View className="bg-background rounded-xl p-4 shadow gap-3">
-                <Text className="text-lg font-semibold text-foreground">
-                  Similar Recipes
-                </Text>
-
-                {/* Similar recipes require a live API call; hide the section when offline */}
-                {!isOnline ? (
-                  <Text className="text-muted-foreground">
-                    Similar recipes are not available offline.
-                  </Text>
-                ) : similarLoading ? (
-                  <View className="py-4 items-center justify-center">
-                    <ActivityIndicator size="small" color="red" />
-                  </View>
-                ) : similarRecipes.length > 0 ? (
-                  similarRecipes.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      className="flex-row items-center bg-white rounded-xl p-3 shadow"
-                      onPress={() =>
-                        router.push({
-                          pathname: "/recipe/[recipeId]",
-                          params: { recipeId: String(item.id) },
-                        })
-                      }
-                    >
-                      {item.image ? (
-                        <Image
-                          source={{ uri: item.image }}
-                          className="w-20 h-20 rounded-xl mr-3"
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View className="w-20 h-20 rounded-xl mr-3 bg-muted-background items-center justify-center">
-                          <IconSymbol
-                            name="image-outline"
-                            size={24}
-                            color="--color-icon"
-                          />
-                        </View>
-                      )}
-
-                      <View className="flex-1">
-                        <Text className="text-red-primary font-bold text-base">
-                          {item.title}
-                        </Text>
-                        <Text className="text-foreground mt-1">
-                          {item.calories != null
-                            ? `${item.calories} calories`
-                            : "Calories unavailable"}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <Text className="text-muted-foreground">
-                    No similar recipes found.
-                  </Text>
-                )}
+                  <IconSymbol
+                    name={isFavorited ? "cards-heart" : "cards-heart-outline"}
+                    size={24}
+                    color="--color-red-primary"
+                    style={{ transform: [{ translateY: 1 }, { translateX: 0.5 }] }}
+                  />
+                </TouchableOpacity>
               </View>
+            </View>
+            <View className="gap-4 w-full mt-5">
+              {renderRecipeDetailBody()}
             </View>
           </View>
         </ScrollView>
-      </View>
+      ) : (
+        <>
+          <View className="relative">
+        <RecipeHeroGallery
+          items={recipeGalleryItems}
+          recipeId={id}
+          canUpload={canUploadGallery}
+          serverUrl={SERVER_URL}
+          currentUserId={currentUserId}
+          recipeOwnerId={recipeOwnerId}
+          onAppendGalleryEntry={(entry) => {
+            setRecipe((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    galleryImages: [
+                      ...(prev.galleryImages ?? []),
+                      { url: entry.url, uploadedBy: entry.uploadedBy || null },
+                    ],
+                  }
+                : null,
+            );
+          }}
+          onRemoveImageUrl={(url) => {
+            setRecipe((prev) => {
+              if (!prev) return null;
+              if (prev.image === url) {
+                return { ...prev, image: null };
+              }
+              return {
+                ...prev,
+                galleryImages: (prev.galleryImages ?? []).filter((g) => g.url !== url),
+              };
+            });
+          }}
+        />
+              <TouchableOpacity
+                onPress={() => {
+                  if (navigation.canGoBack()) {
+                    router.back();
+                    return;
+                  }
+                  router.replace("/home");
+                }}
+                className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+              >
+                <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
+              </TouchableOpacity>
+              <View className="absolute right-4 top-20 flex-row gap-2">
+                <TouchableOpacity
+                  onPress={() => setNotesModalOpen(true)}
+                  className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+                >
+                  <IconSymbol name="pencil-outline" size={20} color="--color-red-primary" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={openSaveModal}
+                  className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+                >
+                  <IconSymbol name="bookmark-outline" size={22} color="--color-red-primary" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={toggleFavorite}
+                  className="w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+                >
+                  <IconSymbol
+                    name={isFavorited ? "cards-heart" : "cards-heart-outline"}
+                    size={24}
+                    color="--color-red-primary"
+                    style={{ transform: [{ translateY: 1 }, { translateX: 0.5 }] }}
+                  />
+                </TouchableOpacity>
+              </View>
+          </View>
+          <View
+            className="flex-1"
+            style={{
+              paddingLeft: insets.left,
+              paddingRight: insets.right,
+              paddingBottom: insets.bottom,
+            }}
+          >
+            <ScrollView showsVerticalScrollIndicator={false} className="px-6">
+              <View className="gap-4 w-full">{renderRecipeDetailBody()}</View>
+            </ScrollView>
+          </View>
+        </>
+      )}
 
       <Modal
         visible={saveModalOpen}
@@ -1263,15 +1360,28 @@ export default function RecipeDetailsPage() {
           className="flex-1"
         >
           <Pressable
-            className="flex-1 bg-black/40 justify-end"
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.4)",
+              justifyContent: "flex-end",
+              alignItems: isWebDesktop ? "center" : "stretch",
+            }}
             onPress={() => {
               if (createCollectionStep) setCreateCollectionStep(false);
               else setSaveModalOpen(false);
             }}
           >
             <Pressable
-              className="bg-background rounded-t-3xl"
-              style={{ maxHeight: "88%" }}
+              style={{
+                maxHeight: saveModalMaxHeight,
+                width: "100%",
+                maxWidth: isWebDesktop ? 560 : undefined,
+                backgroundColor: theme["--color-background"],
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                borderBottomLeftRadius: isWebDesktop ? 24 : 0,
+                borderBottomRightRadius: isWebDesktop ? 24 : 0,
+              }}
               onPress={(e) => e.stopPropagation()}
             >
               {createCollectionStep ? (
@@ -1298,14 +1408,17 @@ export default function RecipeDetailsPage() {
                       <Text className="font-medium text-foreground">Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      className="flex-1 py-3 rounded-xl bg-red-primary items-center"
+                      className="flex-1 py-3 rounded-xl items-center"
+                      style={{ backgroundColor: theme["--color-red-primary"] }}
                       onPress={() => void createCollectionAndSaveRecipe()}
                       disabled={saveActionId === "__create__"}
                     >
                       {saveActionId === "__create__" ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
-                        <Text className="font-semibold text-white">Create</Text>
+                        <Text className="font-semibold" style={{ color: "#ffffff" }}>
+                          Create
+                        </Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -1357,13 +1470,19 @@ export default function RecipeDetailsPage() {
                   )}
 
                   <TouchableOpacity
-                    className="mt-2 py-3.5 rounded-xl border border-red-primary items-center"
+                    className="mt-2 py-3.5 rounded-xl items-center"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: theme["--color-red-primary"],
+                    }}
                     onPress={() => {
                       setNewCollectionName("");
                       setCreateCollectionStep(true);
                     }}
                   >
-                    <Text className="text-red-primary font-semibold">Add collection</Text>
+                    <Text className="font-semibold" style={{ color: theme["--color-red-primary"] }}>
+                      Add collection
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}

@@ -1,3 +1,4 @@
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { loadUserCookware, saveUserCookware } from "@/utils/cookware";
 import { MyCookwareSection } from "@/components/preferences";
@@ -26,11 +27,13 @@ export default function CookwareSettingsPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <MyCookwareSection
-        value={[...selectedCookware]}
-        onChange={handleChange}
-        isLoading={isLoading}
-      />
+      <AccountWebColumn className="flex-1">
+        <MyCookwareSection
+          value={[...selectedCookware]}
+          onChange={handleChange}
+          isLoading={isLoading}
+        />
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

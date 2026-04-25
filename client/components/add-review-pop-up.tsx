@@ -7,6 +7,7 @@ import {
   TextInput,
   Pressable,
 } from "react-native";
+import { useThemePalette } from "@/components/theme-provider";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 
 interface AddReviewModalProps {
@@ -16,6 +17,7 @@ interface AddReviewModalProps {
 }
 
 export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalProps) {
+  const theme = useThemePalette();
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState("");
 
@@ -37,18 +39,31 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent={true}>
-      {/* Dark Background Overlay */}
       <Pressable
         onPress={onClose}
-        className="flex-1 bg-black/40 justify-center items-center"
-      />
-
-      {/* MODAL CARD */}
-      <View className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[361px] bg-background rounded-2xl shadow-2xl">
-
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.4)",
+          justifyContent: "center",
+          alignItems: "center",
+          paddingHorizontal: 16,
+        }}
+      >
+        <View
+          onStartShouldSetResponder={() => true}
+          style={{
+            width: 361,
+            maxWidth: "100%",
+            backgroundColor: theme["--color-background"],
+            borderRadius: 16,
+            overflow: "hidden",
+          }}
+        >
         {/* HEADER */}
         <View className="flex-row justify-between items-center px-6 h-[81px] border-b border-muted-background">
-          <Text className="text-[20px] font-bold text-red-primary">Write a Review</Text>
+          <Text className="text-[20px] font-bold" style={{ color: theme["--color-red-primary"] }}>
+            Write a Review
+          </Text>
 
           <TouchableOpacity
             onPress={onClose}
@@ -96,14 +111,16 @@ export function AddReviewModal({ visible, onClose, onSubmit }: AddReviewModalPro
           {/* Submit Button */}
           <TouchableOpacity
             onPress={handleSubmit}
-            className="bg-red-primary rounded-xl h-[48px] items-center justify-center mt-6 shadow"
+            className="rounded-xl h-[48px] items-center justify-center mt-6 shadow"
+            style={{ backgroundColor: theme["--color-red-primary"] }}
           >
-            <Text className="text-foreground text-base font-medium">
+            <Text className="text-base font-medium" style={{ color: "#ffffff" }}>
               Submit Review
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+        </View>
+      </Pressable>
     </Modal>
   );
 }

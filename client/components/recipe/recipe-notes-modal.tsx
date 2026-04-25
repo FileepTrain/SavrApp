@@ -1,5 +1,6 @@
 import { AddIngredientModal, ExtendedIngredient } from "@/components/add-ingredient-modal";
 import { IngredientsList } from "@/components/recipe/ingredients-list";
+import { useThemePalette } from "@/components/theme-provider";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Ingredient } from "@/types/ingredient";
 import React, { useRef, useState } from "react";
@@ -16,7 +17,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import PagerView from "react-native-pager-view";
+import PagerView from "./recipe-notes-pager";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 
@@ -53,8 +54,9 @@ export function RecipeNotesModal({
   onSubstitutionsChange,
   ingredients,
 }: RecipeNotesModalProps) {
+  const theme = useThemePalette();
   const { height: windowHeight } = useWindowDimensions();
-  const pagerRef = useRef<PagerView>(null);
+  const pagerRef = useRef<React.ElementRef<typeof PagerView>>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedIngredient, setSelectedIngredient] = useState<Ingredient | null>(null);
   const [substituteOptions, setSubstituteOptions] = useState<SubstituteOption[]>([]);
@@ -176,12 +178,17 @@ export function RecipeNotesModal({
         className="flex-1"
       >
         <Pressable
-          className="flex-1 bg-black/40 justify-end"
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
           onPress={handleBackdropPress}
         >
           <Pressable
-            className="bg-background rounded-t-3xl overflow-hidden"
-            style={{ height: windowHeight * 0.78 }}
+            style={{
+              height: windowHeight * 0.78,
+              backgroundColor: theme["--color-background"],
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              overflow: "hidden",
+            }}
             onPress={(e) => e.stopPropagation()}
           >
             <PagerView
@@ -251,10 +258,13 @@ export function RecipeNotesModal({
                       <Text className="text-muted-foreground text-sm">No substitutions yet.</Text>
                     )}
                     <TouchableOpacity
-                      className="py-3.5 rounded-xl border border-red-primary items-center"
+                      className="py-3.5 rounded-xl items-center"
+                      style={{ borderWidth: 1, borderColor: theme["--color-red-primary"] }}
                       onPress={() => goToPage(1)}
                     >
-                      <Text className="text-red-primary font-semibold">Add substitution</Text>
+                      <Text className="font-semibold" style={{ color: theme["--color-red-primary"] }}>
+                        Add substitution
+                      </Text>
                     </TouchableOpacity>
                   </View>
 
@@ -307,7 +317,7 @@ export function RecipeNotesModal({
 
                 {substitutesLoading ? (
                   <View className="flex-1 items-center justify-center">
-                    <ActivityIndicator size="large" color="red" />
+                    <ActivityIndicator size="large" color={theme["--color-red-primary"]} />
                   </View>
                 ) : (
                   <ScrollView
@@ -351,10 +361,13 @@ export function RecipeNotesModal({
                     )}
 
                     <TouchableOpacity
-                      className="py-3.5 rounded-xl border border-red-primary items-center"
+                      className="py-3.5 rounded-xl items-center"
+                      style={{ borderWidth: 1, borderColor: theme["--color-red-primary"] }}
                       onPress={() => setCustomSubModalOpen(true)}
                     >
-                      <Text className="text-red-primary font-semibold">Add your own</Text>
+                      <Text className="font-semibold" style={{ color: theme["--color-red-primary"] }}>
+                        Add your own
+                      </Text>
                     </TouchableOpacity>
                   </ScrollView>
                 )}

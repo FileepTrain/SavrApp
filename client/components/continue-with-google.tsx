@@ -10,7 +10,7 @@ const SERVER_URL = "http://10.0.2.2:3000"
 
 const ContinueWithGoogle = () => {
   return (
-    <Button 
+    <Button
       size="lg"
       className="bg-white border border-muted-background"
       onPress={async () => {
@@ -50,7 +50,7 @@ const ContinueWithGoogle = () => {
         <Image
           source={images.googleIcon}
           resizeMode="contain"
-          className="w-10 h-10"
+          style={{ width: 20, height: 20 }}
         />
         <Text className="text-black text-lg font-roboto-medium">
           Continue with Google

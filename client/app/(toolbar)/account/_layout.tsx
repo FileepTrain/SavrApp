@@ -1,11 +1,9 @@
 // app/(toolbar)/account/_layout.tsx
 import { PersonalRecipesProvider } from "@/contexts/personal-recipes-context";
-import { IconSymbol } from "@/components/ui/icon-symbol";
+import { ToolbarSubstackScreenHeader } from "@/components/toolbar-substack-screen-header";
 import { Stack, useRouter } from "expo-router";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 function singleParam(v: unknown): string | undefined {
   if (typeof v === "string" && v.trim()) return v.trim();
@@ -17,7 +15,8 @@ function singleParam(v: unknown): string | undefined {
  * Profile → collection passes `fromProfile=1`. We must handle back before
  * `navigation.goBack()`, otherwise RN can pop the wrong navigator and land on Home.
  */
-function AccountStackHeader({ navigation, options, route }: NativeStackHeaderProps) {
+function AccountStackHeader(props: NativeStackHeaderProps) {
+  const { navigation, route } = props;
   const router = useRouter();
 
   const handleBack = useCallback(() => {
@@ -54,24 +53,7 @@ function AccountStackHeader({ navigation, options, route }: NativeStackHeaderPro
     router.replace("/account");
   }, [navigation, route.params, router]);
 
-  return (
-    <SafeAreaView className="px-4 pt-7 flex-row items-center min-h-[52px]">
-      <TouchableOpacity onPress={handleBack} className="mr-3">
-        <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
-      </TouchableOpacity>
-      <Text className="flex-1 text-2xl font-bold text-foreground" numberOfLines={1}>
-        {options.title ?? ""}
-      </Text>
-      <View className="flex-row items-center justify-end min-w-10">
-        {typeof options.headerRight === "function"
-          ? options.headerRight({
-            tintColor: undefined,
-            canGoBack: navigation.canGoBack(),
-          })
-          : null}
-      </View>
-    </SafeAreaView>
-  );
+  return <ToolbarSubstackScreenHeader {...props} onPressBack={handleBack} />;
 }
 
 export default function AccountStackLayout() {
@@ -80,7 +62,8 @@ export default function AccountStackLayout() {
       <Stack
         screenOptions={{
           headerShown: true,
-          headerTransparent: true,
+          /** Opaque header avoids web layout bugs where transparent mode under-measures custom headers. */
+          headerTransparent: false,
           header: (props) => <AccountStackHeader {...props} />,
         }}
       >

@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { Text, View, TouchableOpacity, Alert, Image, ScrollView, ActivityIndicator } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -16,7 +18,7 @@ import {
   usePersonalRecipes,
 } from "@/contexts/personal-recipes-context";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 export default function EditRecipePage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
@@ -178,11 +180,13 @@ export default function EditRecipePage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
+      <AccountWebColumn className="flex-1">
+        <AccountSubpageBody>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <View className="gap-4">
+        <View className="gap-4 pb-6">
           {/* Recipe Photo */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Recipe Photo</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Recipe Photo</Text>
             <TouchableOpacity
               className="bg-muted-background h-36 items-center justify-center rounded-xl gap-2"
               onPress={pickImage}
@@ -200,7 +204,7 @@ export default function EditRecipePage() {
                     size={32}
                     color="--color-muted-foreground"
                   />
-                  <Text className="text-muted-foreground text-lg font-medium">Add Photo</Text>
+                  <Text className="text-muted-foreground text-[14px] font-medium tracking-[0.5px]">Add Photo</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -216,8 +220,8 @@ export default function EditRecipePage() {
           </View>
 
           {/* Recipe Title */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Recipe Name</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Recipe Name</Text>
             <Input
               inputClassName="bg-background border border-muted-background rounded-lg"
               placeholder="Enter recipe name"
@@ -227,8 +231,8 @@ export default function EditRecipePage() {
           </View>
 
           {/* Recipe Description */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">
               Recipe Description
             </Text>
             <Input
@@ -243,8 +247,8 @@ export default function EditRecipePage() {
           </View>
 
           <View className="flex-row gap-4">
-            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">Prep Time (minutes)</Text>
+            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-sm">
+              <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Prep Time (minutes)</Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
@@ -254,8 +258,8 @@ export default function EditRecipePage() {
               />
             </View>
 
-            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-lg">
-              <Text className="text-lg text-foreground font-bold">Cook Time (minutes)</Text>
+            <View className="flex-1 bg-background p-4 gap-2 rounded-xl shadow-sm">
+              <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Cook Time (minutes)</Text>
               <Input
                 inputClassName="bg-background border border-muted-background rounded-lg"
                 placeholder="e.g., 30"
@@ -266,8 +270,8 @@ export default function EditRecipePage() {
             </View>
           </View>
 
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">
               Total Servings
             </Text>
             <Input
@@ -280,8 +284,8 @@ export default function EditRecipePage() {
           </View>
 
           {/* Recipe Ingredients */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">Ingredients</Text>
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Ingredients</Text>
             <Button
               variant="outline"
               icon={{
@@ -314,8 +318,8 @@ export default function EditRecipePage() {
           />
 
           {/* Recipe Instructions */}
-          <View className="bg-background p-4 gap-2 rounded-xl shadow-lg">
-            <Text className="text-lg text-foreground font-bold">
+          <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">
+            <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">
               Instructions
             </Text>
             <Input
@@ -331,7 +335,7 @@ export default function EditRecipePage() {
           <Button
             variant="default"
             className="h-16 rounded-xl"
-            textClassName="text-lg font-medium text-primary"
+            textClassName="text-[16px] font-medium tracking-[0.5px] text-primary"
             onPress={handleSaveRecipe}
             disabled={loading}
           >
@@ -339,6 +343,8 @@ export default function EditRecipePage() {
           </Button>
         </View>
       </ScrollView>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

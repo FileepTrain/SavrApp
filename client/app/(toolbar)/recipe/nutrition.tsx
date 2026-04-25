@@ -5,7 +5,8 @@ import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
+import { SERVER_URL } from "@/utils/server-url";
 
 type Nutrient = {
   name: string;
@@ -31,6 +32,7 @@ function pickDisplayNutrients(
 }
 
 export default function NutritionPage() {
+  const recipeColumnWidth = useRecipeWebColumnWidth();
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
   const id = useMemo(
     () => (Array.isArray(recipeId) ? recipeId[0] : recipeId) ?? "",
@@ -145,29 +147,51 @@ export default function NutritionPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <ScrollView className="px-6 pt-6" showsVerticalScrollIndicator={false}>
-        <Text className="text-2xl font-bold mb-4 text-foreground">{title}</Text>
+      <ScrollView
+        className={recipeColumnWidth != null ? "pt-6" : "px-6 pt-6"}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={
+          recipeColumnWidth != null
+            ? {
+                alignItems: "center",
+                paddingHorizontal: 24,
+                paddingTop: 24,
+                paddingBottom: 24,
+              }
+            : undefined
+        }
+      >
+        <View
+          className="w-full"
+          style={
+            recipeColumnWidth != null
+              ? { maxWidth: recipeColumnWidth, width: "100%" as const }
+              : undefined
+          }
+        >
+          <Text className="text-2xl font-bold mb-4 text-foreground">{title}</Text>
 
-        {!!error && <Text className="text-red-primary mb-3">{error}</Text>}
+          {!!error && <Text className="text-red-primary mb-3">{error}</Text>}
 
-        {nutrients.length === 0 ? (
-          <Text className="opacity-70 text-base">No nutrition data available.</Text>
-        ) : (
-          <View className="bg-background rounded-xl p-4 pt-0 shadow">
-            {nutrients.map((n, idx) => (
-              <View
-                key={`${n.name}-${idx}`}
-                className="flex-row justify-between py-2 border-b border-muted-background"
-              >
-                <Text className="font-semibold text-foreground">{n.name}</Text>
-                <Text className="opacity-80 text-foreground">
-                  {Number(n.amount).toFixed(n.name === "Calories" ? 0 : 1)}{" "}
-                  {n.unit}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
+          {nutrients.length === 0 ? (
+            <Text className="opacity-70 text-base">No nutrition data available.</Text>
+          ) : (
+            <View className="bg-background rounded-xl p-4 pt-0 shadow">
+              {nutrients.map((n, idx) => (
+                <View
+                  key={`${n.name}-${idx}`}
+                  className="flex-row justify-between py-2 border-b border-muted-background"
+                >
+                  <Text className="font-semibold text-foreground">{n.name}</Text>
+                  <Text className="opacity-80 text-foreground">
+                    {Number(n.amount).toFixed(n.name === "Calories" ? 0 : 1)}{" "}
+                    {n.unit}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
       </ScrollView>
     </ThemedSafeView>
   );

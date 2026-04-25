@@ -19,7 +19,7 @@ import { buildProfileShareWebUrl, openNativeShare } from "@/utils/profile-share"
 import { type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
 import { parseMealSlotStored } from "@/utils/meal-plan-slot";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 /** Bump `generation` and set `expanded` so every card in the list applies the same open/closed state. */
 export type MealPlanBulkExpandSignal = { generation: number; expanded: boolean };

@@ -1,4 +1,5 @@
 // components/add-ingredient-modal.tsx
+import { useThemePalette } from "@/components/theme-provider";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import Input from "@/components/ui/input";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -14,7 +15,7 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 export type ExtendedIngredient = {
   id: number;
@@ -57,6 +58,7 @@ export function AddIngredientModal({
   nameLabel = "Ingredient Name",
   namePlaceholder = "Type and search…",
 }: AddIngredientModalProps) {
+  const theme = useThemePalette();
   const [itemName, setItemName] = useState("");
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -285,11 +287,17 @@ export function AddIngredientModal({
         <Pressable onPress={() => { }} style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <View
-              className="w-[345px] bg-background rounded-xl overflow-hidden shadow-xl"
+              className="w-[345px] rounded-xl overflow-hidden shadow-xl"
+              style={{ backgroundColor: theme["--color-background"] }}
             >
-              {/* Header */}
-              <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
-                <Text className="text-white text-lg font-bold tracking-[0.5px]">{title}</Text>
+              {/* Header — inline red: NativeWind `bg-red-primary` does not apply inside Modal on web */}
+              <View
+                className="w-full h-[62px] flex-row items-center justify-between px-6"
+                style={{ backgroundColor: theme["--color-red-primary"] }}
+              >
+                <Text className="text-lg font-bold tracking-[0.5px]" style={{ color: "#ffffff" }}>
+                  {title}
+                </Text>
                 <Pressable onPress={onClose}>
                   <IconSymbol name="close" size={24} color="--color-background" />
                 </Pressable>
@@ -316,8 +324,9 @@ export function AddIngredientModal({
 
                     <Pressable
                       onPress={runSearch}
-                      className="h-[52px] w-[52px] rounded-full bg-red-primary items-center justify-center shadow-xl"
+                      className="h-[52px] w-[52px] rounded-full items-center justify-center shadow-xl"
                       style={{
+                        backgroundColor: theme["--color-red-primary"],
                         elevation: 5,
                         opacity: isLocked ? 0.6 : 1,
                       }}
@@ -331,8 +340,12 @@ export function AddIngredientModal({
                     <View
                       style={{
                         zIndex: 9999,
+                        backgroundColor: theme["--color-background"],
+                        borderColor: theme["--color-muted-background"],
+                        borderWidth: 1,
+                        borderRadius: 12,
                       }}
-                      className="relative bg-background rounded-xl border border-muted-background overflow-hidden shadow-xl"
+                      className="relative overflow-hidden shadow-xl"
                     >
                       {loadingSearch ? (
                         <View className="py-3 items-center justify-center">
@@ -403,7 +416,10 @@ export function AddIngredientModal({
                       onPress={() => setUnitMenuOpen(true)}
                       style={{ opacity: canEditAmountAndUnit ? 1 : 0.5 }}
                     >
-                      <View className="h-[52px] rounded-lg border border-muted-background bg-background flex-row items-center justify-between px-3">
+                      <View
+                        className="h-[52px] rounded-lg border border-muted-background flex-row items-center justify-between px-3"
+                        style={{ backgroundColor: theme["--color-background"] }}
+                      >
                         <Text className={`text-muted-foreground ${canEditAmountAndUnit ? "" : "opacity-50"}`}>
                           {unit || "Select unit"}
                         </Text>
@@ -417,20 +433,29 @@ export function AddIngredientModal({
                 <View className="flex-row gap-3 pt-2">
                   <Pressable
                     onPress={onClose}
-                    className="flex-1 h-[52px] border border-red-primary rounded-xl items-center justify-center"
+                    className="flex-1 h-[52px] rounded-xl items-center justify-center"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: theme["--color-red-primary"],
+                    }}
                   >
-                    <Text className="text-lg font-bold text-red-primary">Cancel</Text>
+                    <Text className="text-lg font-bold" style={{ color: theme["--color-red-primary"] }}>
+                      Cancel
+                    </Text>
                   </Pressable>
 
                   <Pressable
                     onPress={handleConfirm}
-                    className="flex-1 h-[52px] bg-red-primary rounded-xl items-center justify-center shadow-xl"
+                    className="flex-1 h-[52px] rounded-xl items-center justify-center shadow-xl"
                     style={{
+                      backgroundColor: theme["--color-red-primary"],
                       elevation: 5,
                       opacity: selectedId && unitOptions.length > 0 && !loadingUnits ? 1 : 0.6,
                     }}
                   >
-                    <Text className="text-lg text-white font-bold">Confirm</Text>
+                    <Text className="text-lg font-bold" style={{ color: "#ffffff" }}>
+                      Confirm
+                    </Text>
                   </Pressable>
                 </View>
               </View>
@@ -448,7 +473,10 @@ export function AddIngredientModal({
                   }}
                 >
                   <Pressable onPress={() => { }} style={{ width: "100%", maxWidth: 360 }}>
-                    <View className="bg-background rounded-[16px] overflow-hidden">
+                    <View
+                      className="rounded-[16px] overflow-hidden"
+                      style={{ backgroundColor: theme["--color-background"] }}
+                    >
                       <View className="px-4 py-3 border-b border-muted-background flex-row items-center justify-between">
                         <Text className="text-foreground font-bold">Select Unit</Text>
                         <Pressable onPress={() => setUnitMenuOpen(false)}>

@@ -1,4 +1,5 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useThemePalette } from "@/components/theme-provider";
 import { ALL_COOKWARE_SORTED } from "@/utils/cookware";
 import React, { useEffect, useState } from "react";
 import {
@@ -30,6 +31,7 @@ export function FilterCookwareModal({
   draftSelection,
   initialUseMyCookwareOnly,
 }: FilterCookwareModalProps) {
+  const theme = useThemePalette();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [useMyCookwareOnly, setUseMyCookwareOnly] = useState(initialUseMyCookwareOnly);
@@ -70,10 +72,26 @@ export function FilterCookwareModal({
     <Modal visible={visible} transparent animationType="fade">
       <Pressable onPress={handleBackdropClose} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
         <Pressable onPress={() => { }} style={{ flex: 1, marginHorizontal: 16, marginVertical: 24 }}>
-          <View style={{ flex: 1, maxWidth: 400, alignSelf: "center", width: "100%" }} className="bg-background rounded-xl overflow-hidden shadow-xl">
+          <View
+            style={{
+              flex: 1,
+              maxWidth: 400,
+              alignSelf: "center",
+              width: "100%",
+              backgroundColor: theme["--color-background"],
+              borderRadius: 12,
+              overflow: "hidden",
+            }}
+            className="shadow-xl"
+          >
             {/* Header - match Add Cookware */}
-            <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
-              <Text className="text-white text-lg font-bold tracking-[0.5px]">Filter by cookware</Text>
+            <View
+              className="w-full h-[62px] flex-row items-center justify-between px-6"
+              style={{ backgroundColor: theme["--color-red-primary"] }}
+            >
+              <Text className="text-lg font-bold tracking-[0.5px]" style={{ color: "#ffffff" }}>
+                Filter by cookware
+              </Text>
               <Pressable onPress={handleBackdropClose}>
                 <IconSymbol name="close" size={24} color="--color-background" />
               </Pressable>
@@ -111,8 +129,23 @@ export function FilterCookwareModal({
               className="mx-4 mb-2 border border-muted-background rounded-xl flex-row items-center justify-between px-4 h-[56px] shadow-sm"
             >
               <Text className="text-base font-medium text-foreground flex-1">My cookware</Text>
-              <View className={`w-8 h-8 rounded-full items-center justify-center ${useMyCookwareOnly ? "bg-red-primary" : "border-2 border-muted-background bg-background"}`}>
-                {useMyCookwareOnly && <Text className="text-white text-base font-bold">✓</Text>}
+              <View
+                className="w-8 h-8 rounded-full items-center justify-center"
+                style={
+                  useMyCookwareOnly
+                    ? { backgroundColor: theme["--color-red-primary"] }
+                    : {
+                        borderWidth: 2,
+                        borderColor: theme["--color-muted-background"],
+                        backgroundColor: theme["--color-background"],
+                      }
+                }
+              >
+                {useMyCookwareOnly && (
+                  <Text className="text-base font-bold" style={{ color: "#ffffff" }}>
+                    ✓
+                  </Text>
+                )}
               </View>
             </Pressable>
 
@@ -135,8 +168,23 @@ export function FilterCookwareModal({
                         className="border border-muted-background rounded-xl flex-row items-center justify-between px-4 h-[56px]"
                       >
                         <Text className="text-base font-medium text-foreground flex-1">{item}</Text>
-                        <View className={`w-8 h-8 rounded-full items-center justify-center ${isSelected ? "bg-red-primary" : "border-2 border-muted-background bg-background"}`}>
-                          {isSelected && <Text className="text-white text-base font-bold">✕</Text>}
+                        <View
+                          className="w-8 h-8 rounded-full items-center justify-center"
+                          style={
+                            isSelected
+                              ? { backgroundColor: theme["--color-red-primary"] }
+                              : {
+                                  borderWidth: 2,
+                                  borderColor: theme["--color-muted-background"],
+                                  backgroundColor: theme["--color-background"],
+                                }
+                          }
+                        >
+                          {isSelected && (
+                            <Text className="text-base font-bold" style={{ color: "#ffffff" }}>
+                              ✕
+                            </Text>
+                          )}
                         </View>
                       </Pressable>
                     );
@@ -150,9 +198,23 @@ export function FilterCookwareModal({
               <Pressable
                 onPress={handleAdd}
                 disabled={selected.size === 0 && !useMyCookwareOnly}
-                className={`rounded-xl h-14 items-center justify-center ${selected.size === 0 && !useMyCookwareOnly ? "bg-muted-background" : "bg-red-primary"}`}
+                className="rounded-xl h-14 items-center justify-center"
+                style={{
+                  backgroundColor:
+                    selected.size === 0 && !useMyCookwareOnly
+                      ? theme["--color-muted-background"]
+                      : theme["--color-red-primary"],
+                }}
               >
-                <Text className={`text-lg font-semibold ${selected.size === 0 && !useMyCookwareOnly ? "text-muted-foreground" : "text-white"}`}>
+                <Text
+                  className="text-lg font-semibold"
+                  style={{
+                    color:
+                      selected.size === 0 && !useMyCookwareOnly
+                        ? theme["--color-muted-foreground"]
+                        : "#ffffff",
+                  }}
+                >
                   {selected.size > 0 ? `Add ${selected.size} cookware` : useMyCookwareOnly ? "Apply" : "Add cookware"}
                 </Text>
               </Pressable>

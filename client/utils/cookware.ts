@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SERVER_URL } from "@/utils/server-url";
 
 const COOKWARE_STORAGE_KEY = "USER_COOKWARE";
 
@@ -176,7 +177,6 @@ export const ALL_COOKWARE = [
 export const ALL_COOKWARE_SORTED = [...ALL_COOKWARE].sort((a, b) =>
   a.localeCompare(b, undefined, { sensitivity: "base" }),
 );
-const SERVER_URL = "http://10.0.2.2:3000"; // Adjust if needed
 
 /**
  * Load user's cookware preferences from server (with AsyncStorage fallback)

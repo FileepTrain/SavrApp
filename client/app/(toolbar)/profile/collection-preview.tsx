@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 export default function ProfileCollectionPreviewPage() {
   const navigation = useNavigation();

@@ -25,6 +25,54 @@ admin.initializeApp({
 const app = express();
 const port = 3000;
 
+/** Expo web is often opened via LAN IP or IPv6; CORS must echo that Origin, not only localhost. */
+function isAllowedBrowserDevOrigin(origin) {
+  if (typeof origin !== "string" || !/^https?:\/\//i.test(origin)) {
+    return false;
+  }
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== "http:" && protocol !== "https:") return false;
+    const loopback =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1";
+    if (process.env.NODE_ENV === "production") {
+      return loopback;
+    }
+    if (loopback) return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostname))
+      return true;
+    if (hostname.endsWith(".exp.direct")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Browser (Expo web) runs on another port than the API (e.g. :8081 → :3000) = cross-origin.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (isAllowedBrowserDevOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS",
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization",
+  );
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // Middleware to parse JSON request bodies
 app.use(express.json());
 
@@ -41,8 +89,25 @@ app.use("/api/combined-recipes", combinedRecipeRoutes);
 app.use("/api/grocery-list", groceryListRoutes);
 app.use("/api/meal-plans", mealPlanRoutes);
 
-function sendAppBridgePage(res, { title, heading, deepLink }) {
+function isLikelyMobileUserAgent(ua) {
+  if (!ua || typeof ua !== "string") return false;
+  return /Mobile|Android|iPhone|iPad|iPod|IEMobile|BlackBerry|webOS|Opera Mini/i.test(
+    ua,
+  );
+}
+
+/** Where the Savr **web** app is hosted (e.g. https://app.example.com). Desktop users hitting share links on the API host get redirected here. */
+function webAppPublicBase() {
+  const b = process.env.WEB_APP_PUBLIC_URL;
+  return typeof b === "string" && b.trim() ? b.trim().replace(/\/$/, "") : "";
+}
+
+function sendAppBridgePage(res, { title, heading, deepLink, autoRedirect }) {
   const safeHref = JSON.stringify(deepLink);
+  const redirectScript =
+    autoRedirect === false
+      ? ""
+      : `<script>window.location.href = ${safeHref};</script>`;
   res.status(200).type("html").send(`<!doctype html>
 <html lang="en">
   <head>
@@ -65,21 +130,28 @@ function sendAppBridgePage(res, { title, heading, deepLink }) {
       <p class="muted">If the app does not open automatically, tap the button above.</p>
       <p class="muted">Deep link: <code>${deepLink.replace(/</g, "&lt;")}</code></p>
     </div>
-    <script>
-      window.location.href = ${safeHref};
-    </script>
+    ${redirectScript}
   </body>
 </html>`);
 }
 
 app.get("/recipe/:id", (req, res) => {
   const recipeId = String(req.params.id || "");
+  const ua = req.get("user-agent") || "";
+  const webBase = webAppPublicBase();
+  if (webBase && !isLikelyMobileUserAgent(ua)) {
+    return res.redirect(
+      302,
+      `${webBase}/recipe/${encodeURIComponent(recipeId)}`,
+    );
+  }
   const redirectTo = encodeURIComponent(`/recipe/${recipeId}`);
   const deepLink = `savr://login?redirectTo=${redirectTo}`;
   sendAppBridgePage(res, {
     title: "Open Recipe - Savr",
     heading: "Opening recipe in Savr...",
     deepLink,
+    autoRedirect: isLikelyMobileUserAgent(ua),
   });
 });
 
@@ -92,6 +164,15 @@ app.get("/profile/:userId", (req, res) => {
   if (tab) qs.set("tab", tab);
   if (mealPlanId) qs.set("mealPlanId", mealPlanId);
   const query = qs.toString();
+  const ua = req.get("user-agent") || "";
+  const webBase = webAppPublicBase();
+  if (webBase && !isLikelyMobileUserAgent(ua)) {
+    const q = query ? `?${query}` : "";
+    return res.redirect(
+      302,
+      `${webBase}/profile/${encodeURIComponent(userId)}${q}`,
+    );
+  }
   const path = `/profile/${userId}${query ? `?${query}` : ""}`;
   const redirectTo = encodeURIComponent(path);
   const deepLink = `savr://login?redirectTo=${redirectTo}`;
@@ -99,6 +180,7 @@ app.get("/profile/:userId", (req, res) => {
     title: "Open Profile - Savr",
     heading: "Opening profile in Savr...",
     deepLink,
+    autoRedirect: isLikelyMobileUserAgent(ua),
   });
 });
 

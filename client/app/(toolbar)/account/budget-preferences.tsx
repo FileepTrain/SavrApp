@@ -1,12 +1,14 @@
 import { View, Text, ActivityIndicator } from 'react-native'
 import React, { useState, useEffect } from 'react'
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from '@/components/themed-safe-view';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Button from '@/components/ui/button';
 import { BudgetPreferencesSection } from '@/components/preferences';
 
 const BUDGET_STORAGE_KEY = "USER_BUDGET";
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 const BudgetPreferencesPage = () => {
   const [budget, setBudget] = useState(100);
@@ -90,19 +92,23 @@ const BudgetPreferencesPage = () => {
   }
   return (
     <ThemedSafeView className="flex-1 bg-app-background pt-safe-or-20">
-      <View className="px-4 pt-4 pb-2 gap-2">
+      <AccountWebColumn className="flex-1">
+        <AccountSubpageBody>
+      <View className="pt-4 pb-2 gap-2">
         <BudgetPreferencesSection value={budget} onChange={setBudget} />
         {/* Save button */}
         <Button
           className="mt-4"
           size="lg"
           onPress={() => handleBudgetSave(budget)}
-          textClassName="font-medium text-lg"
+          textClassName="text-[16px] font-medium tracking-[0.5px]"
           disabled={updating || loading}
         >
           {updating ? <ActivityIndicator size="small" color="black" /> : "Save Changes"}
         </Button>
       </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   )
 }

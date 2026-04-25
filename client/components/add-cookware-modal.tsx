@@ -1,3 +1,4 @@
+import { useThemePalette } from "@/components/theme-provider";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ALL_COOKWARE_SORTED, loadUserCookware } from "@/utils/cookware";
 import React, { useEffect, useRef, useState } from "react";
@@ -37,6 +38,7 @@ export function AddCookwareModal({
   draftSelection,
   summaryAndInstructions = "",
 }: AddCookwareModalProps) {
+  const theme = useThemePalette();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const hasOpenedRef = useRef(false);
@@ -93,10 +95,26 @@ export function AddCookwareModal({
     <Modal visible={visible} transparent animationType="fade">
       <Pressable onPress={handleBackdropClose} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}>
         <Pressable onPress={() => {}} style={{ flex: 1, marginHorizontal: 16, marginVertical: 24 }}>
-          <View style={{ flex: 1, maxWidth: 400, alignSelf: "center", width: "100%" }} className="bg-background rounded-xl overflow-hidden shadow-xl">
+          <View
+            style={{
+              flex: 1,
+              maxWidth: 400,
+              alignSelf: "center",
+              width: "100%",
+              backgroundColor: theme["--color-background"],
+              borderRadius: 12,
+              overflow: "hidden",
+            }}
+            className="shadow-xl"
+          >
             {/* Header - match add-ingredient */}
-            <View className="w-full h-[62px] bg-red-primary flex-row items-center justify-between px-6">
-              <Text className="text-background text-lg font-bold tracking-[0.5px]">Add Cookware</Text>
+            <View
+              className="w-full h-[62px] flex-row items-center justify-between px-6"
+              style={{ backgroundColor: theme["--color-red-primary"] }}
+            >
+              <Text className="text-lg font-bold tracking-[0.5px]" style={{ color: theme["--color-background"] }}>
+                Add Cookware
+              </Text>
               <Pressable onPress={() => handleBackdropClose()}>
                 <IconSymbol name="close" size={24} color="--color-background" />
               </Pressable>
@@ -153,12 +171,20 @@ export function AddCookwareModal({
                       >
                         <Text className="text-[16px] font-medium text-black flex-1">{item}</Text>
                         <View
-                          className={`w-6 h-6 rounded-[6px] border-2 items-center justify-center ${
-                            isSelected ? "bg-red-primary border-red-primary" : "border-[#CCCCCC] bg-white"
-                          }`}
+                          className="w-6 h-6 rounded-[6px] border-2 items-center justify-center"
+                          style={
+                            isSelected
+                              ? {
+                                  backgroundColor: theme["--color-red-primary"],
+                                  borderColor: theme["--color-red-primary"],
+                                }
+                              : { borderColor: "#CCCCCC", backgroundColor: "#ffffff" }
+                          }
                         >
                           {isSelected && (
-                            <Text className="text-white text-xs font-bold">✓</Text>
+                            <Text className="text-xs font-bold" style={{ color: "#ffffff" }}>
+                              ✓
+                            </Text>
                           )}
                         </View>
                       </Pressable>
@@ -173,9 +199,15 @@ export function AddCookwareModal({
               <Pressable
                 onPress={handleAdd}
                 disabled={selected.size === 0}
-                className={`rounded-xl h-14 items-center justify-center ${selected.size === 0 ? "bg-gray-300" : "bg-red-primary"}`}
+                className="rounded-xl h-14 items-center justify-center"
+                style={{
+                  backgroundColor: selected.size === 0 ? "#d1d5db" : theme["--color-red-primary"],
+                }}
               >
-                <Text className={`text-lg font-semibold ${selected.size === 0 ? "text-gray-500" : "text-white"}`}>
+                <Text
+                  className="text-lg font-semibold"
+                  style={{ color: selected.size === 0 ? "#6b7280" : "#ffffff" }}
+                >
                   Add {selected.size} cookware
                 </Text>
               </Pressable>

@@ -1,4 +1,5 @@
 // app/(toolbar)/calendar/meal-plan.tsx
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import type { Recipe } from "@/contexts/meal-plan-selection-context";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
@@ -11,6 +12,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
+import { useThemePalette } from "@/components/theme-provider";
 import Button from "@/components/ui/button";
 import { SwipeableRecipeCardRemovable } from "@/components/swipeable-recipe-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -20,7 +22,7 @@ import {
   type MealPlanSlotEntry,
 } from "@/utils/meal-plan-slot";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 function mergeRecipeWithSlotEntry(recipe: Recipe, entry: MealPlanSlotEntry): Recipe {
   const fromRecipe =
@@ -160,6 +162,7 @@ function singleQueryParam(v: string | string[] | undefined): string | undefined 
 }
 
 export default function MealPlanPage() {
+  const theme = useThemePalette();
   const routeParams = useLocalSearchParams<{ date?: string; mealPlanId?: string }>();
 
   const mealPlanIdParam = useMemo(() => {
@@ -666,7 +669,7 @@ export default function MealPlanPage() {
               size: 16,
               color: color,
             }}
-            className="h-14 flex px-20 rounded-2xl shadow-sm border-0"
+            className="h-14 w-full rounded-2xl border-0 px-4 shadow-sm"
             onPress={() => openAddRecipeModal(meal)}
           >
             <Text className="text-xl font-bold" style={{ color: color }}>
@@ -682,10 +685,11 @@ export default function MealPlanPage() {
   return (
     <ThemedSafeView className="flex-1 bg-[#F5E7E8] px-4 pt-safe-or-20">
       <ScrollView
-        className="flex-1 px-4"
+        className="flex-1"
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
+        <AccountWebColumn>
         {loadingPlan ? (
           <View className="py-16 items-center justify-center min-h-[200px]">
             <ActivityIndicator size="large" color="#bd9b64" />
@@ -783,10 +787,10 @@ export default function MealPlanPage() {
             <View>{renderMealContainer("Dinner", "#bd9b64", dinnerRecipe)}</View>
 
             {/*Save button*/}
-            <View className="flex items-center">
+            <View className="w-full max-w-md self-center items-stretch">
               <Button
                 variant="default"
-                className="h-16 flex  px-20 bg-red-primary rounded-2xl shadow-sm"
+                className="h-16 w-full rounded-2xl bg-red-primary shadow-sm"
                 textClassName="text-xl font-bold text-white"
                 onPress={() => {
                   handleSave();
@@ -806,17 +810,33 @@ export default function MealPlanPage() {
             >
               {/* Backdrop */}
               <Pressable
-                className="flex-1 bg-black/50 justify-center items-center"
+                style={{
+                  flex: 1,
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
                 onPress={() => setVisible(false)}
               >
                 {/* Stop press propagation */}
-                <Pressable className="w-80 bg-background rounded-2xl p-6 gap-4">
+                <Pressable
+                  onPress={() => {}}
+                  style={{
+                    width: 320,
+                    maxWidth: "90%",
+                    backgroundColor: theme["--color-background"],
+                    borderRadius: 16,
+                    padding: 24,
+                    gap: 16,
+                  }}
+                >
                   <Text className="text-lg font-bold text-center text-foreground">Choose Recipe</Text>
 
                   {/* From Favorites is available both online and offline (favorites page
                   handles offline reading via its own cache). */}
                   <Button
                     variant="outline"
+                    portalSafe
                     onPress={() => {
                       setVisible(false);
                       router.push({
@@ -837,6 +857,7 @@ export default function MealPlanPage() {
                   {isOnline && (
                     <Button
                       variant="outline"
+                      portalSafe
                       onPress={() => {
                         setVisible(false);
                         router.push({
@@ -866,10 +887,20 @@ export default function MealPlanPage() {
             >
               <View className="flex-1 justify-center items-center">
                 <Pressable
-                  className="absolute inset-0 bg-black/50"
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                  }}
                   onPress={() => setSettingsModalVisible(false)}
                 />
-                <View className="mx-4 w-[90%] max-w-sm rounded-2xl bg-background p-6 gap-5 shadow-lg">
+                <View
+                  className="mx-4 w-[90%] max-w-sm rounded-2xl p-6 gap-5 shadow-lg"
+                  style={{ backgroundColor: theme["--color-background"] }}
+                >
                   <Text className="text-lg font-bold text-center text-foreground">
                     Meal plan settings
                   </Text>
@@ -919,6 +950,7 @@ export default function MealPlanPage() {
 
                   <Button
                     variant="default"
+                    portalSafe
                     className="rounded-xl"
                     onPress={() => setSettingsModalVisible(false)}
                   >
@@ -929,6 +961,7 @@ export default function MealPlanPage() {
             </Modal>
           </>
         ) : null}
+        </AccountWebColumn>
       </ScrollView>
     </ThemedSafeView>
   );

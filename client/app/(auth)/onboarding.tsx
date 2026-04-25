@@ -1,7 +1,7 @@
 import { ThemedSafeView } from '@/components/themed-safe-view';
 import React from 'react';
 import { StyleSheet, View, Text, Pressable } from 'react-native';
-import PagerView from 'react-native-pager-view';
+import { OnboardingPager } from '@/components/onboarding-pager';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import Button from '@/components/ui/button';
 import { router } from 'expo-router';
@@ -17,7 +17,7 @@ import {
   UserPreferencesDraft,
 } from '@/components/preferences';
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from '@/utils/server-url';
 
 const initialDraft: UserPreferencesDraft = {
   cookware: [],
@@ -33,7 +33,7 @@ const initialDraft: UserPreferencesDraft = {
 };
 
 export default function OnboardingPage() {
-  const pagerRef = React.useRef<PagerView>(null);
+  const pagerRef = React.useRef<{ setPage: (index: number) => void } | null>(null);
   const { themePreference, textSize, setThemePreference, setTextSize } = useAppPreferences();
   const [currentPage, setCurrentPage] = React.useState(0);
   const [draft, setDraft] = React.useState<UserPreferencesDraft>(initialDraft);
@@ -232,11 +232,12 @@ export default function OnboardingPage() {
         onPressLeft={goPrev}
         onPressRight={handleRightPress}
       />
-      <PagerView
+      <OnboardingPager
         ref={pagerRef}
         style={styles.pagerView}
         initialPage={0}
         pageMargin={48}
+        currentPage={currentPage}
         onPageSelected={(e) => {
           setCurrentPage(e.nativeEvent.position);
           setErrorMessage('');
@@ -267,7 +268,7 @@ export default function OnboardingPage() {
             </View>
           </View>
         ))}
-      </PagerView>
+      </OnboardingPager>
     </ThemedSafeView>
   );
 }

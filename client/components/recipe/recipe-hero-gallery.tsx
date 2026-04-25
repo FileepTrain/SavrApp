@@ -2,7 +2,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { prepareProfilePhotoForUpload } from "@/utils/prepare-profile-photo-upload";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Image, Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -21,6 +21,8 @@ type RecipeHeroGalleryProps = {
   recipeOwnerId: string | null;
   onAppendGalleryEntry: (entry: { url: string; uploadedBy: string }) => void;
   onRemoveImageUrl: (url: string) => void;
+  /** When set, hero carousel pages by this width (e.g. desktop column); modal stays full-screen. */
+  heroSlideWidth?: number;
 };
 
 //I want only the uploader and owner of the recipe to delete the image
@@ -49,10 +51,36 @@ export function RecipeHeroGallery({
   recipeOwnerId,
   onAppendGalleryEntry,
   onRemoveImageUrl,
+  heroSlideWidth,
 }: RecipeHeroGalleryProps) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const heroHeight = 240;
+  const heroWidth =
+    typeof heroSlideWidth === "number" && heroSlideWidth > 0
+      ? heroSlideWidth
+      : windowWidth;
+  const isColumnHero =
+    typeof heroSlideWidth === "number" && heroSlideWidth > 0;
+
+  /** First hero image intrinsic size → column height so full image fits width (web). */
+  const [leadImageSize, setLeadImageSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  const columnHeroDisplayHeight = useMemo(() => {
+    if (!isColumnHero) return heroHeight;
+    if (leadImageSize && leadImageSize.width > 0) {
+      const h =
+        (heroWidth * leadImageSize.height) / leadImageSize.width;
+      return Math.min(
+        Math.max(Math.round(h), 160),
+        Math.round(heroWidth * 1.5),
+      );
+    }
+    return Math.round(heroWidth * 0.68);
+  }, [heroWidth, heroHeight, isColumnHero, leadImageSize]);
 
   const [heroIndex, setHeroIndex] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
@@ -63,6 +91,10 @@ export function RecipeHeroGallery({
   const modalListRef = useRef<FlatList<RecipeGalleryListItem>>(null);
 
   const urisKey = items.map((i) => i.url).join("|");
+
+  useEffect(() => {
+    setLeadImageSize(null);
+  }, [urisKey]);
 
   const openModalAt = useCallback(
     (index: number) => {
@@ -80,10 +112,10 @@ export function RecipeHeroGallery({
   const onHeroScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const x = e.nativeEvent.contentOffset.x;
-      const next = Math.round(x / windowWidth);
+      const next = Math.round(x / heroWidth);
       if (next >= 0 && next < items.length) setHeroIndex(next);
     },
-    [items.length, windowWidth],
+    [items.length, heroWidth],
   );
 
   useEffect(() => {
@@ -220,13 +252,39 @@ export function RecipeHeroGallery({
     ({ item, index }: { item: RecipeGalleryListItem; index: number }) => (
       <Pressable
         onPress={() => openModalAt(index)}
-        style={{ width: windowWidth, height: heroHeight }}
+        style={{
+          width: heroWidth,
+          height: isColumnHero ? columnHeroDisplayHeight : heroHeight,
+        }}
         className="bg-muted-background"
       >
-        <Image source={{ uri: item.url }} className="w-full h-full" resizeMode="cover" />
+        <Image
+          source={{ uri: item.url }}
+          className="w-full h-full"
+          resizeMode={isColumnHero ? "contain" : "cover"}
+          onLoad={(e) => {
+            if (!isColumnHero || index !== 0) return;
+            const s = e.nativeEvent.source;
+            if (
+              s &&
+              typeof s.width === "number" &&
+              typeof s.height === "number" &&
+              s.width > 0 &&
+              s.height > 0
+            ) {
+              setLeadImageSize({ width: s.width, height: s.height });
+            }
+          }}
+        />
       </Pressable>
     ),
-    [heroHeight, openModalAt, windowWidth],
+    [
+      columnHeroDisplayHeight,
+      heroHeight,
+      heroWidth,
+      isColumnHero,
+      openModalAt,
+    ],
   );
 
   const renderModalItem = useCallback(
@@ -245,11 +303,17 @@ export function RecipeHeroGallery({
   const showDots = items.length > 1;
   const showHeroActions = canUpload;
 
+  const heroStripHeight = isColumnHero ? columnHeroDisplayHeight : heroHeight;
+
   return (
     <View>
-      <View className="relative w-full bg-muted-background" style={{ height: heroHeight }}>
+      <View
+        className="relative w-full bg-muted-background"
+        style={{ height: heroStripHeight }}
+      >
         {items.length > 0 ? (
           <FlatList
+            key={`hero-${heroWidth}-${heroStripHeight}`}
             data={items}
             keyExtractor={(it, i) => `${it.url}-${i}`}
             horizontal
@@ -258,8 +322,8 @@ export function RecipeHeroGallery({
             renderItem={renderHeroItem}
             onMomentumScrollEnd={onHeroScrollEnd}
             getItemLayout={(_, index) => ({
-              length: windowWidth,
-              offset: windowWidth * index,
+              length: heroWidth,
+              offset: heroWidth * index,
               index,
             })}
           />

@@ -2,6 +2,13 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Text, View } from "react-native";
 
+import {
+  AccountSubpageBody,
+  accountCardShellClassName,
+  accountEmptyStateClassName,
+  accountPrimaryCtaTextClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { SwipeableRecipeCard } from "@/components/swipeable-recipe-card";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
@@ -24,52 +31,55 @@ export default function PersonalRecipesPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <View className="gap-4 flex-1">
-        {/* New Recipe Button */}
-        <Button
-          variant="primary"
-          icon={{
-            name: "plus-circle-outline",
-            position: "left",
-            size: 20,
-            color: "--color-red-primary",
-          }}
-          className="h-24"
-          textClassName="text-xl font-bold text-red-primary"
-          onPress={() => {
-            if (!isOnline) {
-              Alert.alert("Offline", "Creating new recipes requires an internet connection.");
-              return;
-            }
-            router.push("/account/create-recipe");
-          }}
-        >
-          Create New Recipe
-        </Button>
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        <View className="gap-4 flex-1">
+        <View className={accountCardShellClassName}>
+          <Button
+            variant="primary"
+            icon={{
+              name: "plus-circle-outline",
+              position: "left",
+              size: 20,
+              color: "--color-red-primary",
+            }}
+            className="h-[77px] rounded-none"
+            textClassName={accountPrimaryCtaTextClassName}
+            onPress={() => {
+              if (!isOnline) {
+                Alert.alert("Offline", "Creating new recipes requires an internet connection.");
+                return;
+              }
+              router.push("/account/create-recipe");
+            }}
+          >
+            Create New Recipe
+          </Button>
+        </View>
 
         {loading ? (
           <ActivityIndicator size="large" color="red" />
         ) : error ? (
-          <View className="flex-1 items-center justify-center px-6">
-            <Text className="text-center opacity-70 mb-3">Error: {String(error)}</Text>
+          <View className="flex-1 items-center justify-center px-2">
+            <Text className={`${accountEmptyStateClassName} mb-3`}>Error: {String(error)}</Text>
             <Button variant="default" onPress={() => refetch?.()}>
               Reload
             </Button>
           </View>
         ) : (
           <FlatList
+            style={{ flex: 1 }}
             data={personalRecipes ?? []}
             keyExtractor={(item) => String(item.id)}
             refreshing={refreshing}
             onRefresh={onRefresh}
             contentContainerStyle={{
               paddingBottom: 24,
-              paddingHorizontal: 16,
               flexGrow: (personalRecipes?.length ?? 0) === 0 ? 1 : 0,
             }}
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center">
-                <Text className="opacity-60">
+                <Text className={accountEmptyStateClassName}>
                   No personal recipes yet. Tap “Create New Recipe”.
                 </Text>
               </View>
@@ -88,7 +98,9 @@ export default function PersonalRecipesPage() {
             )}
           />
         )}
-      </View>
+        </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

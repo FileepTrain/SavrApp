@@ -18,7 +18,7 @@ export function AccessibilitySection({ value, onChange }: AccessibilitySectionPr
 
   return (
     <View className="gap-4">
-      <Text className="text-lg font-medium text-foreground">Text Size</Text>
+      <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">Text Size</Text>
       <Slider
         minimumValue={1}
         maximumValue={5}
@@ -38,7 +38,7 @@ export function AccessibilitySection({ value, onChange }: AccessibilitySectionPr
         )}
       />
 
-      <Text className="mt-4 text-lg font-medium text-foreground">Theme</Text>
+      <Text className="mt-4 text-[16px] font-medium tracking-[0.5px] text-foreground">Theme</Text>
       <View className="flex-row gap-4">
         <View className="flex-1 items-center gap-2 border border-muted-background bg-background rounded-xl p-4">
           <IconSymbol name="weather-sunny" size={64} color="--color-red-secondary" />

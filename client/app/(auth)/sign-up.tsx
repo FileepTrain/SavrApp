@@ -1,18 +1,19 @@
 // app/(auth)/sign-up.tsx
 
+import { AuthFormScroll } from "@/components/auth/auth-form-scroll";
 import ContinueWithGoogle from "@/components/continue-with-google";
-import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { images } from "@/constants";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { Alert, Image, ScrollView, Text, View } from "react-native";
+import { Image, Text, View } from "react-native";
 import { signInWithEmailAndPassword, sendEmailVerification, signOut } from "firebase/auth";
 import { auth } from "@/firebase/firebase";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { showAppAlert } from "@/utils/app-alert";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 const SignUpPage = () => {
   const [username, setUsername] = useState("");
@@ -42,7 +43,7 @@ const SignUpPage = () => {
 
   const handleSignUp = async () => {
     if (!username || !email || !password) {
-      Alert.alert("Error", "Please fill in all fields.");
+      showAppAlert("Error", "Please fill in all fields.");
       return;
     }
 
@@ -57,7 +58,7 @@ const SignUpPage = () => {
       });
       const checkData = await resCheck.json();
       if (!checkData.available) {
-        Alert.alert("Username taken", "Please choose another username.");
+        showAppAlert("Username taken", "Please choose another username.");
         setUsernameAvailable(false);
         return;
       }
@@ -79,7 +80,10 @@ const SignUpPage = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       await sendEmailVerification(userCredential.user);
       await signOut(auth);
-      Alert.alert("Verify your email!", "A verification link has been sent to your email. Please verify your account before logging in.");
+      showAppAlert(
+        "Verify your email!",
+        "A verification link has been sent to your email. Please verify your account before logging in.",
+      );
       router.replace("/login");
       
       // Original Auto-Login Setup
@@ -111,31 +115,32 @@ const SignUpPage = () => {
       //   router.replace("/home");
       // }
     } catch (err: any) {
-      Alert.alert("Sign Up failed", err.message);
+      showAppAlert("Sign Up failed", err.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ThemedSafeView className="flex-1 bg-background">
-      <ScrollView className="w-full px-4">
+    <SafeAreaView className="flex-1 bg-background" edges={["top", "bottom", "left", "right"]}>
+      <AuthFormScroll>
         <Image
           source={images.logo}
           resizeMode="contain"
           style={{
             width: 234,
             height: 76,
+            alignSelf: "center",
           }}
         />
-        <View className="mt-4 gap-2">
-          <Text className="text-foreground text-3xl font-bold">
+        <View className="mt-4 gap-2 w-full items-center px-1">
+          <Text className="text-foreground text-3xl font-bold text-center">
             Create Account
           </Text>
-          <Text className="text-foreground">Sign up to get started</Text>
+          <Text className="text-foreground text-center">Sign up to get started</Text>
         </View>
 
-        <View className="mt-8 gap-5">
+        <View className="mt-8 gap-5 w-full">
           <Input
             label="Username"
             placeholder="Enter your username"
@@ -177,14 +182,14 @@ const SignUpPage = () => {
           </Button>
         </View>
 
-        <View className="items-center justify-center my-10">
+        <View className="items-center justify-center my-10 w-full">
           <View className="border-t border-muted-foreground opacity-30 w-full my-4" />
           <Text className="absolute text-muted-foreground bg-background rounded-full px-2">
             Or
           </Text>
         </View>
 
-        <View className="gap-4">
+        <View className="gap-4 w-full">
           <ContinueWithGoogle />
           <Button
             size="lg"
@@ -195,8 +200,8 @@ const SignUpPage = () => {
             Already have an account?
           </Button>
         </View>
-      </ScrollView>
-    </ThemedSafeView>
+      </AuthFormScroll>
+    </SafeAreaView>
   );
 };
 

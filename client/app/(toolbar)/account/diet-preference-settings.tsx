@@ -1,3 +1,4 @@
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { loadAllergies, loadDiets, saveAllergies, saveDiets } from "@/utils/diet-preferences";
 import { DietaryPreferencesSection } from "@/components/preferences";
@@ -25,26 +26,28 @@ export default function DietaryPreferencesPage() {
 
   return (
     <ThemedSafeView className="flex-1 bg-app-background pt-safe-or-20">
-      {isLoading ? (
-        <View className="flex-1 items-center justify-center">
-          <Text className="text-muted-foreground">Loading...</Text>
-        </View>
-      ) : (
-        <DietaryPreferencesSection
-          selectedAllergies={[...selectedAllergies]}
-          selectedDiets={[...selectedDiets]}
-          onChangeAllergies={(next) => {
-            const updated = new Set(next);
-            setSelectedAllergies(updated);
-            void saveAllergies(updated);
-          }}
-          onChangeDiets={(next) => {
-            const updated = new Set(next);
-            setSelectedDiets(updated);
-            void saveDiets(updated);
-          }}
-        />
-      )}
+      <AccountWebColumn className="flex-1">
+        {isLoading ? (
+          <View className="flex-1 items-center justify-center">
+            <Text className="text-[14px] text-muted-foreground tracking-[0.5px]">Loading…</Text>
+          </View>
+        ) : (
+          <DietaryPreferencesSection
+            selectedAllergies={[...selectedAllergies]}
+            selectedDiets={[...selectedDiets]}
+            onChangeAllergies={(next) => {
+              const updated = new Set(next);
+              setSelectedAllergies(updated);
+              void saveAllergies(updated);
+            }}
+            onChangeDiets={(next) => {
+              const updated = new Set(next);
+              setSelectedDiets(updated);
+              void saveDiets(updated);
+            }}
+          />
+        )}
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

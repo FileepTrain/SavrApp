@@ -7,7 +7,7 @@ import {
 } from "@/utils/offline-cache";
 import type { MealPlanSlotEntry } from "@/utils/meal-plan-slot";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 const QUEUE_KEY = "MUTATION_QUEUE";
 
 // Offline meal plan create may include clientPlanId so the queue entry can be merged or removed before sync.

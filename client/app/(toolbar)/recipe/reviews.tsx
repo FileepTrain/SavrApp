@@ -6,9 +6,11 @@ import { AddReviewModal } from "@/components/add-review-pop-up";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams } from "expo-router";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
+import { SERVER_URL } from "@/utils/server-url";
 
 export default function ReviewsPage() {
+  const recipeColumnWidth = useRecipeWebColumnWidth();
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
   const id = useMemo( //useMemo is a react hook to cache reults (kinda like useCallback)
     () => (Array.isArray(recipeId) ? recipeId[0] : recipeId) ?? "",
@@ -115,9 +117,25 @@ export default function ReviewsPage() {
       {/* MAIN CONTENT */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={
+          recipeColumnWidth != null
+            ? {
+                alignItems: "center",
+                paddingHorizontal: 24,
+                paddingTop: 16,
+                paddingBottom: 16,
+              }
+            : { padding: 16 }
+        }
       >
-
+        <View
+          className="w-full"
+          style={
+            recipeColumnWidth != null
+              ? { maxWidth: recipeColumnWidth, width: "100%" as const }
+              : undefined
+          }
+        >
         {/* Rating Summary */}
         <View className="bg-background rounded-xl shadow p-6 items-center mb-6">
           <Text className="text-5xl font-bold text-foreground">
@@ -186,6 +204,7 @@ export default function ReviewsPage() {
         )}
 
         <View className="h-24" />
+        </View>
       </ScrollView>
 
       {/* Floating Add Button */}

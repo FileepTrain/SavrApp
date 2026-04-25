@@ -1,9 +1,14 @@
 // app/account/settings.tsx (or wherever this file lives)
+import {
+  AccountSubpageBody,
+  accountCardShellClassName,
+  accountSectionLabelClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
-import { IconSymbol } from "@/components/ui/icon-symbol";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AccountMenuItem } from "@/components/account/account-menu-item";
 import Button from "@/components/ui/button";
@@ -51,9 +56,12 @@ export default function SettingsPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <ScrollView className="px-4 h-full">
-        <View className="gap-2">
-          <Text className="text-base font-medium text-muted-foreground">Account</Text>
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        <ScrollView className="h-full" showsVerticalScrollIndicator={false}>
+        <View className="gap-6">
+          <View className="gap-1">
+          <Text className={accountSectionLabelClassName}>Account</Text>
           <View className="rounded-xl shadow-sm overflow-hidden">
             {/* Edit Profile Setting Item */}
             <AccountMenuItem
@@ -92,8 +100,9 @@ export default function SettingsPage() {
               isLast
             />
           </View>
-          <View className="mt-4 gap-1">
-            <Text className="text-base font-medium text-muted-foreground">Display</Text>
+          </View>
+          <View className="gap-1">
+            <Text className={accountSectionLabelClassName}>Display</Text>
             {/* Accessibility Setting Item */}
             <View className="rounded-xl shadow-sm overflow-hidden">
               <AccountMenuItem
@@ -112,13 +121,12 @@ export default function SettingsPage() {
               />
             </View>
           </View>
-        </View>
-        <View className="mt-4 gap-1">
-          <Text className="text-base font-medium text-muted-foreground">Location</Text>
+        <View className="gap-1">
+          <Text className={accountSectionLabelClassName}>Location</Text>
           <LocationSharingSection value={locationEnabled} onChange={toggleSwitch} />
         </View>
-        <View className="mt-4 mb-6 gap-1">
-          <Text className="text-base font-medium text-muted-foreground">Notifications</Text>
+        <View className="gap-1">
+          <Text className={accountSectionLabelClassName}>Notifications</Text>
           {/* Notification Settings Item */}
           <View className="rounded-xl shadow-sm overflow-hidden">
             <AccountMenuItem
@@ -130,17 +138,22 @@ export default function SettingsPage() {
             />
           </View>
         </View>
+        </View>
 
         {/* Logout Button */}
-        <Button
-          size="lg"
-          onPress={handleLogout}
-          variant="destructive"
-          className="mt-auto mb-6 w-full rounded-xl"
-          textClassName="font-medium text-lg">
-          Log out
-        </Button>
-      </ScrollView>
-    </ThemedSafeView >
+        <View className={`${accountCardShellClassName} mt-4 mb-6`}>
+          <Button
+            size="lg"
+            onPress={handleLogout}
+            variant="destructive"
+            className="w-full rounded-none h-14"
+            textClassName="text-[16px] font-medium tracking-[0.5px]">
+            Log out
+          </Button>
+        </View>
+        </ScrollView>
+        </AccountSubpageBody>
+      </AccountWebColumn>
+    </ThemedSafeView>
   );
 }

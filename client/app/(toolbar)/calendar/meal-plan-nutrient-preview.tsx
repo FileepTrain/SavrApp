@@ -1,4 +1,5 @@
 // Daily nutrient totals: 1 serving breakfast + 1 serving lunch + 1 serving dinner
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { useNetwork } from "@/contexts/network-context";
 import {
@@ -15,7 +16,7 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 type NutrientRow = {
   name: string;
@@ -256,12 +257,13 @@ export default function MealPlanNutrientPreviewPage() {
   }
 
   return (
-    <ThemedSafeView className="flex-1">
+    <ThemedSafeView className="flex-1 px-4">
       <ScrollView
-        className="flex-1 px-6 pt-6"
-        contentContainerStyle={{ paddingTop: 24 }}
+        className="flex-1 pt-6"
+        contentContainerStyle={{ paddingTop: 24, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
+        <AccountWebColumn>
         {error ? (
           <Text className="text-red-primary mb-3 text-base">{error}</Text>
         ) : toShow.length === 0 ? (
@@ -291,6 +293,7 @@ export default function MealPlanNutrientPreviewPage() {
             ))}
           </View>
         )}
+        </AccountWebColumn>
       </ScrollView>
     </ThemedSafeView>
   );

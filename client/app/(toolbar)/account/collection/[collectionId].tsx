@@ -1,4 +1,10 @@
+import {
+  AccountSubpageBody,
+  accountEmptyStateClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { CollectionRecipesGrid } from "@/components/collection/collection-recipes-grid";
+import { useThemePalette } from "@/components/theme-provider";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useNetwork } from "@/contexts/network-context";
@@ -26,7 +32,7 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/utils/server-url";
 
 type CollectionListRow = {
   id: string;
@@ -77,14 +83,23 @@ function BottomSheetChrome({
   children: React.ReactNode;
   busy?: boolean;
 }) {
+  const theme = useThemePalette();
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <Pressable
-        className="flex-1 bg-black/40 justify-end"
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
         onPress={() => !busy && onClose()}
       >
         <Pressable
-          className="bg-background rounded-t-3xl px-5 pt-4 pb-8 gap-1"
+          style={{
+            backgroundColor: theme["--color-background"],
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            paddingHorizontal: 20,
+            paddingTop: 16,
+            paddingBottom: 32,
+            gap: 4,
+          }}
           onPress={(e) => e.stopPropagation()}
         >
           <Text className="text-lg font-bold text-foreground mb-3">{title}</Text>
@@ -96,6 +111,7 @@ function BottomSheetChrome({
 }
 
 export default function CollectionDetailPage() {
+  const theme = useThemePalette();
   const { isOnline } = useNetwork();
   const navigation = useNavigation();
   const router = useRouter();
@@ -519,27 +535,31 @@ export default function CollectionDetailPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="red" />
-        </View>
-      ) : recipes.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-center text-muted-foreground">{emptyMessage}</Text>
-          {isOwnCollection ? (
-            <Text className="text-center text-muted-foreground text-sm mt-3">
-              Use the pencil above to rename or delete this collection. After you add recipes, use ⋮
-              on a tile for cover image or remove.
-            </Text>
-          ) : null}
-        </View>
-      ) : (
-        <CollectionRecipesGrid
-          recipes={recipes}
-          showRecipeMenuButton={isOwnCollection}
-          onRecipeMenuPress={(rid) => setRecipeMenuRecipeId(rid)}
-        />
-      )}
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        {loading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color="red" />
+          </View>
+        ) : recipes.length === 0 ? (
+          <View className="flex-1 items-center justify-center px-2">
+            <Text className={accountEmptyStateClassName}>{emptyMessage}</Text>
+            {isOwnCollection ? (
+              <Text className={`${accountEmptyStateClassName} mt-3`}>
+                Use the pencil above to rename or delete this collection. After you add recipes, use ⋮
+                on a tile for cover image or remove.
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <CollectionRecipesGrid
+            recipes={recipes}
+            showRecipeMenuButton={isOwnCollection}
+            onRecipeMenuPress={(rid) => setRecipeMenuRecipeId(rid)}
+          />
+        )}
+        </AccountSubpageBody>
+      </AccountWebColumn>
 
       <BottomSheetChrome
         visible={boardMenuOpen}
@@ -617,11 +637,17 @@ export default function CollectionDetailPage() {
 
       <Modal visible={renameOpen} animationType="slide" transparent>
         <Pressable
-          className="flex-1 bg-black/40 justify-end"
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
           onPress={() => !saving && setRenameOpen(false)}
         >
           <Pressable
-            className="bg-background rounded-t-3xl p-5 gap-4"
+            style={{
+              backgroundColor: theme["--color-background"],
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 20,
+              gap: 16,
+            }}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-xl font-bold text-foreground">Rename collection</Text>
@@ -641,14 +667,17 @@ export default function CollectionDetailPage() {
                 <Text className="font-medium text-foreground">Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                className="flex-1 py-3 rounded-xl bg-red-primary items-center"
+                className="flex-1 py-3 rounded-xl items-center"
+                style={{ backgroundColor: theme["--color-red-primary"] }}
                 onPress={() => void saveRename()}
                 disabled={saving}
               >
                 {saving ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text className="text-white font-semibold">Save</Text>
+                  <Text className="font-semibold" style={{ color: "#ffffff" }}>
+                    Save
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>

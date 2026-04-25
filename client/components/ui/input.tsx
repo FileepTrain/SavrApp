@@ -28,6 +28,8 @@ import { twMerge } from "tailwind-merge";
 interface InputProps extends Omit<TextInputProps, "keyboardType"> {
   className?: string;
   inputClassName?: string;
+  /** Optional classes for the label `Text` above the field. */
+  labelClassName?: string;
   placeholder?: string;
   inputType?: KeyboardTypeOptions | "password";
   label?: string;
@@ -43,6 +45,7 @@ const Input = React.forwardRef<TextInput, InputProps>(
     {
       className,
       inputClassName,
+      labelClassName,
       placeholder,
       inputType = "text",
       label,
@@ -61,7 +64,9 @@ const Input = React.forwardRef<TextInput, InputProps>(
       <View className={`${label ? "gap-2" : "gap-0"} ${className ?? ""}`}>
         <View className="flex-row justify-between">
           {label && (
-            <Text className="text-foreground font-medium">{label}</Text>
+            <Text className={twMerge("text-foreground font-medium", labelClassName)}>
+              {label}
+            </Text>
           )}
           {error && <Text className="text-red-primary text-sm">{error}</Text>}
         </View>

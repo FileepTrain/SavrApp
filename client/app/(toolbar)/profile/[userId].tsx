@@ -32,7 +32,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { AccountWebColumn } from "@/components/account/account-web-column";
+import { useThemePalette } from "@/components/theme-provider";
+import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
+import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
+import { SERVER_URL } from "@/utils/server-url";
 
 type TabId = "recipes" | "favorites" | "boards" | "plans";
 
@@ -95,8 +99,11 @@ function chunkPairs<T>(arr: T[]): T[][] {
 }
 
 export default function CreatorProfilePage() {
+  const theme = useThemePalette();
   const router = useRouter();
   const navigation = useNavigation();
+  const { isWebDesktop, contentWidth } = useWebDesktopLayout();
+  const accountColumnMax = useAccountWebColumnWidth();
   const { refetch: refetchMealPlans } = useMealPlans();
   const params = useLocalSearchParams<{
     userId: string;
@@ -147,8 +154,20 @@ export default function CreatorProfilePage() {
   const [followBusyCollectionId, setFollowBusyCollectionId] = useState<string | null>(null);
   const [collectionMenuId, setCollectionMenuId] = useState<string | null>(null);
 
-  const { width: winW } = useWindowDimensions();
-  const collectionTileW = useMemo(() => (winW - 32 - 16) / 2, [winW]);
+  const { height: winH } = useWindowDimensions();
+  /** Width of the profile column (matches other toolbar pages on desktop web). */
+  const profileColumnWidth = useMemo(() => {
+    if (isWebDesktop && accountColumnMax != null) {
+      return Math.min(accountColumnMax, contentWidth);
+    }
+    return contentWidth;
+  }, [isWebDesktop, accountColumnMax, contentWidth]);
+  /** Boards tab: `px-4` container, two tiles, `gap-4` between them. */
+  const collectionTileW = useMemo(
+    () => Math.max(0, (profileColumnWidth - 32 - 16) / 2),
+    [profileColumnWidth],
+  );
+  const profileEditSheetMaxHeight = Math.round(winH * 0.88);
 
   const profileCollectionCoverRows = useMemo(
     () => (collections ?? []).map((c) => ({ coverId: c.id, recipeIds: c.recipeIds })),
@@ -750,6 +769,7 @@ export default function CreatorProfilePage() {
           <ActivityIndicator size="large" color="red" />
         </View>
       ) : (
+        <AccountWebColumn className="flex-1 min-h-0 w-full">
         <>
           <View className="relative w-full bg-muted-background" style={{ height: 256 }}>
             {showRemotePhoto ? (
@@ -770,21 +790,23 @@ export default function CreatorProfilePage() {
               </View>
             )}
 
-            <TouchableOpacity
-              onPress={() => {
-                if (navigation.canGoBack()) {
-                  navigation.goBack();
-                  return;
-                }
-                router.replace("/home");
-              }}
-              className="absolute left-4 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
-              style={{ top: insets.top + 8, zIndex: 2 }}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-            >
-              <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
-            </TouchableOpacity>
+            {!isWebDesktop ? (
+              <TouchableOpacity
+                onPress={() => {
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                    return;
+                  }
+                  router.replace("/home");
+                }}
+                className="absolute left-4 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
+                style={{ top: insets.top + 8, zIndex: 2 }}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+              >
+                <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
+              </TouchableOpacity>
+            ) : null}
 
             <View
               className="absolute right-4 flex-row gap-2"
@@ -829,6 +851,7 @@ export default function CreatorProfilePage() {
             {activeTab === "recipes" || activeTab === "favorites" ? recipeList : boardsOrPlansScroll}
           </View>
         </>
+        </AccountWebColumn>
       )}
 
       <Modal
@@ -841,9 +864,26 @@ export default function CreatorProfilePage() {
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           className="flex-1"
         >
-          <Pressable className="flex-1 bg-black/40 justify-end" onPress={() => setEditOpen(false)}>
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.4)",
+              justifyContent: "flex-end",
+              alignItems: isWebDesktop ? "center" : "stretch",
+            }}
+            onPress={() => setEditOpen(false)}
+          >
             <Pressable
-              className="bg-background rounded-t-3xl max-h-[88%]"
+              style={{
+                maxHeight: profileEditSheetMaxHeight,
+                width: "100%",
+                maxWidth: isWebDesktop ? 560 : undefined,
+                backgroundColor: theme["--color-background"],
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                borderBottomLeftRadius: isWebDesktop ? 24 : 0,
+                borderBottomRightRadius: isWebDesktop ? 24 : 0,
+              }}
               onPress={(e) => e.stopPropagation()}
             >
               <View className="p-5 gap-5">
@@ -853,14 +893,17 @@ export default function CreatorProfilePage() {
                 </Text>
 
                 <TouchableOpacity
-                  className="bg-red-primary py-3 rounded-xl items-center flex-row justify-center gap-2"
+                  className="py-3 rounded-xl items-center flex-row justify-center gap-2"
+                  style={{ backgroundColor: theme["--color-red-primary"] }}
                   onPress={() => void pickAndUploadPhoto()}
                   disabled={uploadingPhoto}
                 >
                   {uploadingPhoto ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text className="text-white font-semibold">Change profile photo</Text>
+                    <Text className="font-semibold" style={{ color: "#ffffff" }}>
+                      Change profile photo
+                    </Text>
                   )}
                 </TouchableOpacity>
 
@@ -898,14 +941,17 @@ export default function CreatorProfilePage() {
                     <Text className="font-medium text-foreground">Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    className="flex-1 py-3 rounded-xl bg-red-primary items-center"
+                    className="flex-1 py-3 rounded-xl items-center"
+                    style={{ backgroundColor: theme["--color-red-primary"] }}
                     onPress={() => void savePrivacy()}
                     disabled={savingPrivacy}
                   >
                     {savingPrivacy ? (
                       <ActivityIndicator color="#fff" />
                     ) : (
-                      <Text className="font-semibold text-white">Save</Text>
+                      <Text className="font-semibold" style={{ color: "#ffffff" }}>
+                        Save
+                      </Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -922,13 +968,30 @@ export default function CreatorProfilePage() {
         onRequestClose={() => setCollectionMenuId(null)}
       >
         <Pressable
-          className="flex-1 bg-black/40 justify-end"
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.4)",
+            justifyContent: "flex-end",
+            alignItems: isWebDesktop ? "center" : "stretch",
+          }}
           onPress={() =>
             followBusyCollectionId == null && setCollectionMenuId(null)
           }
         >
           <Pressable
-            className="bg-background rounded-t-3xl px-5 pt-4 pb-8 gap-1"
+            style={{
+              width: "100%",
+              maxWidth: isWebDesktop ? 560 : undefined,
+              backgroundColor: theme["--color-background"],
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              borderBottomLeftRadius: isWebDesktop ? 24 : 0,
+              borderBottomRightRadius: isWebDesktop ? 24 : 0,
+              paddingHorizontal: 20,
+              paddingTop: 16,
+              paddingBottom: 32,
+              gap: 4,
+            }}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-lg font-bold text-foreground mb-2" numberOfLines={2}>

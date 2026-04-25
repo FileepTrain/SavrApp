@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SERVER_URL } from "@/utils/server-url";
 
 const NUTRIENT_DISPLAY_STORAGE_KEY = "NUTRIENT_DISPLAY";
-const SERVER_URL = "http://10.0.2.2:3000";
 
 /** All nutrient options in display order (matches API names) */
 export const ALL_NUTRIENTS = [
