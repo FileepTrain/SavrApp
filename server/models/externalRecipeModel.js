@@ -62,6 +62,10 @@ async function findByExternal(externalSource, externalId) {
     dishTypes: data.dishTypes ?? null,
     diets: data.diets ?? null,
     cuisines: data.cuisines ?? null,
+    glutenFree: typeof data.glutenFree === "boolean" ? data.glutenFree : null,
+    dairyFree: typeof data.dairyFree === "boolean" ? data.dairyFree : null,
+    vegan: typeof data.vegan === "boolean" ? data.vegan : null,
+    vegetarian: typeof data.vegetarian === "boolean" ? data.vegetarian : null,
     price: typeof data.price === "number" ? data.price : null,
     reviewCount,
     totalStars,
@@ -256,6 +260,13 @@ async function upsertFromExternal(externalSource, externalId, simplified) {
     dishTypes: simplified.dishTypes ?? null,
     diets: simplified.diets ?? null,
     cuisines: simplified.cuisines ?? null,
+    glutenFree:
+      typeof simplified.glutenFree === "boolean" ? simplified.glutenFree : null,
+    dairyFree:
+      typeof simplified.dairyFree === "boolean" ? simplified.dairyFree : null,
+    vegan: typeof simplified.vegan === "boolean" ? simplified.vegan : null,
+    vegetarian:
+      typeof simplified.vegetarian === "boolean" ? simplified.vegetarian : null,
     price: simplified.price ?? null,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
@@ -358,13 +369,26 @@ async function searchCachedByDishTypes(
       title: data.title ?? null,
       image: data.image ?? null,
       calories: calories ?? null,
-      //price: typeof data.price === "number" ? data.price : null,
+      price: typeof data.price === "number" ? data.price : null,
       rating,
       reviewsLength: reviewCount,
       viewCount: Number.isFinite(Number(data.viewCount))
         ? Number(data.viewCount)
         : 0,
       dishTypes: Array.isArray(data.dishTypes) ? data.dishTypes : [],
+      equipment: data.equipment ?? [],
+      /** Used by auto meal plan pantry scoring; omitted elsewhere in this payload. */
+      extendedIngredients: Array.isArray(data.extendedIngredients)
+        ? data.extendedIngredients
+        : [],
+      diets: Array.isArray(data.diets) ? data.diets : [],
+      glutenFree:
+        typeof data.glutenFree === "boolean" ? data.glutenFree : null,
+      dairyFree:
+        typeof data.dairyFree === "boolean" ? data.dairyFree : null,
+      vegan: typeof data.vegan === "boolean" ? data.vegan : null,
+      vegetarian:
+        typeof data.vegetarian === "boolean" ? data.vegetarian : null,
     };
   });
 }

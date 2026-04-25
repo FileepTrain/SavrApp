@@ -48,6 +48,149 @@ function normalizeAllergiesToIntolerances(allergiesValue) {
   return result;
 }
 
+function equipmentNamesFromDoc(equipment) {
+  const arr = Array.isArray(equipment) ? equipment : [];
+  return arr
+    .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase().trim());
+}
+
+/**
+ * Returns true if the recipe satisfies meal-plan auto filters (budget, cookware, diets, known allergy flags).
+ * Recipes missing optional fields stay eligible where logic mirrors the external feed (e.g. unknown price).
+ */
+function recipePassesMealPlanAutoFilters(recipe, parsed) {
+  if (!recipe || typeof recipe !== "object") return false;
+
+  const budgetMin = parsed.budgetMin;
+  const budgetMax = parsed.budgetMax;
+  if (
+    Number.isFinite(budgetMin) &&
+    Number.isFinite(budgetMax) &&
+    budgetMin <= budgetMax
+  ) {
+    const price = recipe.price;
+    if (typeof price === "number" && (price < budgetMin || price > budgetMax)) return false;
+  }
+
+  const intolerances = parsed.allergyIntolerances;
+  if (intolerances && intolerances.size > 0) {
+    for (const t of intolerances) {
+      if (t === "gluten" || t === "wheat" || t === "grain") {
+        if (recipe.glutenFree === false) return false;
+      } else if (t === "dairy") {
+        if (recipe.dairyFree === false) return false;
+      }
+      // No reliable cached flags for egg, peanut, shellfish, etc.; do not exclude.
+    }
+  }
+
+  const excludeCookware = parsed.excludeCookwareLower;
+  if (excludeCookware && excludeCookware.size > 0) {
+    const names = equipmentNamesFromDoc(recipe.equipment);
+    if (names.some((n) => excludeCookware.has(n))) return false;
+  }
+
+  const userCookwareSet = parsed.userCookwareSet;
+  if (userCookwareSet && userCookwareSet.size > 0) {
+    const names = equipmentNamesFromDoc(recipe.equipment);
+    if (names.length > 0 && names.some((n) => !userCookwareSet.has(n))) return false;
+  }
+
+  const foodTypes = parsed.foodTypesLower;
+  if (foodTypes && foodTypes.length > 0) {
+    const dietsSet = new Set(
+      (Array.isArray(recipe.diets) ? recipe.diets : [])
+        .map((d) => String(d).toLowerCase().trim())
+        .filter(Boolean),
+    );
+    for (const ft of foodTypes) {
+      if (!ft) continue;
+      let ok = false;
+      if (ft === "vegan" && recipe.vegan === true) ok = true;
+      else if (ft === "vegetarian" && (recipe.vegetarian === true || recipe.vegan === true)) {
+        ok = true;
+      } else if (
+        (ft === "gluten free" || ft === "glutenfree") &&
+        recipe.glutenFree === true
+      ) {
+        ok = true;
+      } else if (dietsSet.has(ft)) ok = true;
+      if (!ok) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Filter cached external recipe rows before auto meal-plan slot picking.
+ * @param {object[]} recipes
+ * @param {object} filters - budgetMin, budgetMax, allergies (array|string), cookware (array|string), useMyCookwareOnly, userCookware (array|string), foodTypes (array|string)
+ */
+export function filterRecipesForAutoMealPlan(recipes, filters) {
+  if (!Array.isArray(recipes)) return [];
+
+  const budgetMin = Number.isFinite(Number(filters?.budgetMin))
+    ? Number(filters.budgetMin)
+    : 0;
+  const budgetMax = Number.isFinite(Number(filters?.budgetMax))
+    ? Number(filters.budgetMax)
+    : 100;
+
+  const allergyList = normalizeAllergiesToIntolerances(filters?.allergies);
+  const allergyIntolerances = new Set(allergyList);
+
+  const cookwareRaw = Array.isArray(filters?.cookware)
+    ? filters.cookware
+    : typeof filters?.cookware === "string"
+      ? filters.cookware.split(",")
+      : [];
+  const useMyCookwareOnly = Boolean(filters?.useMyCookwareOnly);
+  const userCookwareRaw = Array.isArray(filters?.userCookware)
+    ? filters.userCookware
+    : typeof filters?.userCookware === "string"
+      ? filters.userCookware.split(",")
+      : [];
+
+  const userCookwareSet =
+    useMyCookwareOnly && userCookwareRaw.length > 0
+      ? new Set(
+          userCookwareRaw.map((c) => String(c).toLowerCase().trim()).filter(Boolean),
+        )
+      : null;
+
+  const effectiveExclude = userCookwareSet
+    ? cookwareRaw.filter((c) =>
+        userCookwareSet.has(String(c).toLowerCase().trim()),
+      )
+    : cookwareRaw;
+  const excludeCookwareLower = new Set(
+    effectiveExclude.map((c) => String(c).toLowerCase().trim()).filter(Boolean),
+  );
+
+  const foodTypesRaw = Array.isArray(filters?.foodTypes)
+    ? filters.foodTypes
+    : typeof filters?.foodTypes === "string"
+      ? filters.foodTypes.split(",")
+      : [];
+  const foodTypesLower = foodTypesRaw
+    .map((s) => String(s).toLowerCase().trim())
+    .filter(Boolean);
+
+  const parsed = {
+    budgetMin,
+    budgetMax,
+    allergyIntolerances,
+    excludeCookwareLower,
+    userCookwareSet,
+    foodTypesLower,
+  };
+
+  return recipes.filter((r) => recipePassesMealPlanAutoFilters(r, parsed));
+}
+
 /**
  * Extract only the nutrients array from Spoonacular's nutrition object.
  * Spoonacular returns nutrition with nutrients, properties, flavonoids, ingredient nutrition, etc.
@@ -176,6 +319,10 @@ async function buildSimplifiedPayloadFromSpoonacular(data) {
     dishTypes: data.dishTypes ?? null,
     diets: data.diets ?? null,
     cuisines: data.cuisines ?? null,
+    glutenFree: typeof data.glutenFree === "boolean" ? data.glutenFree : null,
+    dairyFree: typeof data.dairyFree === "boolean" ? data.dairyFree : null,
+    vegan: typeof data.vegan === "boolean" ? data.vegan : null,
+    vegetarian: typeof data.vegetarian === "boolean" ? data.vegetarian : null,
   };
 }
 
@@ -359,8 +506,101 @@ function toDishTypeSet(value) {
   );
 }
 
+/** Weights for auto meal plan pantry fit (tweak-friendly). */
+const PANTRY_SCORE_WEIGHT_MATCH_RATIO = 0.8;
+const PANTRY_SCORE_WEIGHT_MISSING = 0.2;
+
+function normalizePantryNamesFromQuery(req) {
+  const raw = req.query?.pantry;
+  if (Array.isArray(raw)) {
+    return raw.map((s) => String(s).trim()).filter(Boolean);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return [raw.trim()];
+  }
+  return [];
+}
+
+function extendedIngredientDisplayName(ing) {
+  if (!ing || typeof ing !== "object") return "";
+  const n = ing.name ?? ing.original ?? "";
+  return String(n).toLowerCase().trim();
+}
+
+/**
+ * Simple pantry ↔ ingredient match (substring / token overlap).
+ * @param {string} ingLower normalized ingredient text
+ * @param {string[]} pantryLower non-empty pantry strings (lowercase)
+ */
+function ingredientMatchesPantry(ingLower, pantryLower) {
+  if (!ingLower) return false;
+  for (const p of pantryLower) {
+    if (!p || p.length < 2) continue;
+    if (ingLower.includes(p) || p.includes(ingLower)) return true;
+    const pTokens = p.split(/\s+/).filter((t) => t.length >= 3);
+    for (const t of pTokens) {
+      if (ingLower.includes(t)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Weighted score: higher = more pantry overlap, fewer missing ingredients.
+ * score = (match/total)*w1 + (1/(missing+1))*w2
+ */
+function scoreRecipePantryFit(recipe, pantryNamesLower) {
+  if (!pantryNamesLower || pantryNamesLower.length === 0) return 0;
+  const ingredients = Array.isArray(recipe?.extendedIngredients)
+    ? recipe.extendedIngredients
+    : [];
+  const names = ingredients
+    .map((ing) => extendedIngredientDisplayName(ing))
+    .filter(Boolean);
+  const total = names.length;
+  if (total === 0) return 0;
+  let match = 0;
+  for (const ing of names) {
+    if (ingredientMatchesPantry(ing, pantryNamesLower)) match += 1;
+  }
+  const missing = total - match;
+  return (
+    (match / total) * PANTRY_SCORE_WEIGHT_MATCH_RATIO +
+    (1 / (missing + 1)) * PANTRY_SCORE_WEIGHT_MISSING
+  );
+}
+
+function pickBestByPantryScore(pool, pantryLower) {
+  if (pool.length === 0) return null;
+  let bestScore = -Infinity;
+  const ties = [];
+  for (const r of pool) {
+    const s = scoreRecipePantryFit(r, pantryLower);
+    if (s > bestScore) {
+      bestScore = s;
+      ties.length = 0;
+      ties.push(r);
+    } else if (s === bestScore) {
+      ties.push(r);
+    }
+  }
+  if (ties.length === 0) return pool[0];
+  return ties[Math.floor(Math.random() * ties.length)];
+}
+
 //this determines what recipes are chosen and how
-function pickRecipeForSlot(candidates, slotDishTypes, usedIds, calorieRange = null) {
+function pickRecipeForSlot(
+  candidates,
+  slotDishTypes,
+  usedIds,
+  calorieRange = null,
+  pantryPick = null,
+) {
+  const prioritizePantry =
+    Boolean(pantryPick?.enabled) &&
+    Array.isArray(pantryPick.namesLower) &&
+    pantryPick.namesLower.length > 0;
+
   const slotSet = new Set(slotDishTypes.map((s) => String(s).toLowerCase().trim()));
   const unique = candidates.filter((r) => !usedIds.has(String(r.id)));
   if (unique.length === 0) return null;
@@ -392,6 +632,11 @@ function pickRecipeForSlot(candidates, slotDishTypes, usedIds, calorieRange = nu
     }
     // If none match the range, keep the unfiltered pool so we still return a pick
   }
+
+  if (prioritizePantry) {
+    return pickBestByPantryScore(pool, pantryPick.namesLower);
+  }
+
   //keep top 10, those recipes usually fit range. If pool is too big you get weird picks
   const TOP_N = 10;
   const trimmedPool = pool.slice(0, TOP_N);
@@ -412,23 +657,96 @@ export const getAutoMealPlanByDishTypes = async (req, res) => {
       dinner: ["dinner", "main course", "antipasti", "antipasto"],
     };
 
+    const budgetMin = Number.isFinite(Number(req.query.budgetMin))
+      ? Number(req.query.budgetMin)
+      : 0;
+    const budgetMax = Number.isFinite(Number(req.query.budgetMax))
+      ? Number(req.query.budgetMax)
+      : 100;
+    const allergies =
+      typeof req.query.allergies === "string"
+        ? req.query.allergies.split(",").map((s) => s.trim()).filter(Boolean)
+        : Array.isArray(req.query.allergies)
+          ? req.query.allergies.map((s) => String(s).trim()).filter(Boolean)
+          : [];
+    const cookwareExclude =
+      typeof req.query.cookware === "string"
+        ? req.query.cookware.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+    const useMyCookwareOnly =
+      String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
+    const userCookwareRaw =
+      typeof req.query.userCookware === "string" ? req.query.userCookware : "";
+    const userCookware = userCookwareRaw
+      ? userCookwareRaw.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const foodTypes =
+      typeof req.query.foodTypes === "string"
+        ? req.query.foodTypes.split(",").map((s) => s.trim()).filter(Boolean)
+        : Array.isArray(req.query.foodTypes)
+          ? req.query.foodTypes.map((s) => String(s).trim()).filter(Boolean)
+          : [];
+
+    const prioritizePantry =
+      String(req.query.prioritizePantry ?? "false").toLowerCase() === "true";
+    const pantryRaw = normalizePantryNamesFromQuery(req);
+    const pantryNamesLower = prioritizePantry
+      ? pantryRaw.map((s) => String(s).toLowerCase().trim()).filter((s) => s.length >= 1)
+      : [];
+    const pantryPick = {
+      enabled: prioritizePantry && pantryNamesLower.length > 0,
+      namesLower: pantryNamesLower,
+    };
+
+    const mealPlanFilters = {
+      budgetMin,
+      budgetMax,
+      allergies,
+      cookware: cookwareExclude,
+      useMyCookwareOnly,
+      userCookware,
+      foodTypes,
+    };
+
+    const hasMealPlanFilters =
+      (budgetMin > 0 || budgetMax < 100) ||
+      allergies.length > 0 ||
+      cookwareExclude.length > 0 ||
+      useMyCookwareOnly ||
+      foodTypes.length > 0;
+
+    const fetchLimit = hasMealPlanFilters ? 100 : 50;
+
     const [breakfastCandidates, lunchCandidates, dinnerCandidates] = await Promise.all([
       ExternalRecipeModel.searchCachedByDishTypes(
         EXTERNAL_SOURCE,
         SLOT_DISH_TYPES.breakfast,
-        50,
+        fetchLimit,
       ),
       ExternalRecipeModel.searchCachedByDishTypes(
         EXTERNAL_SOURCE,
         SLOT_DISH_TYPES.lunch,
-        50,
+        fetchLimit,
       ),
       ExternalRecipeModel.searchCachedByDishTypes(
         EXTERNAL_SOURCE,
         SLOT_DISH_TYPES.dinner,
-        50,
+        fetchLimit,
       ),
     ]);
+
+    const breakfastFiltered = filterRecipesForAutoMealPlan(
+      breakfastCandidates,
+      mealPlanFilters,
+    );
+    const lunchFiltered = filterRecipesForAutoMealPlan(
+      lunchCandidates,
+      mealPlanFilters,
+    );
+    const dinnerFiltered = filterRecipesForAutoMealPlan(
+      dinnerCandidates,
+      mealPlanFilters,
+    );
 
     const qMin = Number(req.query.calorieMin);
     const qMax = Number(req.query.calorieMax);
@@ -439,39 +757,67 @@ export const getAutoMealPlanByDishTypes = async (req, res) => {
 
     const usedIds = new Set();
     const breakfast = pickRecipeForSlot(
-      breakfastCandidates,
+      breakfastFiltered,
       SLOT_DISH_TYPES.breakfast,
       usedIds,
       calorieRange,
+      pantryPick,
     );
     if (breakfast) usedIds.add(String(breakfast.id));
 
     const lunch = pickRecipeForSlot(
-      lunchCandidates,
+      lunchFiltered,
       SLOT_DISH_TYPES.lunch,
       usedIds,
       calorieRange,
+      pantryPick,
     );
     if (lunch) usedIds.add(String(lunch.id));
 
     const dinner = pickRecipeForSlot(
-      dinnerCandidates,
+      dinnerFiltered,
       SLOT_DISH_TYPES.dinner,
       usedIds,
       calorieRange,
+      pantryPick,
     );
+
+    const slimMealRecipe = (r) => {
+      if (!r || typeof r !== "object") return r;
+      const {
+        extendedIngredients: _omit,
+        reviewsLength: _r,
+        viewCount: _v,
+        ...rest
+      } = r;
+      return rest;
+    };
 
     return res.json({
       success: true,
       meals: {
-        breakfast: breakfast ? [breakfast] : [],
-        lunch: lunch ? [lunch] : [],
-        dinner: dinner ? [dinner] : [],
+        breakfast: breakfast ? [slimMealRecipe(breakfast)] : [],
+        lunch: lunch ? [slimMealRecipe(lunch)] : [],
+        dinner: dinner ? [slimMealRecipe(dinner)] : [],
       },
       meta: {
         source: "external-cache",
         slotDishTypes: SLOT_DISH_TYPES,
         calorieRange,
+        mealPlanFilters,
+        candidateCounts: {
+          breakfast: {
+            before: breakfastCandidates.length,
+            after: breakfastFiltered.length,
+          },
+          lunch: { before: lunchCandidates.length, after: lunchFiltered.length },
+          dinner: {
+            before: dinnerCandidates.length,
+            after: dinnerFiltered.length,
+          },
+        },
+        prioritizePantry: pantryPick.enabled,
+        pantryItemCount: pantryRaw.length,
       },
     });
   } catch (error) {
@@ -532,14 +878,6 @@ export const getExternalRecipeDetails = async (req, res) => {
     });
   }
 };
-
-function equipmentNamesFromDoc(equipment) {
-  const arr = Array.isArray(equipment) ? equipment : [];
-  return arr
-    .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
-    .filter(Boolean)
-    .map((s) => String(s).toLowerCase().trim());
-}
 
 // Pulls cached recipe from Firestore; optionally filters by budget, cookware, and My cookware
 export const getExternalRecipeFeed = async (req, res) => {

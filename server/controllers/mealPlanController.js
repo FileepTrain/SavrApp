@@ -94,6 +94,7 @@ export const createMealPlan = async (req, res) => {
 /**
  * GET /api/meal-plans
  * Returns all meal plans for the authenticated user.
+ * (calendar history)
  */
 export const getMealPlan = async (req, res) => {
   try {
@@ -132,6 +133,7 @@ export const getMealPlan = async (req, res) => {
 /**
  * GET /api/meal-plans/:planId
  * Returns one meal plan if it belongs to the authenticated user.
+ * (edit meal plan)
  */
 export const getMealPlanById = async (req, res) => {
   try {

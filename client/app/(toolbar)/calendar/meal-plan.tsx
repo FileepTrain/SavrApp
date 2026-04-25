@@ -3,6 +3,7 @@ import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import type { Recipe } from "@/contexts/meal-plan-selection-context";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
+import { useMealPlanFilter } from "@/contexts/meal-plan-filter-context";
 import { useMealPlans } from "@/contexts/meal-plans-context";
 import { useNetwork } from "@/contexts/network-context";
 import { CACHE_KEYS, type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
@@ -11,7 +12,7 @@ import Slider from "@react-native-community/slider";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
+import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView, Switch } from "react-native";
 import { useThemePalette } from "@/components/theme-provider";
 import Button from "@/components/ui/button";
 import { SwipeableRecipeCardRemovable } from "@/components/swipeable-recipe-card";
@@ -21,6 +22,7 @@ import {
   mealSlotEntriesFromPlanField,
   type MealPlanSlotEntry,
 } from "@/utils/meal-plan-slot";
+import { loadUserCookware } from "@/utils/cookware";
 
 import { SERVER_URL } from "@/utils/server-url";
 
@@ -193,9 +195,15 @@ export default function MealPlanPage() {
   const [saving, setSaving] = useState(false);
   const [autoGenerating, setAutoGenerating] = useState(false);
 
+  //calorie states
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [calorieMin, setCalorieMin] = useState(400);
   const [calorieMax, setCalorieMax] = useState(700);
+  /** When on, auto meal plan ranks filtered candidates by overlap with pantry ingredients. */
+  const [prioritizePantryItems, setPrioritizePantryItems] = useState(false);
+
+  //filter state
+  const { appliedFilters, openFilterModal } = useMealPlanFilter();
 
   // target servings per day (by recipe id)
   const [count, setCount] = useState<Record<string, number>>({});
@@ -517,10 +525,57 @@ export default function MealPlanPage() {
   const handleAutoMealPlan = useCallback(async () => {
     setAutoGenerating(true);
     try {
+      const userCookwareList = appliedFilters.useMyCookwareOnly
+        ? Array.from(await loadUserCookware())
+        : [];
       const params = new URLSearchParams({
         calorieMin: String(Math.min(calorieMin, calorieMax)),
         calorieMax: String(Math.max(calorieMin, calorieMax)),
+        budgetMin: String(appliedFilters.budgetMin),
+        budgetMax: String(appliedFilters.budgetMax),
+        allergies: appliedFilters.allergies.join(","),
+        foodTypes: appliedFilters.foodTypes.join(","),
+        cookware: appliedFilters.cookware.join(","),
+        useMyCookwareOnly: String(appliedFilters.useMyCookwareOnly),
       });
+      if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
+        params.set("userCookware", userCookwareList.join(","));
+      }
+
+      if (prioritizePantryItems) {
+        params.set("prioritizePantry", "true");
+        let pantryNames: string[] = [];
+        const idToken = await AsyncStorage.getItem("idToken");
+        if (idToken) {
+          try {
+            const pantryRes = await fetch(`${SERVER_URL}/api/pantry`, {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${idToken}`,
+                "Content-Type": "application/json",
+              },
+            });
+            const pantryData = await pantryRes.json().catch(() => ({}));
+            if (pantryRes.ok && Array.isArray(pantryData.items)) {
+              pantryNames = pantryData.items
+                .map((it: { name?: string }) => String(it?.name ?? "").trim())
+                .filter(Boolean);
+            }
+          } catch {
+            // fall through to cache
+          }
+        }
+        if (pantryNames.length === 0) {
+          const cached = await readCache<{ name: string }[]>(CACHE_KEYS.PANTRY);
+          if (cached?.length) {
+            pantryNames = cached.map((it) => String(it?.name ?? "").trim()).filter(Boolean);
+          }
+        }
+        for (const name of pantryNames) {
+          params.append("pantry", name);
+        }
+      }
+
       const res = await fetch(
         `${SERVER_URL}/api/external-recipes/auto-meal-plan?${params.toString()}`,
       );
@@ -540,23 +595,15 @@ export default function MealPlanPage() {
           typeof r?.servings === "number" && r.servings > 0 ? Math.floor(r.servings) : undefined,
       });
 
-      console.log(meals.breakfast, meals.lunch, meals.dinner);
+      const firstRecipe = (arr: unknown) => {
+        if (!Array.isArray(arr)) return [];
+        const first = arr.find((r: any) => r?.id != null);
+        return first ? [toRecipe(first)] : [];
+      };
 
-      setBreakfastRecipe(
-        Array.isArray(meals.breakfast)
-          ? meals.breakfast.filter((r: any) => r?.id != null).map(toRecipe)
-          : [],
-      );
-      setLunchRecipe(
-        Array.isArray(meals.lunch)
-          ? meals.lunch.filter((r: any) => r?.id != null).map(toRecipe)
-          : [],
-      );
-      setDinnerRecipe(
-        Array.isArray(meals.dinner)
-          ? meals.dinner.filter((r: any) => r?.id != null).map(toRecipe)
-          : [],
-      );
+      setBreakfastRecipe(firstRecipe(meals.breakfast));
+      setLunchRecipe(firstRecipe(meals.lunch));
+      setDinnerRecipe(firstRecipe(meals.dinner));
     } catch (err) {
       Alert.alert(
         "Error",
@@ -565,7 +612,7 @@ export default function MealPlanPage() {
     } finally {
       setAutoGenerating(false);
     }
-  }, [calorieMin, calorieMax]);
+  }, [calorieMin, calorieMax, appliedFilters, prioritizePantryItems]);
 
   const renderRecipeCard = (recipe: any, mealslot: MealSlot) => {
     if (!recipe) return null;
@@ -600,7 +647,7 @@ export default function MealPlanPage() {
         </View>
 
         {recipeData.map((recipe: Recipe) => (
-          <View key={recipe.id}>
+          <View key={recipe.id} className="w-full">
             {renderRecipeCard(recipe, meal)}
             {(() => {
               const base = getRecipeBaseServings(recipe);
@@ -608,55 +655,56 @@ export default function MealPlanPage() {
               const batch = batchCount[recipe.id] || 1;
               const days = target > 0 ? Math.floor((base * batch) / target) : 0;
               return (
-                <Text className="text-sm text-muted-foreground px-0.5">
+                <Text className="text-sm text-muted-foreground px-4">
                   Est. {days} day{days === 1 ? "" : "s"} ({batch}× batch, serves {base} ÷{" "}
                   {target}/day).
                 </Text>
               );
             })()}
-            <View className="flex-row items-center">
-              <Text className="flex-1 text-base">Batches (×):</Text>
-              <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-2">
-                <Pressable
-                  onPress={() => decrementBatch(recipe.id)}
-                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                >
-                  <Text className="text-lg">&lt;</Text>
-                </Pressable>
-                <Text className="min-w-[24px] text-center font-medium text-gray-800">
-                  {batchCount[recipe.id] || 1}
-                </Text>
-                <Pressable
-                  onPress={() => incrementBatch(recipe.id)}
-                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                >
-                  <Text className="text-lg">&gt;</Text>
-                </Pressable>
-              </View>
-            </View>
-            <View className="flex-row items-center mt-1">
-              <Text className="flex-1 text-base">Servings per day:</Text>
+            <View className="flex-row items-start justify-between w-full px-4">
+                <View className="mt-1">
+                  <Text className="text-base mt-2">Batches (×):</Text>
+                  <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-4 mt-2">
+                    <Pressable
+                      onPress={() => decrementBatch(recipe.id)}
+                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                    >
+                      <Text className="text-lg">&lt;</Text>
+                    </Pressable>
+                    <Text className="min-w-[24px] text-center font-medium text-gray-800">
+                      {batchCount[recipe.id] || 1}
+                    </Text>
+                    <Pressable
+                      onPress={() => incrementBatch(recipe.id)}
+                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                    >
+                      <Text className="text-lg">&gt;</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <View className="mt-1">
+                  <Text className="text-base mt-2">Servings per day:</Text>
 
-              <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-2">
-                {/*decrease*/}
-                <Pressable
-                  onPress={() => decrement(recipe.id)}
-                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                >
-                  <Text className="text-lg">&lt;</Text>
-                </Pressable>
-                <Text className="min-w-[24px] text-center font-medium text-gray-800">
-                  {count[recipe.id] || 1}
-                </Text>
-                {/*increase*/}
-                <Pressable
-                  onPress={() => increment(recipe.id)}
-                  className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                >
-                  <Text className="text-lg">&gt;</Text>
-                </Pressable>
-              </View>
-
+                  <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-4 mt-2">
+                    {/*decrease*/}
+                    <Pressable
+                      onPress={() => decrement(recipe.id)}
+                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                    >
+                      <Text className="text-lg">&lt;</Text>
+                    </Pressable>
+                    <Text className="min-w-[24px] text-center font-medium text-gray-800">
+                      {count[recipe.id] || 1}
+                    </Text>
+                    {/*increase*/}
+                    <Pressable
+                      onPress={() => increment(recipe.id)}
+                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                    >
+                      <Text className="text-lg">&gt;</Text>
+                    </Pressable>
+                  </View>
+                </View>
             </View>
           </View>
         ))}
@@ -712,14 +760,24 @@ export default function MealPlanPage() {
                 </Text>
               </Pressable>
 
-              {/* meal plan settings -- opens calorie range modal */}
+              {/* auto meal plan filters -- opens meal filters*/}
+              <Pressable
+                className="h-12 w-12 bg-white rounded-lg shadow-sm items-center justify-center"
+                onPress={openFilterModal}
+                accessibilityRole="button"
+                accessibilityLabel="Meal plan filters"
+              >
+                <IconSymbol name="filter-outline" size={22} color="--color-foreground" />
+              </Pressable>
+
+              {/* auto meal plan settings -- opens calorie range modal */}
               <Pressable
                 className="h-12 w-12 bg-white rounded-lg shadow-sm items-center justify-center"
                 onPress={() => setSettingsModalVisible(true)}
                 accessibilityRole="button"
                 accessibilityLabel="Meal plan settings"
               >
-                <IconSymbol name="cog" size={22} color="--color-foreground" />
+                <IconSymbol name="cog-outline" size={22} color="--color-foreground" />
               </Pressable>
             </View>
 
@@ -945,6 +1003,23 @@ export default function MealPlanPage() {
                       minimumTrackTintColor="#bd9b64"
                       maximumTrackTintColor="#e5e5e5"
                       thumbTintColor="#bd9b64"
+                    />
+                  </View>
+
+                  <View className="flex-row items-center justify-between gap-3 py-1">
+                    <View className="flex-1 pr-2">
+                      <Text className="font-semibold text-foreground">Prioritize pantry items</Text>
+                      <Text className="text-xs text-muted-foreground mt-1">
+                        Auto meal plan will prefer recipes that use more ingredients you already have in
+                        your pantry (after your filters still apply).
+                      </Text>
+                    </View>
+                    <Switch
+                      style={{ transform: [{ scaleX: 1.15 }, { scaleY: 1.15 }] }}
+                      trackColor={{ false: "#9c989e", true: "#bd9b64" }}
+                      thumbColor="#ffffff"
+                      value={prioritizePantryItems}
+                      onValueChange={setPrioritizePantryItems}
                     />
                   </View>
 
