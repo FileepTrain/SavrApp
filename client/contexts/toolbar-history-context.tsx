@@ -1,5 +1,6 @@
 import { useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Platform } from "react-native";
 
 type ToolbarTab = "home" | "calendar" | "grocery-list" | "account";
 type ToolbarStacks = Record<ToolbarTab, string[]>;
@@ -96,7 +97,8 @@ export function ToolbarHistoryProvider({ children }: { children: React.ReactNode
   // On web, mirror in-app route transitions into browser history entries so desktop Back/History
   // behaves like a browser tab stack. We skip the next push after popstate to avoid re-adding.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (Platform.OS !== "web") return;
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
     const onPopState = () => {
       skipNextBrowserPushRef.current = true;
     };
@@ -105,7 +107,13 @@ export function ToolbarHistoryProvider({ children }: { children: React.ReactNode
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (Platform.OS !== "web") return;
+    if (
+      typeof window === "undefined" ||
+      typeof window.history?.pushState !== "function"
+    ) {
+      return;
+    }
     const safePath = stripRouteGroups(pathname);
     const href = `${safePath}${queryStringFromParams(params as Record<string, unknown>)}`;
 

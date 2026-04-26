@@ -378,6 +378,7 @@ export default function CalendarPage() {
               }}
               dayComponent={({ date, state, marking }: { date?: DateData; state?: string; marking?: { periods?: { color: string }[], habitState?: "ok" | "miss", cook?: boolean, shop?: boolean } }) => {
                 if (!date) return null;
+                const isMobileCalendar = Platform.OS !== "web";
 
                 // Compute today's key in local time
                 const today = new Date();
@@ -432,7 +433,7 @@ export default function CalendarPage() {
                     {marking && marking.periods && marking.periods.length > 0 && (
                       <View
                         className="absolute w-full flex-col gap-0.5 justify-center px-1"
-                        style={{ top: 0, bottom: 0, left: 0 }}
+                        style={{ top: isMobileCalendar ? 12 : 0, bottom: 0, left: 0 }}
                         pointerEvents="none"
                       >
                         {marking.periods.map(
@@ -450,7 +451,7 @@ export default function CalendarPage() {
                             return (
                               <View
                                 key={idx}
-                                className="h-1.5"
+                                className={isMobileCalendar ? "h-1" : "h-1.5"}
                                 style={{
                                   backgroundColor: p.color,
                                   borderTopLeftRadius: isStart ? radius : 0,
