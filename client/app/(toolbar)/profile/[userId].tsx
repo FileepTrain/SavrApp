@@ -37,6 +37,7 @@ import { useThemePalette } from "@/components/theme-provider";
 import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
 import { SERVER_URL } from "@/utils/server-url";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 
 type TabId = "recipes" | "favorites" | "boards" | "plans";
 
@@ -102,6 +103,7 @@ export default function CreatorProfilePage() {
   const theme = useThemePalette();
   const router = useRouter();
   const navigation = useNavigation();
+  const backInTabHistory = useToolbarHistoryBack();
   const { isWebDesktop, contentWidth } = useWebDesktopLayout();
   const accountColumnMax = useAccountWebColumnWidth();
   const { refetch: refetchMealPlans } = useMealPlans();
@@ -109,6 +111,7 @@ export default function CreatorProfilePage() {
     userId: string;
     tab?: string;
     mealPlanId?: string;
+    returnTo?: string;
   }>();
   const globalParams = useGlobalSearchParams();
   const { userId } = params;
@@ -118,6 +121,9 @@ export default function CreatorProfilePage() {
   const linkMealPlanId =
     singleQueryParam(params.mealPlanId) ??
     singleQueryParam(globalParams.mealPlanId);
+  const returnToPath =
+    singleQueryParam(params.returnTo) ??
+    singleQueryParam(globalParams.returnTo);
 
   const [viewerUid, setViewerUid] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("recipes");
@@ -793,8 +799,15 @@ export default function CreatorProfilePage() {
             {!isWebDesktop ? (
               <TouchableOpacity
                 onPress={() => {
+                  if (backInTabHistory()) {
+                    return;
+                  }
                   if (navigation.canGoBack()) {
                     navigation.goBack();
+                    return;
+                  }
+                  if (returnToPath && returnToPath.startsWith("/")) {
+                    router.replace(returnToPath);
                     return;
                   }
                   router.replace("/home");

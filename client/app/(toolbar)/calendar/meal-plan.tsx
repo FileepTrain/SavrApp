@@ -10,7 +10,7 @@ import { CACHE_KEYS, type CachedRecipeEntry, readCache, recipeDetailKey } from "
 import Slider from "@react-native-community/slider";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { createElement, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView, Switch, Platform } from "react-native";
 import { useThemePalette } from "@/components/theme-provider";
 import Button from "@/components/ui/button";
@@ -69,30 +69,54 @@ function batchRecordFromSlots(
   return out;
 }
 
-function getRecipeBaseServings(recipe: Recipe): number {
-  const n = typeof recipe.servings === "number" ? recipe.servings : Number(recipe.servings);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+/** Spoonacular / cache may expose servings as number or string. */
+function coercePositiveServings(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.floor(value);
+  }
+  if (typeof value === "string") {
+    const n = Number(String(value).trim());
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  return undefined;
 }
 
+function getRecipeBaseServings(recipe: Recipe): number {
+  return coercePositiveServings(recipe.servings) ?? 1;
+}
+
+/**
+ * Days one meal slot spans: recipes are used in order, each for `targetServings` consecutive days
+ * (same rule as `habitDays` / server `assignRecipeIdsForSlot`). Total for the slot = sum of those values.
+ */
+function slotSpanDaysFromTargetServings(
+  recipes: Recipe[],
+  targetServingsByRecipeId: Record<string, number>,
+): number {
+  if (!recipes.length) return 0;
+  let sum = 0;
+  for (const recipe of recipes) {
+    const raw = targetServingsByRecipeId[recipe.id];
+    const n =
+      typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
+    sum += n;
+  }
+  return sum;
+}
+
+/** Inclusive plan length: longest breakfast / lunch / dinner rotation (at least 1 day). */
 function maxEstimatedPlanDaysFromSlots(
   breakfast: Recipe[],
   lunch: Recipe[],
   dinner: Recipe[],
-  targetPerDay: Record<string, number>,
-  batchMultiplier: Record<string, number>,
+  targetServingsByRecipeId: Record<string, number>,
+  _batchMultiplier: Record<string, number>,
 ): number {
-  const lists = [breakfast, lunch, dinner];
-  let max = 0;
-  for (const list of lists) {
-    for (const recipe of list) {
-      const base = getRecipeBaseServings(recipe);
-      const target = targetPerDay[recipe.id] || 1;
-      const batch = batchMultiplier[recipe.id] || 1;
-      const days = target > 0 ? Math.floor((base * batch) / target) : 0;
-      max = Math.max(max, days);
-    }
-  }
-  return max;
+  const b = slotSpanDaysFromTargetServings(breakfast, targetServingsByRecipeId);
+  const l = slotSpanDaysFromTargetServings(lunch, targetServingsByRecipeId);
+  const d = slotSpanDaysFromTargetServings(dinner, targetServingsByRecipeId);
+  const max = Math.max(b, l, d);
+  return max > 0 ? max : 1;
 }
 
 function endDateFromStartAndMaxDays(start: Date, maxDays: number): Date {
@@ -109,15 +133,16 @@ function dateOnlyToLocalDate(ymd: string): Date | null {
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
+/** `YYYY-MM-DD` for `<input type="date" />` (local calendar). */
+function formatLocalYMD(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function normalizeRecipeFromApi(json: unknown, fallbackId: string): Recipe {
   const body = json as { recipe?: Recipe } | Recipe | null;
   const r = body && typeof body === "object" && "recipe" in body ? (body as { recipe?: Recipe }).recipe : (body as Recipe | null);
   if (!r || typeof r !== "object") return { id: fallbackId };
-  const servingsRaw = (r as Recipe).servings;
-  const servings =
-    typeof servingsRaw === "number" && Number.isFinite(servingsRaw) && servingsRaw > 0
-      ? Math.floor(servingsRaw)
-      : undefined;
+  const servings = coercePositiveServings((r as Recipe).servings);
   return {
     id: String((r as Recipe).id ?? fallbackId),
     title: (r as Recipe).title,
@@ -135,10 +160,7 @@ async function recipeFromDetailCache(rid: string): Promise<Recipe | null> {
   if (!cached?.recipe?.title) return null;
   const r = cached.recipe;
   const revLen = typeof r.reviewsLength === "number" ? r.reviewsLength : 0;
-  const servings =
-    typeof r.servings === "number" && Number.isFinite(r.servings) && r.servings > 0
-      ? Math.floor(r.servings)
-      : undefined;
+  const servings = coercePositiveServings(r.servings);
   return {
     id: rid,
     title: r.title,
@@ -406,19 +428,6 @@ export default function MealPlanPage() {
     );
   }, [loadingPlan, start_date, breakfastRecipe, lunchRecipe, dinnerRecipe, count, batchCount]);
 
-  const increment = (id: string) => {
-    setCount((prev) => ({
-      ...prev,
-      [id]: (prev[id] || 0) + 1,
-    }));
-  };
-  const decrement = (id: string) => {
-    setCount((prev) => ({
-      ...prev,
-      [id]: Math.max(0, (prev[id] || 0) - 1),
-    }));
-  };
-
   const incrementBatch = (id: string) => {
     setBatchCount((prev) => ({
       ...prev,
@@ -486,13 +495,21 @@ export default function MealPlanPage() {
   useFocusEffect(
     useCallback(() => {
       if (pendingSelectedRecipe && pendingMealSlot) {
+        const r = pendingSelectedRecipe;
+        const seedDays = Math.max(1, getRecipeBaseServings(r));
         if (pendingMealSlot === "Breakfast") {
-          setBreakfastRecipe((prev) => [...prev, pendingSelectedRecipe]);
+          setBreakfastRecipe((prev) => [...prev, r]);
         } else if (pendingMealSlot === "Lunch") {
-          setLunchRecipe((prev) => [...prev, pendingSelectedRecipe]);
+          setLunchRecipe((prev) => [...prev, r]);
         } else if (pendingMealSlot === "Dinner") {
-          setDinnerRecipe((prev) => [...prev, pendingSelectedRecipe]);
+          setDinnerRecipe((prev) => [...prev, r]);
         }
+        setCount((c) => {
+          const existing = c[r.id];
+          if (typeof existing === "number" && existing > 0) return c;
+          return { ...c, [r.id]: seedDays };
+        });
+        setBatchCount((b) => ({ ...b, [r.id]: b[r.id] != null && b[r.id]! >= 1 ? b[r.id]! : 1 }));
         setPendingSelectedRecipe(null);
         setPendingMealSlot(null);
       }
@@ -542,6 +559,8 @@ export default function MealPlanPage() {
       const params = new URLSearchParams({
         calorieMin: String(Math.min(calorieMin, calorieMax)),
         calorieMax: String(Math.max(calorieMin, calorieMax)),
+        targetDays: "30",
+        maxRecipesPerMeal: "4",
         budgetMin: String(appliedFilters.budgetMin),
         budgetMax: String(appliedFilters.budgetMax),
         allergies: appliedFilters.allergies.join(","),
@@ -596,25 +615,95 @@ export default function MealPlanPage() {
       }
 
       const meals = data?.meals ?? {};
-      const toRecipe = (r: any): Recipe => ({
+      const toRecipe = (r: any): Recipe & { __autoTargetServings?: number; __autoBatchMultiplier?: number } => ({
         id: String(r?.id ?? ""),
         title: r?.title ?? undefined,
         calories: typeof r?.calories === "number" ? r.calories : undefined,
         rating: typeof r?.rating === "number" ? r.rating : undefined,
         image: r?.image ?? undefined,
-        servings:
-          typeof r?.servings === "number" && r.servings > 0 ? Math.floor(r.servings) : undefined,
+        servings: coercePositiveServings(r?.servings),
+        __autoTargetServings:
+          typeof r?.autoTargetServings === "number" && r.autoTargetServings > 0
+            ? Math.floor(r.autoTargetServings)
+            : undefined,
+        __autoBatchMultiplier:
+          typeof r?.autoBatchMultiplier === "number" && r.autoBatchMultiplier > 0
+            ? Math.floor(r.autoBatchMultiplier)
+            : undefined,
       });
 
-      const firstRecipe = (arr: unknown) => {
+      const allRecipes = (arr: unknown) => {
         if (!Array.isArray(arr)) return [];
-        const first = arr.find((r: any) => r?.id != null);
-        return first ? [toRecipe(first)] : [];
+        return arr.filter((r: any) => r?.id != null).map((r: any) => toRecipe(r));
       };
 
-      setBreakfastRecipe(firstRecipe(meals.breakfast));
-      setLunchRecipe(firstRecipe(meals.lunch));
-      setDinnerRecipe(firstRecipe(meals.dinner));
+      let breakfastList = allRecipes(meals.breakfast);
+      let lunchList = allRecipes(meals.lunch);
+      let dinnerList = allRecipes(meals.dinner);
+
+      // Auto meal-plan search payload used to omit `servings`; fill from details when missing (cache / old server).
+      const idToken = await AsyncStorage.getItem("idToken");
+      const needServingsIds = [
+        ...new Set(
+          [...breakfastList, ...lunchList, ...dinnerList]
+            .filter((r) => !coercePositiveServings(r.servings))
+            .map((r) => r.id),
+        ),
+      ];
+      const servingsById: Record<string, number> = {};
+      if (idToken && needServingsIds.length > 0) {
+        await Promise.all(
+          needServingsIds.map(async (rid) => {
+            try {
+              const hres = await fetch(
+                `${SERVER_URL}/api/external-recipes/${encodeURIComponent(rid)}/details?includeNutrition=false`,
+                { headers: { Authorization: `Bearer ${idToken}` } },
+              );
+              const j = await hres.json().catch(() => ({}));
+              const sv = coercePositiveServings(j?.recipe?.servings);
+              if (sv) servingsById[rid] = sv;
+            } catch {
+              /* non-fatal */
+            }
+          }),
+        );
+      }
+      const mergeServings = (list: Recipe[]) =>
+        list.map((item) => {
+          const s = coercePositiveServings(item.servings) ?? servingsById[item.id];
+          return s != null ? { ...item, servings: s } : item;
+        });
+      breakfastList = mergeServings(breakfastList);
+      lunchList = mergeServings(lunchList);
+      dinnerList = mergeServings(dinnerList);
+
+      setBreakfastRecipe(breakfastList);
+      setLunchRecipe(lunchList);
+      setDinnerRecipe(dinnerList);
+
+      // Auto picks never went through the recipe picker, so `count` / `batchCount` were empty — end
+      // date + habitDays use `targetServings` per recipe; seed from each recipe's serving size.
+      const picked = [...breakfastList, ...lunchList, ...dinnerList];
+      setCount(() => {
+        const next: Record<string, number> = {};
+        for (const r of picked) {
+          const suggested = (r as { __autoTargetServings?: number }).__autoTargetServings;
+          next[r.id] =
+            typeof suggested === "number" && suggested > 0
+              ? Math.floor(suggested)
+              : Math.max(1, getRecipeBaseServings(r));
+        }
+        return next;
+      });
+      setBatchCount(() => {
+        const next: Record<string, number> = {};
+        for (const r of picked) {
+          const suggested = (r as { __autoBatchMultiplier?: number }).__autoBatchMultiplier;
+          next[r.id] =
+            typeof suggested === "number" && suggested > 0 ? Math.floor(suggested) : 1;
+        }
+        return next;
+      });
     } catch (err) {
       Alert.alert(
         "Error",
@@ -657,68 +746,54 @@ export default function MealPlanPage() {
           <Text className="font-bold text-xl"> {meal} </Text>
         </View>
 
-        {recipeData.map((recipe: Recipe) => (
+        {recipeData.map((recipe: Recipe) => {
+          const base = getRecipeBaseServings(recipe);
+          const target = count[recipe.id] || 1;
+          const batch = batchCount[recipe.id] || 1;
+          return (
           <View key={recipe.id} className="w-full">
             {renderRecipeCard(recipe, meal)}
-            {(() => {
-              const base = getRecipeBaseServings(recipe);
-              const target = count[recipe.id] || 1;
-              const batch = batchCount[recipe.id] || 1;
-              const days = target > 0 ? Math.floor((base * batch) / target) : 0;
-              return (
-                <Text className="text-sm text-muted-foreground px-4">
-                  Est. {days} day{days === 1 ? "" : "s"} ({batch}× batch, serves {base} ÷{" "}
-                  {target}/day).
+            <Text className="text-sm text-muted-foreground px-4">
+              This recipe runs {target} day{target === 1 ? "" : "s"} in this meal (recipe serves{" "}
+              {base}
+              {batch > 1 ? ` · ${batch}× batch for shopping` : ""}). Plan length uses the longest
+              meal slot.
+            </Text>
+            <View className="flex-row items-start justify-between w-full px-4 gap-3">
+              <View className="mt-1 items-start min-w-[84px]">
+                <Text className="text-xs text-muted-foreground mt-2">Recipe serves</Text>
+                <Text className="text-lg font-semibold">{base}</Text>
+              </View>
+              <View className="mt-1 items-center flex-1">
+                <Text className="text-base mt-2">Batches (×)</Text>
+                <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-4 mt-2">
+                  <Pressable
+                    onPress={() => decrementBatch(recipe.id)}
+                    className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                  >
+                    <Text className="text-lg">&lt;</Text>
+                  </Pressable>
+                  <Text className="min-w-[24px] text-center font-medium text-gray-800">
+                    {batchCount[recipe.id] || 1}
+                  </Text>
+                  <Pressable
+                    onPress={() => incrementBatch(recipe.id)}
+                    className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
+                  >
+                    <Text className="text-lg">&gt;</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <View className="mt-1 items-end min-w-[84px]">
+                <Text className="text-xs text-muted-foreground mt-2">Runs for</Text>
+                <Text className="text-lg font-semibold">
+                  {target} day{target === 1 ? "" : "s"}
                 </Text>
-              );
-            })()}
-            <View className="flex-row items-start justify-between w-full px-4">
-                <View className="mt-1">
-                  <Text className="text-base mt-2">Batches (×):</Text>
-                  <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-4 mt-2">
-                    <Pressable
-                      onPress={() => decrementBatch(recipe.id)}
-                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                    >
-                      <Text className="text-lg">&lt;</Text>
-                    </Pressable>
-                    <Text className="min-w-[24px] text-center font-medium text-gray-800">
-                      {batchCount[recipe.id] || 1}
-                    </Text>
-                    <Pressable
-                      onPress={() => incrementBatch(recipe.id)}
-                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                    >
-                      <Text className="text-lg">&gt;</Text>
-                    </Pressable>
-                  </View>
-                </View>
-                <View className="mt-1">
-                  <Text className="text-base mt-2">Servings per day:</Text>
-
-                  <View className="flex-row items-center bg-gray-100 rounded-full shadow px-2 py-1 gap-4 mt-2">
-                    {/*decrease*/}
-                    <Pressable
-                      onPress={() => decrement(recipe.id)}
-                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                    >
-                      <Text className="text-lg">&lt;</Text>
-                    </Pressable>
-                    <Text className="min-w-[24px] text-center font-medium text-gray-800">
-                      {count[recipe.id] || 1}
-                    </Text>
-                    {/*increase*/}
-                    <Pressable
-                      onPress={() => increment(recipe.id)}
-                      className="w-8 h-8 flex bg-[#dce4e8] items-center justify-center rounded-full active:scale-95"
-                    >
-                      <Text className="text-lg">&gt;</Text>
-                    </Pressable>
-                  </View>
-                </View>
+              </View>
             </View>
           </View>
-        ))}
+          );
+        })}
         <View className="rounded-2xl border-2 overflow-hidden" style={{ borderColor: color }}>
           <Button
             variant="outline"
@@ -822,6 +897,58 @@ export default function MealPlanPage() {
                 />
               ) : null}
             </View>
+
+            {Platform.OS === "web" && showPicker && activeField === "start" ? (
+              <Modal
+                transparent
+                animationType="fade"
+                visible
+                onRequestClose={() => setShowPicker(false)}
+              >
+                <Pressable
+                  className="flex-1 justify-center px-6"
+                  style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+                  onPress={() => setShowPicker(false)}
+                >
+                  <Pressable
+                    className="rounded-xl bg-background p-4 self-center w-full max-w-sm"
+                    onPress={() => {}}
+                  >
+                    <Text className="text-foreground font-semibold text-base mb-2">Start date</Text>
+                    {createElement("input", {
+                      type: "date",
+                      value: formatLocalYMD(start_date),
+                      onInput: (e: Event) => {
+                        const v = (e.target as HTMLInputElement)?.value;
+                        const parsed = v ? dateOnlyToLocalDate(v) : null;
+                        if (parsed) setStartDate(parsed);
+                      },
+                      onChange: (e: Event) => {
+                        const v = (e.target as HTMLInputElement)?.value;
+                        const parsed = v ? dateOnlyToLocalDate(v) : null;
+                        if (parsed) setStartDate(parsed);
+                      },
+                      style: {
+                        width: "100%",
+                        fontSize: 16,
+                        padding: 10,
+                        marginVertical: 8,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: "#ccc",
+                        boxSizing: "border-box",
+                      },
+                    } as Record<string, unknown>)}
+                    <Pressable
+                      className="mt-3 rounded-lg bg-red-primary py-3 items-center"
+                      onPress={() => setShowPicker(false)}
+                    >
+                      <Text className="text-white font-semibold">Done</Text>
+                    </Pressable>
+                  </Pressable>
+                </Pressable>
+              </Modal>
+            ) : null}
 
             <View className="py-3">
               {/* Nutrient preview requires live API calls; it is hidden when offline */}

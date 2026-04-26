@@ -36,6 +36,7 @@ import { RecipeNotesModal } from "@/components/recipe/recipe-notes-modal";
 import { useThemePalette } from "@/components/theme-provider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 
 import { SERVER_URL } from "@/utils/server-url";
 import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
@@ -173,7 +174,8 @@ export default function RecipeDetailsPage() {
   const saveModalMaxHeight = Math.round(Dimensions.get("window").height * 0.88);
   const router = useRouter();
   const navigation = useNavigation();
-  const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
+  const backInTabHistory = useToolbarHistoryBack();
+  const { recipeId, returnTo } = useLocalSearchParams<{ recipeId: string; returnTo?: string }>();
   const { isOnline } = useNetwork();
   const { isWebDesktop } = useWebDesktopLayout();
   const recipeDesktopColumnWidth = useRecipeWebColumnWidth();
@@ -184,6 +186,10 @@ export default function RecipeDetailsPage() {
     const raw = Array.isArray(recipeId) ? recipeId[0] : recipeId;
     return raw ?? "";
   }, [recipeId]);
+  const returnToPath = useMemo(() => {
+    const raw = Array.isArray(returnTo) ? returnTo[0] : returnTo;
+    return typeof raw === "string" && raw.startsWith("/") ? raw : null;
+  }, [returnTo]);
 
   const [loading, setLoading] = useState(true);
   const [notCached, setNotCached] = useState(false);
@@ -1295,8 +1301,15 @@ export default function RecipeDetailsPage() {
         />
               <TouchableOpacity
                 onPress={() => {
+                  if (backInTabHistory()) {
+                    return;
+                  }
                   if (navigation.canGoBack()) {
                     router.back();
+                    return;
+                  }
+                  if (returnToPath) {
+                    router.replace(returnToPath);
                     return;
                   }
                   router.replace("/home");

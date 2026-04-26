@@ -364,6 +364,12 @@ async function searchCachedByDishTypes(
       if (cal?.amount != null) calories = Math.round(Number(cal.amount));
     }
 
+    const servingsRaw = data.servings;
+    const servings =
+      servingsRaw != null && Number.isFinite(Number(servingsRaw))
+        ? Number(servingsRaw)
+        : null;
+
     return {
       id: Number(data.externalId),
       title: data.title ?? null,
@@ -375,6 +381,7 @@ async function searchCachedByDishTypes(
       viewCount: Number.isFinite(Number(data.viewCount))
         ? Number(data.viewCount)
         : 0,
+      servings,
       dishTypes: Array.isArray(data.dishTypes) ? data.dishTypes : [],
       equipment: data.equipment ?? [],
       /** Used by auto meal plan pantry scoring; omitted elsewhere in this payload. */

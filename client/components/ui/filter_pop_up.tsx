@@ -26,6 +26,8 @@ export type Filters = {
   cookware: string[];
   /** When true, only show recipes whose cookware is in the user's "My cookware" list */
   useMyCookwareOnly: boolean;
+  /** Search ordering preference. */
+  sortBy: "mostViewed" | "rating" | "caloriesAsc" | "caloriesDesc";
 };
 
 // Filter actions
@@ -36,6 +38,8 @@ type Props = {
   onApply: () => void;
   onCancel: () => void;
   onReset: () => void;
+  /** When true, show search-only controls (e.g. sort order). Home feed hides these. */
+  showSortOptions?: boolean;
 };
 
 export default function FilterModal({
@@ -45,6 +49,7 @@ export default function FilterModal({
   onApply,
   onCancel,
   onReset,
+  showSortOptions = false,
 }: Props) {
   const theme = useThemePalette();
   const [cookwareModalVisible, setCookwareModalVisible] = useState(false);
@@ -78,6 +83,13 @@ export default function FilterModal({
       useMyCookwareOnly: false,
     });
   };
+
+  const sortOptions: Array<{ key: Filters["sortBy"]; label: string }> = [
+    { key: "mostViewed", label: "Most views" },
+    { key: "rating", label: "Highest rating" },
+    { key: "caloriesAsc", label: "Calories: low to high" },
+    { key: "caloriesDesc", label: "Calories: high to low" },
+  ];
 
   if (!isWeb) {
     return (
@@ -120,6 +132,39 @@ export default function FilterModal({
                   <Text className="text-muted-foreground">$100</Text>
                 </View>
               </View>
+
+              {showSortOptions ? (
+                <View className="mb-6">
+                  <View className="flex-row items-center gap-2 mb-3">
+                    <Text className="text-base font-semibold text-foreground">Sort by</Text>
+                  </View>
+                  <View className="gap-2">
+                    {sortOptions.map((opt) => {
+                      const active = draft.sortBy === opt.key;
+                      return (
+                        <Pressable
+                          key={opt.key}
+                          onPress={() => onChangeDraft({ ...draft, sortBy: opt.key })}
+                          className="rounded-xl border px-4 py-3 flex-row items-center justify-between"
+                          style={{
+                            borderColor: active
+                              ? theme["--color-red-primary"]
+                              : theme["--color-muted-background"],
+                            backgroundColor: active
+                              ? `${theme["--color-red-primary"]}15`
+                              : theme["--color-background"],
+                          }}
+                        >
+                          <Text className={`text-base font-medium ${active ? "text-red-primary" : "text-foreground"}`}>
+                            {opt.label}
+                          </Text>
+                          {active ? <IconSymbol name="check" size={18} color="--color-red-primary" /> : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
 
               {/* Allergies */}
               <View className="mb-6">
@@ -345,6 +390,39 @@ export default function FilterModal({
                 <Text className="text-muted-foreground">$100</Text>
               </View>
             </View>
+
+            {showSortOptions ? (
+              <View className="mb-6">
+                <View className="flex-row items-center gap-2 mb-3">
+                  <Text className="text-base font-semibold text-foreground">Sort by</Text>
+                </View>
+                <View className="gap-2">
+                  {sortOptions.map((opt) => {
+                    const active = draft.sortBy === opt.key;
+                    return (
+                      <Pressable
+                        key={opt.key}
+                        onPress={() => onChangeDraft({ ...draft, sortBy: opt.key })}
+                        className="rounded-xl border px-4 py-3 flex-row items-center justify-between"
+                        style={{
+                          borderColor: active
+                            ? theme["--color-red-primary"]
+                            : theme["--color-muted-background"],
+                          backgroundColor: active
+                            ? `${theme["--color-red-primary"]}15`
+                            : theme["--color-background"],
+                        }}
+                      >
+                        <Text className={`text-base font-medium ${active ? "text-red-primary" : "text-foreground"}`}>
+                          {opt.label}
+                        </Text>
+                        {active ? <IconSymbol name="check" size={18} color="--color-red-primary" /> : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
             {/* Allergies */}
             <View className="mb-6">

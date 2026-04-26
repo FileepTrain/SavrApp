@@ -1,6 +1,7 @@
 // app/(toolbar)/account/_layout.tsx
 import { PersonalRecipesProvider } from "@/contexts/personal-recipes-context";
 import { ToolbarSubstackScreenHeader } from "@/components/toolbar-substack-screen-header";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 import { Stack, useRouter } from "expo-router";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
@@ -19,8 +20,11 @@ function singleParam(v: unknown): string | undefined {
 function AccountStackHeader(props: NativeStackHeaderProps) {
   const { navigation, route } = props;
   const router = useRouter();
+  const backInTabHistory = useToolbarHistoryBack();
 
   const handleBack = useCallback(() => {
+    if (backInTabHistory()) return;
+
     const p = (route.params ?? {}) as Record<string, unknown>;
     const collectionId = singleParam(p.collectionId);
     const ownerUid = singleParam(p.ownerUid);
@@ -52,7 +56,7 @@ function AccountStackHeader(props: NativeStackHeaderProps) {
     }
 
     router.replace("/account");
-  }, [navigation, route.params, router]);
+  }, [backInTabHistory, navigation, route.params, router]);
 
   return <ToolbarSubstackScreenHeader {...props} onPressBack={handleBack} />;
 }

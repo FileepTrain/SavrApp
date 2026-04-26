@@ -18,8 +18,16 @@ import {
   slotEntriesToStoredString,
   type MealPlanSlotEntry,
 } from "@/utils/meal-plan-slot";
+import {
+  buildMealPlanHabitDaysFromPlanFields,
+  normalizeHabitDaysFromApi,
+  planCoversCalendarDateLocal,
+  type MealPlanHabitDay,
+} from "@/utils/meal-plan-habit-days";
 
 import { SERVER_URL } from "@/utils/server-url";
+
+export type { MealPlanHabitDay };
 
 export interface MealPlanItem {
   id: string;
@@ -29,6 +37,8 @@ export interface MealPlanItem {
   dinner: string | null;
   start_date: string | null; // ISO
   end_date: string | null; // ISO
+  /** Per-day recipe assignments + habit flag; from API or derived locally when offline. */
+  habitDays?: MealPlanHabitDay[];
 }
 
 // Payload shape for creating a new meal plan (matches the server's POST /api/meal-plans body).
@@ -66,6 +76,10 @@ interface MealPlansContextValue extends MealPlansState {
   createMealPlan: (payload: CreateMealPlanPayload) => Promise<void>;
   updateMealPlan: (planId: string, payload: CreateMealPlanPayload) => Promise<void>;
   deleteMealPlan: (planId: string) => Promise<void>;
+  /** Toggles `followedPlan` for one date (server); requires online. */
+  toggleMealPlanHabitDay: (planId: string, dateKey: string) => Promise<void>;
+  /** Double-tap calendar: toggles habit for every meal plan that includes `dateKey`; one refetch. */
+  toggleHabitsForCalendarDate: (dateKey: string) => Promise<void>;
 }
 
 const MealPlansContext = createContext<MealPlansContextValue | null>(null);
@@ -87,7 +101,33 @@ async function fetchAndCacheMealPlans(): Promise<MealPlanItem[]> {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || "Failed to fetch meal plans");
 
-  const list: MealPlanItem[] = Array.isArray(data?.mealPlans) ? data.mealPlans : [];
+  const rawList = Array.isArray(data?.mealPlans) ? data.mealPlans : [];
+  const list: MealPlanItem[] = rawList.map((raw: Record<string, unknown>) => {
+    const start = raw.start_date != null ? String(raw.start_date) : null;
+    const end = raw.end_date != null ? String(raw.end_date) : null;
+    const habitFromApi = normalizeHabitDaysFromApi(raw.habitDays);
+    const habitDays =
+      habitFromApi ??
+      (start && end
+        ? buildMealPlanHabitDaysFromPlanFields(
+            start,
+            end,
+            raw.breakfast,
+            raw.lunch,
+            raw.dinner,
+          )
+        : undefined);
+    return {
+      id: String(raw.id ?? ""),
+      userID: String(raw.userID ?? ""),
+      breakfast: raw.breakfast != null ? (raw.breakfast as string | null) : null,
+      lunch: raw.lunch != null ? (raw.lunch as string | null) : null,
+      dinner: raw.dinner != null ? (raw.dinner as string | null) : null,
+      start_date: start,
+      end_date: end,
+      habitDays,
+    };
+  });
 
   // Persist the list so it can be served to the UI when the device is offline.
   await writeCache(CACHE_KEYS.MEAL_PLANS, list);
@@ -212,18 +252,28 @@ function applyMealPlanPatchToList(
   planId: string,
   payload: CreateMealPlanPayload,
 ): MealPlanItem[] {
-  return list.map((p) =>
-    p.id === planId
-      ? {
-        ...p,
-        breakfast: slotToStored(payload.breakfast),
-        lunch: slotToStored(payload.lunch),
-        dinner: slotToStored(payload.dinner),
-        start_date: payload.start_date,
-        end_date: payload.end_date,
-      }
-      : p,
-  );
+  return list.map((p) => {
+    if (p.id !== planId) return p;
+    const nextHabit = buildMealPlanHabitDaysFromPlanFields(
+      payload.start_date,
+      payload.end_date,
+      payload.breakfast,
+      payload.lunch,
+      payload.dinner,
+    ).map((row) => {
+      const old = p.habitDays?.find((h) => h.date === row.date);
+      return { ...row, followedPlan: old?.followedPlan ?? false };
+    });
+    return {
+      ...p,
+      breakfast: slotToStored(payload.breakfast),
+      lunch: slotToStored(payload.lunch),
+      dinner: slotToStored(payload.dinner),
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+      habitDays: nextHabit,
+    };
+  });
 }
 
 export function MealPlansProvider({ children }: { children: React.ReactNode }) {
@@ -280,6 +330,13 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
           dinner: slotToStored(payload.dinner),
           start_date: payload.start_date,
           end_date: payload.end_date,
+          habitDays: buildMealPlanHabitDaysFromPlanFields(
+            payload.start_date,
+            payload.end_date,
+            payload.breakfast,
+            payload.lunch,
+            payload.dinner,
+          ),
         };
         setMealPlans((prev) => {
           const updated = [...prev, optimisticPlan];
@@ -394,9 +451,85 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.error ?? "Failed to delete meal plan");
       }
 
+      setMealPlans((prev) => {
+        const updated = prev.filter((p) => p.id !== planId);
+        void writeCache(CACHE_KEYS.MEAL_PLANS, updated);
+        return updated;
+      });
       await refetch();
     },
     [refetch],
+  );
+
+  const toggleMealPlanHabitDay = useCallback(
+    async (planId: string, dateKey: string) => {
+      if (!isOnlineRef.current) {
+        throw new Error("Habit tracking requires an internet connection.");
+      }
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) throw new Error("Not signed in");
+
+      const res = await fetch(
+        `${SERVER_URL}/api/meal-plans/${encodeURIComponent(planId)}/habit-day`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ date: dateKey }),
+        },
+      );
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to update habit day");
+      }
+
+      await refetch();
+    },
+    [refetch],
+  );
+
+  const toggleHabitsForCalendarDate = useCallback(
+    async (dateKey: string) => {
+      if (!isOnlineRef.current) {
+        throw new Error("Habit tracking requires an internet connection.");
+      }
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) throw new Error("Not signed in");
+
+      const targets = mealPlans.filter(
+        (p) =>
+          p.habitDays?.some((h) => h.date === dateKey) ||
+          planCoversCalendarDateLocal(p.start_date, p.end_date, dateKey),
+      );
+      if (targets.length === 0) return;
+
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      };
+
+      const results = await Promise.all(
+        targets.map((p) =>
+          fetch(`${SERVER_URL}/api/meal-plans/${encodeURIComponent(p.id)}/habit-day`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ date: dateKey }),
+          }),
+        ),
+      );
+
+      const failed = results.find((r) => !r.ok);
+      if (failed) {
+        const data = await failed.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to update habit day");
+      }
+
+      await refetch();
+    },
+    [mealPlans, refetch],
   );
 
   useEffect(() => {
@@ -417,6 +550,8 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
     createMealPlan,
     updateMealPlan,
     deleteMealPlan,
+    toggleMealPlanHabitDay,
+    toggleHabitsForCalendarDate,
   };
 
   return <MealPlansContext.Provider value={value}>{children}</MealPlansContext.Provider>;

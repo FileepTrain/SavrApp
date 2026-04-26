@@ -2,8 +2,9 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
 import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
-import React from "react";
+import React, { useCallback } from "react";
 import { Platform, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -24,6 +25,13 @@ export type ToolbarSubstackScreenHeaderProps = NativeStackHeaderProps & {
   columnVariant?: ToolbarSubstackColumnVariant;
 };
 
+function hasMeaningfulBackTarget(
+  navigation: NativeStackHeaderProps["navigation"],
+  onPressBack: ToolbarSubstackScreenHeaderProps["onPressBack"],
+): boolean {
+  return typeof onPressBack === "function" || navigation.canGoBack();
+}
+
 /**
  * Header for nested stacks (toolbar tabs, recipe, profile, etc.).
  * Do not add sidebar width here — tab content already sits to the right of `ToolbarWebSidebar`.
@@ -35,20 +43,35 @@ export function ToolbarSubstackScreenHeader({
   columnVariant = "account",
 }: ToolbarSubstackScreenHeaderProps) {
   const { isWebDesktop } = useWebDesktopLayout();
+  const backInTabHistory = useToolbarHistoryBack();
   const accountColumnMax = useAccountWebColumnWidth();
   const recipeColumnMax = useRecipeWebColumnWidth();
   const maxColumn = columnVariant === "recipe" ? recipeColumnMax : accountColumnMax;
   const innerHorizontalPad = columnVariant === "recipe" ? 0 : TOOLBAR_SUBSTACK_INNER_PAD;
 
-  const handleBack = onPressBack ?? (() => navigation.goBack());
+  const handleBack = useCallback(() => {
+    if (onPressBack) {
+      onPressBack();
+      return;
+    }
+    if (backInTabHistory()) return;
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+  }, [backInTabHistory, navigation, onPressBack]);
 
   // Keep Android/iOS visuals identical to pre-desktop commit.
   if (Platform.OS !== "web") {
+    const showBack = hasMeaningfulBackTarget(navigation, onPressBack);
     return (
       <SafeAreaView className="px-4 pt-7 flex-row items-center min-h-[52px]">
-        <TouchableOpacity onPress={handleBack} className="mr-3">
-          <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
-        </TouchableOpacity>
+        {showBack ? (
+          <TouchableOpacity onPress={handleBack} className="mr-3">
+            <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
+          </TouchableOpacity>
+        ) : (
+          <View className="mr-3 w-[30px]" />
+        )}
         <Text className="flex-1 text-2xl font-bold text-foreground" numberOfLines={1}>
           {options.title ?? ""}
         </Text>
@@ -83,11 +106,13 @@ export function ToolbarSubstackScreenHeader({
           className="flex-row items-center min-h-[52px]"
           style={{ paddingHorizontal: innerHorizontalPad }}
         >
-          {!isWebDesktop ? (
+          {hasMeaningfulBackTarget(navigation, onPressBack) ? (
             <TouchableOpacity onPress={handleBack} className="mr-3">
               <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
             </TouchableOpacity>
-          ) : null}
+          ) : (
+            <View className="mr-3 w-[30px]" />
+          )}
           <Text className="flex-1 text-2xl font-semibold text-foreground" numberOfLines={1}>
             {options.title ?? ""}
           </Text>

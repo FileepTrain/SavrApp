@@ -63,6 +63,7 @@ function buildSearchKey(query: string, filters: Filters): string {
     [...(filters.foodTypes || [])].sort().join(","),
     [...(filters.cookware || [])].sort().join(","),
     filters.useMyCookwareOnly ? "1" : "0",
+    filters.sortBy ?? "mostViewed",
   ].join("|");
 }
 
@@ -170,7 +171,7 @@ export default function HomeSearchScreen() {
 
   const fetchingRef = useRef(false);
 
-  // Merge personal + external, dedupe, then sort by view count (most viewed first); stable sort by id when viewCount ties
+  // Merge + dedupe then apply selected ordering.
   const results = useMemo(() => {
     const merged = [...personalResults, ...externalResults];
     const seen = new Set<string>();
@@ -182,10 +183,21 @@ export default function HomeSearchScreen() {
       unique.push(item);
     }
     const v = (x: SearchResult) => Number(x?.viewCount) || 0;
+    const r = (x: SearchResult) => Number(x?.rating) || 0;
+    const c = (x: SearchResult) => Number(x?.calories) || 0;
     const id = (x: SearchResult) => String(x?.id ?? "");
-    unique.sort((a, b) => v(b) - v(a) || id(a).localeCompare(id(b)));
+    const sortBy = appliedFilters.sortBy ?? "mostViewed";
+    if (sortBy === "rating") {
+      unique.sort((a, b) => r(b) - r(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
+    } else if (sortBy === "caloriesAsc") {
+      unique.sort((a, b) => c(a) - c(b) || v(b) - v(a) || id(a).localeCompare(id(b)));
+    } else if (sortBy === "caloriesDesc") {
+      unique.sort((a, b) => c(b) - c(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
+    } else {
+      unique.sort((a, b) => v(b) - v(a) || id(a).localeCompare(id(b)));
+    }
     return unique;
-  }, [personalResults, externalResults]);
+  }, [personalResults, externalResults, appliedFilters.sortBy]);
 
   const searchKey = useMemo(
     () => buildSearchKey(queryParam, appliedFilters),
@@ -231,6 +243,7 @@ export default function HomeSearchScreen() {
         allergies: (appliedFilters.allergies || []).join(","),
         cookware: (appliedFilters.cookware || []).join(","),
         useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
+        sortBy: appliedFilters.sortBy ?? "mostViewed",
       });
       if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
         params.set("userCookware", userCookwareList.join(","));
@@ -329,6 +342,7 @@ export default function HomeSearchScreen() {
       allergies: (appliedFilters.allergies || []).join(","),
       cookware: (appliedFilters.cookware || []).join(","),
       useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
+      sortBy: appliedFilters.sortBy ?? "mostViewed",
     });
     if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
       params.set("userCookware", userCookwareList.join(","));

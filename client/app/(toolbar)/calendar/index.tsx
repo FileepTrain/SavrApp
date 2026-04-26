@@ -1,20 +1,21 @@
 // app/(toolbar)/calendar/index.tsx
 import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
-import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Calendar } from "react-native-calendars";
 import type { DateData } from "react-native-calendars";
 import Button from "@/components/ui/button";
-import { useMealPlans } from "@/contexts/meal-plans-context";
+import { useMealPlans, type MealPlanItem } from "@/contexts/meal-plans-context";
 import { SwipeableMealPlanCard } from "@/components/swipeable-mealplan-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useThemePalette } from "@/components/theme-provider";
 import { generateICS } from "@/services/calendarExport";
 import { Alert } from "react-native";
-import { SERVER_URL } from '@/utils/server-url';
+import { SERVER_URL } from "@/utils/server-url";
+import { localDateKeysInclusive, planCoversCalendarDateLocal } from "@/utils/meal-plan-habit-days";
 
 const dateOnlyFromISO = (iso: string): string => {
   const d = new Date(iso);
@@ -26,6 +27,43 @@ const dateOnlyFromISO = (iso: string): string => {
 }
 
 // Builds and returns the date as a Date object
+function localTodayYMD(): string {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+}
+
+function colorForRecipeId(recipeId: string): string {
+  let hash = 0;
+  for (let i = 0; i < recipeId.length; i++) {
+    hash = (hash * 31 + recipeId.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 72%, 52%)`;
+}
+
+function selectedDaySlotStored(recipeId: string | null): string | null {
+  if (!recipeId) return null;
+  return JSON.stringify([
+    { id: recipeId, baseServings: 1, targetServings: 1, batchMultiplier: 1 },
+  ]);
+}
+
+/** Past calendar days only: green if followedPlan, red if not (any overlapping plan marks miss). */
+function pastHabitBorderByDate(mealPlans: MealPlanItem[], todayKey: string): Record<string, "ok" | "miss"> {
+  const out: Record<string, "ok" | "miss"> = {};
+  for (const plan of mealPlans ?? []) {
+    const rows = plan.habitDays;
+    if (!rows?.length) continue;
+    for (const row of rows) {
+      const d = row.date;
+      if (!d || d >= todayKey) continue;
+      if (!row.followedPlan) out[d] = "miss";
+      else if (out[d] !== "miss") out[d] = "ok";
+    }
+  }
+  return out;
+}
+
 const toLocalDate = (
   dateOnlyOrYear: string | number,
   month1to12?: number,
@@ -39,7 +77,8 @@ const toLocalDate = (
 }
 
 export default function CalendarPage() {
-  const { mealPlans, loading, error, refetch } = useMealPlans();
+  const isWebDesktopCalendar = Platform.OS === "web";
+  const { mealPlans, loading, error, refetch, toggleHabitsForCalendarDate } = useMealPlans();
   const [calendarOwnerUid, setCalendarOwnerUid] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => dateOnlyFromISO(new Date().toISOString()));
   const [visibleMonth, setVisibleMonth] = useState(() =>
@@ -149,13 +188,45 @@ export default function CalendarPage() {
 
   const mealPlansForSelectedDay = useMemo(() => {
     const d = selectedDate;
-    return (mealPlans ?? []).filter((p) => {
-      if (!p.start_date || !p.end_date) return false;
-      const start = dateOnlyFromISO(p.start_date);
-      const end = dateOnlyFromISO(p.end_date);
-      return start <= d && d <= end;
-    });
+    return (mealPlans ?? []).filter((p) => planCoversCalendarDateLocal(p.start_date, p.end_date, d));
   }, [mealPlans, selectedDate]);
+
+  const selectedDayEntries = useMemo(
+    () =>
+      mealPlansForSelectedDay.map((p) => {
+        const day = p.habitDays?.find((h) => h.date === selectedDate);
+        return {
+          planId: p.id,
+          breakfastId: day?.breakfast?.id ?? null,
+          lunchId: day?.lunch?.id ?? null,
+          dinnerId: day?.dinner?.id ?? null,
+        };
+      }),
+    [mealPlansForSelectedDay, selectedDate],
+  );
+
+  const todayKeyForHabit = useMemo(() => localTodayYMD(), [mealPlans, visibleMonth, selectedDate]);
+
+  const habitBorderByDate = useMemo(
+    () => pastHabitBorderByDate(mealPlans ?? [], todayKeyForHabit),
+    [mealPlans, todayKeyForHabit],
+  );
+
+  const onCalendarDayLongPress = useCallback(
+    (dateString: string) => {
+      void (async () => {
+        try {
+          await toggleHabitsForCalendarDate(dateString);
+        } catch (e) {
+          Alert.alert(
+            "Could not update",
+            e instanceof Error ? e.message : "Try again when online.",
+          );
+        }
+      })();
+    },
+    [toggleHabitsForCalendarDate],
+  );
 
   const markedDates = useMemo(() => {
     // Colors for breakfast / lunch / dinner periods
@@ -170,60 +241,74 @@ export default function CalendarPage() {
     for (const plan of mealPlans ?? []) {
       if (!plan.start_date || !plan.end_date) continue;
 
-      const start = dateOnlyFromISO(plan.start_date);
-      const end = dateOnlyFromISO(plan.end_date);
-      if (!start || !end) continue;
+      const dayKeys = localDateKeysInclusive(plan.start_date, plan.end_date);
+      if (!dayKeys.length) continue;
+      const rangeStart = dayKeys[0];
+      const rangeEnd = dayKeys[dayKeys.length - 1];
 
-      // Convert start and end dates to UTC milliseconds to calculate the difference
-      const [startYear, startMonth, startDay] = start.split("-").map((x) => Number(x));
-      const [endYear, endMonth, endDay] = end.split("-").map((x) => Number(x));
-      if (!startYear || !startMonth || !startDay || !endYear || !endMonth || !endDay) continue;
-
-      const startUtc = Date.UTC(startYear, startMonth - 1, startDay);
-      const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
-      if (Number.isNaN(startUtc) || Number.isNaN(endUtc) || endUtc < startUtc) continue;
-
-      // Convert milliseconds to days
-      const diffDays = Math.floor((endUtc - startUtc) / (1000 * 60 * 60 * 24));
-
-      // Walk through each day in the range
-      for (let offset = 0; offset <= diffDays; offset++) {
-        const dt = new Date(startUtc);
-        dt.setUTCDate(dt.getUTCDate() + offset);
-        const y = dt.getUTCFullYear();
-        const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
-        const d = String(dt.getUTCDate()).padStart(2, "0");
-        const dayKey = `${y}-${m}-${d}`;
+      for (const dayKey of dayKeys) {
+        const dayIdx = dayKeys.indexOf(dayKey);
         // Max 3 markings per day (Breakfast/Lunch/Dinner), even if multiple meal plans overlap on the same date
         const entry = (marks[dayKey] ??= { periodsByMeal: {} as Partial<Record<MealSlot, any>> });
         const periodsByMeal: Partial<Record<MealSlot, any>> = entry.periodsByMeal;
 
-        const isStart = dayKey === start;
-        const isEnd = dayKey === end;
+        const dayHabit = plan.habitDays?.find((h) => h.date === dayKey);
+        const breakfastRecipeId = dayHabit?.breakfast?.id ?? null;
+        const lunchRecipeId = dayHabit?.lunch?.id ?? null;
+        const dinnerRecipeId = dayHabit?.dinner?.id ?? null;
 
-        // Build the periods array for the day, containing each meal type (breakfast, lunch, dinner)
-        if (plan.breakfast) {
+        const prevDayHabit =
+          dayIdx > 0 ? plan.habitDays?.find((h) => h.date === dayKeys[dayIdx - 1]) : null;
+        const nextDayHabit =
+          dayIdx < dayKeys.length - 1
+            ? plan.habitDays?.find((h) => h.date === dayKeys[dayIdx + 1])
+            : null;
+
+        const breakfastPrevId = prevDayHabit?.breakfast?.id ?? null;
+        const breakfastNextId = nextDayHabit?.breakfast?.id ?? null;
+        const lunchPrevId = prevDayHabit?.lunch?.id ?? null;
+        const lunchNextId = nextDayHabit?.lunch?.id ?? null;
+        const dinnerPrevId = prevDayHabit?.dinner?.id ?? null;
+        const dinnerNextId = nextDayHabit?.dinner?.id ?? null;
+
+        if (breakfastRecipeId || plan.breakfast) {
           const prev = periodsByMeal.breakfast;
           periodsByMeal.breakfast = {
-            color: breakfastColor,
-            startingDay: !!prev?.startingDay || isStart,
-            endingDay: !!prev?.endingDay || isEnd,
+            color: breakfastRecipeId ? colorForRecipeId(breakfastRecipeId) : breakfastColor,
+            startingDay:
+              !!prev?.startingDay ||
+              (breakfastRecipeId
+                ? breakfastPrevId !== breakfastRecipeId
+                : dayKey === rangeStart),
+            endingDay:
+              !!prev?.endingDay ||
+              (breakfastRecipeId
+                ? breakfastNextId !== breakfastRecipeId
+                : dayKey === rangeEnd),
           };
         }
-        if (plan.lunch) {
+        if (lunchRecipeId || plan.lunch) {
           const prev = periodsByMeal.lunch;
           periodsByMeal.lunch = {
-            color: lunchColor,
-            startingDay: !!prev?.startingDay || isStart,
-            endingDay: !!prev?.endingDay || isEnd,
+            color: lunchRecipeId ? colorForRecipeId(lunchRecipeId) : lunchColor,
+            startingDay:
+              !!prev?.startingDay ||
+              (lunchRecipeId ? lunchPrevId !== lunchRecipeId : dayKey === rangeStart),
+            endingDay:
+              !!prev?.endingDay ||
+              (lunchRecipeId ? lunchNextId !== lunchRecipeId : dayKey === rangeEnd),
           };
         }
-        if (plan.dinner) {
+        if (dinnerRecipeId || plan.dinner) {
           const prev = periodsByMeal.dinner;
           periodsByMeal.dinner = {
-            color: dinnerColor,
-            startingDay: !!prev?.startingDay || isStart,
-            endingDay: !!prev?.endingDay || isEnd,
+            color: dinnerRecipeId ? colorForRecipeId(dinnerRecipeId) : dinnerColor,
+            startingDay:
+              !!prev?.startingDay ||
+              (dinnerRecipeId ? dinnerPrevId !== dinnerRecipeId : dayKey === rangeStart),
+            endingDay:
+              !!prev?.endingDay ||
+              (dinnerRecipeId ? dinnerNextId !== dinnerRecipeId : dayKey === rangeEnd),
           };
         }
 
@@ -249,8 +334,15 @@ export default function CalendarPage() {
       selectedColor: theme["--color-red-secondary"],
     };
 
+    for (const [dayKey, habitState] of Object.entries(habitBorderByDate)) {
+      marks[dayKey] = {
+        ...(marks[dayKey] ?? {}),
+        habitState,
+      };
+    }
+
     return marks;
-  }, [mealPlans, selectedDate, theme]);
+  }, [mealPlans, selectedDate, theme, habitBorderByDate]);
 
   return (
     <ThemedSafeView className="flex-1 bg-app-background">
@@ -284,7 +376,7 @@ export default function CalendarPage() {
                   </View>
                 );
               }}
-              dayComponent={({ date, state, marking }: { date?: DateData; state?: string; marking?: { periods?: { color: string }[], cook?: boolean, shop?: boolean } }) => {
+              dayComponent={({ date, state, marking }: { date?: DateData; state?: string; marking?: { periods?: { color: string }[], habitState?: "ok" | "miss", cook?: boolean, shop?: boolean } }) => {
                 if (!date) return null;
 
                 // Compute today's key in local time
@@ -295,6 +387,8 @@ export default function CalendarPage() {
 
                 const isSelected = date.dateString === selectedDate;
                 const isToday = date.dateString === todayKey;
+                const habitState = marking?.habitState;
+                const showHabitBadge = date.dateString < todayKey && (habitState === "ok" || habitState === "miss");
 
                 const bgClass = isSelected ? "bg-red-secondary" : "bg-transparent";
                 const textClass = isSelected
@@ -310,10 +404,30 @@ export default function CalendarPage() {
                     className={`relative rounded-xl w-full ${bgClass}`}
                     style={{ aspectRatio: 1 }}
                     onPress={() => setSelectedDate(date.dateString)}
+                    onLongPress={() => onCalendarDayLongPress(date.dateString)}
+                    delayLongPress={350}
+                    accessibilityHint="Press and hold to toggle whether you followed your meal plan that day."
                   >
-                    <Text className={`${textClass} mt-1.5 ml-2`} style={{ zIndex: 1 }}>
-                      {date.day}
-                    </Text>
+                    <View className="flex-row items-center mt-1.5 ml-2" style={{ zIndex: 2 }}>
+                      <Text
+                        className={textClass}
+                        style={{ fontSize: isWebDesktopCalendar ? 18 : 14 }}
+                      >
+                        {date.day}
+                      </Text>
+                      {showHabitBadge ? (
+                        <Text
+                          className="font-extrabold ml-1"
+                          style={{
+                            color: habitState === "ok" ? "#22c55e" : "#ef4444",
+                            fontSize: isWebDesktopCalendar ? 20 : 16,
+                            lineHeight: isWebDesktopCalendar ? 20 : 16,
+                          }}
+                        >
+                          {habitState === "ok" ? "✓" : "✕"}
+                        </Text>
+                      ) : null}
+                    </View>
 
                     {marking && marking.periods && marking.periods.length > 0 && (
                       <View
@@ -358,6 +472,8 @@ export default function CalendarPage() {
               theme={{
                 calendarBackground: "transparent",
                 textSectionTitleColor: theme["--color-muted-foreground"],
+                textDayHeaderFontSize: isWebDesktopCalendar ? 16 : 13,
+                textDayHeaderFontWeight: "700",
                 // Let custom `dayComponent` control proportions: stretch cell so `aspectRatio: 1` on the inner Pressable can drive row height.
                 "stylesheet.day.basic": {
                   base: {
@@ -421,8 +537,8 @@ export default function CalendarPage() {
                 </View>
               ) : (
                 <FlatList
-                  data={mealPlansForSelectedDay}
-                  keyExtractor={(item) => String(item.id)}
+                  data={selectedDayEntries}
+                  keyExtractor={(item) => String(item.planId)}
                   scrollEnabled={false}
                   ListEmptyComponent={
                     <View className="flex-1 items-center justify-center">
@@ -432,25 +548,38 @@ export default function CalendarPage() {
                   renderItem={({ item }) => (
                     <View className="mb-3 w-full">
                       <SwipeableMealPlanCard
-                        id={item.id}
-                        startDateLabel={item.start_date ? new Date(item.start_date).toLocaleDateString("en-US", {
+                        id={item.planId}
+                        startDateLabel={toLocalDate(selectedDate).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
-                        }) : "—"}
-                        endDateLabel={item.end_date ? new Date(item.end_date).toLocaleDateString("en-US", {
-                          year: "numeric",
+                        })}
+                        endDateLabel={toLocalDate(selectedDate).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
-                        }) : "—"}
-                        breakfastId={item.breakfast}
-                        lunchId={item.lunch}
-                        dinnerId={item.dinner}
+                        })}
+                        breakfastId={selectedDaySlotStored(item.breakfastId)}
+                        lunchId={selectedDaySlotStored(item.lunchId)}
+                        dinnerId={selectedDaySlotStored(item.dinnerId)}
+                        mealDotColors={{
+                          breakfast: item.breakfastId ? colorForRecipeId(item.breakfastId) : undefined,
+                          lunch: item.lunchId ? colorForRecipeId(item.lunchId) : undefined,
+                          dinner: item.dinnerId ? colorForRecipeId(item.dinnerId) : undefined,
+                        }}
+                        recipeReturnTo="/calendar"
+                        readOnly={false}
                         onMealPlanDeleted={refetch}
-                        shareTargets={
-                          calendarOwnerUid
-                            ? { profileUserId: calendarOwnerUid, mealPlanId: item.id }
-                            : undefined
-                        }
+                        onViewFullPlanPress={() => {
+                          if (!calendarOwnerUid) return;
+                          router.push({
+                            pathname: "/profile/[userId]",
+                            params: {
+                              userId: calendarOwnerUid,
+                              tab: "plans",
+                              mealPlanId: item.planId,
+                              returnTo: "/calendar",
+                            },
+                          });
+                        }}
                       />
                     </View>
                   )}

@@ -645,6 +645,81 @@ function pickRecipeForSlot(
   return trimmedPool[randomIndex] ?? null;
 }
 
+function servingsAsPlanDays(recipe) {
+  const n = Number(recipe?.servings);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+}
+
+/**
+ * Picks multiple recipes for one slot until we roughly reach targetDays.
+ * Keeps global uniqueness via `usedIds` so meals don't repeat the same recipe.
+ */
+function pickRecipesForSlot(
+  candidates,
+  slotDishTypes,
+  usedIds,
+  calorieRange,
+  pantryPick,
+  targetDays,
+  maxRecipesPerSlot,
+) {
+  const picked = [];
+  const cap = Math.max(1, Math.floor(Number(maxRecipesPerSlot) || 4));
+  while (picked.length < cap) {
+    const pick = pickRecipeForSlot(
+      candidates,
+      slotDishTypes,
+      usedIds,
+      calorieRange,
+      pantryPick,
+    );
+    if (!pick) break;
+    picked.push(pick);
+    usedIds.add(String(pick.id));
+  }
+
+  if (picked.length === 0) return [];
+
+  const safeTargetDays = Math.max(1, Math.floor(Number(targetDays) || 30));
+  const baseServingsList = picked.map((r) => servingsAsPlanDays(r));
+  const recipeCount = picked.length;
+
+  // Aim for similar day coverage per recipe, not one global multiplier.
+  // High-serving recipes usually stay at 1 batch; low-serving recipes get repeated more.
+  const desiredPerRecipeDays = Math.max(1, Math.floor(safeTargetDays / recipeCount));
+  const batchByIdx = baseServingsList.map((base) =>
+    Math.max(1, Math.floor(desiredPerRecipeDays / Math.max(1, base))),
+  );
+  const targetByIdx = baseServingsList.map((base, i) => base * batchByIdx[i]);
+
+  let total = targetByIdx.reduce((sum, days) => sum + days, 0);
+  const guardMax = 200;
+  let guard = 0;
+  while (total < safeTargetDays && guard < guardMax) {
+    // Add coverage to the recipe currently contributing the least days.
+    let bestIdx = 0;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < targetByIdx.length; i++) {
+      const score = targetByIdx[i];
+      if (score < bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    batchByIdx[bestIdx] += 1;
+    targetByIdx[bestIdx] += baseServingsList[bestIdx];
+    total += baseServingsList[bestIdx];
+    guard += 1;
+  }
+
+  return picked.map((r, i) => ({
+    ...r,
+    autoBaseServings: baseServingsList[i],
+    autoBatchMultiplier: batchByIdx[i],
+    autoTargetServings: targetByIdx[i],
+  }));
+}
+
 // Builds a meal plan from cached external recipes, searches by dishTypes
 export const getAutoMealPlanByDishTypes = async (req, res) => {
   try {
@@ -754,32 +829,44 @@ export const getAutoMealPlanByDishTypes = async (req, res) => {
       Number.isFinite(qMin) && Number.isFinite(qMax) && qMin <= qMax
         ? { min: qMin, max: qMax }
         : null;
+    const qTargetDays = Number(req.query.targetDays);
+    const targetDays =
+      Number.isFinite(qTargetDays) && qTargetDays >= 7
+        ? Math.min(Math.floor(qTargetDays), 60)
+        : 30;
+    const qMaxRecipesPerMeal = Number(req.query.maxRecipesPerMeal);
+    const maxRecipesPerMeal =
+      Number.isFinite(qMaxRecipesPerMeal) && qMaxRecipesPerMeal >= 1
+        ? Math.min(Math.floor(qMaxRecipesPerMeal), 10)
+        : 4;
 
     const usedIds = new Set();
-    const breakfast = pickRecipeForSlot(
+    const breakfast = pickRecipesForSlot(
       breakfastFiltered,
       SLOT_DISH_TYPES.breakfast,
       usedIds,
       calorieRange,
       pantryPick,
+      targetDays,
+      maxRecipesPerMeal,
     );
-    if (breakfast) usedIds.add(String(breakfast.id));
-
-    const lunch = pickRecipeForSlot(
+    const lunch = pickRecipesForSlot(
       lunchFiltered,
       SLOT_DISH_TYPES.lunch,
       usedIds,
       calorieRange,
       pantryPick,
+      targetDays,
+      maxRecipesPerMeal,
     );
-    if (lunch) usedIds.add(String(lunch.id));
-
-    const dinner = pickRecipeForSlot(
+    const dinner = pickRecipesForSlot(
       dinnerFiltered,
       SLOT_DISH_TYPES.dinner,
       usedIds,
       calorieRange,
       pantryPick,
+      targetDays,
+      maxRecipesPerMeal,
     );
 
     const slimMealRecipe = (r) => {
@@ -796,9 +883,9 @@ export const getAutoMealPlanByDishTypes = async (req, res) => {
     return res.json({
       success: true,
       meals: {
-        breakfast: breakfast ? [slimMealRecipe(breakfast)] : [],
-        lunch: lunch ? [slimMealRecipe(lunch)] : [],
-        dinner: dinner ? [slimMealRecipe(dinner)] : [],
+        breakfast: breakfast.map(slimMealRecipe),
+        lunch: lunch.map(slimMealRecipe),
+        dinner: dinner.map(slimMealRecipe),
       },
       meta: {
         source: "external-cache",
@@ -818,6 +905,22 @@ export const getAutoMealPlanByDishTypes = async (req, res) => {
         },
         prioritizePantry: pantryPick.enabled,
         pantryItemCount: pantryRaw.length,
+        targetDays,
+        maxRecipesPerMeal,
+        generatedDaysBySlot: {
+          breakfast: breakfast.reduce(
+            (sum, r) => sum + Number(r?.autoTargetServings ?? servingsAsPlanDays(r)),
+            0,
+          ),
+          lunch: lunch.reduce(
+            (sum, r) => sum + Number(r?.autoTargetServings ?? servingsAsPlanDays(r)),
+            0,
+          ),
+          dinner: dinner.reduce(
+            (sum, r) => sum + Number(r?.autoTargetServings ?? servingsAsPlanDays(r)),
+            0,
+          ),
+        },
       },
     });
   } catch (error) {

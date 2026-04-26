@@ -50,6 +50,7 @@ export default function HomeScreen() {
       allergies: appliedFilters.allergies.join(","),
       foodTypes: appliedFilters.foodTypes.join(","),
       cookware: appliedFilters.cookware.join(","),
+      sortBy: appliedFilters.sortBy ?? "mostViewed",
     });
 
     router.push(`/(toolbar)/home/search?${params.toString()}`);

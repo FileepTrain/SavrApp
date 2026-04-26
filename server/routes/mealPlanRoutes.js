@@ -7,6 +7,7 @@ import {
   getMealPlanById,
   updateMealPlan,
   deleteMealPlan,
+  patchMealPlanHabitDay,
 } from "../controllers/mealPlanController.js";
 
 const router = express.Router();
@@ -22,6 +23,9 @@ router.get("/:planId", verifyToken, getMealPlanById);
 
 // PUT /api/meal-plans/:planId
 router.put("/:planId", verifyToken, updateMealPlan);
+
+// PATCH /api/meal-plans/:planId/habit-day — toggle / set followedPlan for one calendar day
+router.patch("/:planId/habit-day", verifyToken, patchMealPlanHabitDay);
 
 // DELETE /api/meal-plans/:planId
 router.delete("/:planId", verifyToken, deleteMealPlan);

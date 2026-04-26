@@ -72,7 +72,7 @@ export default function AccountPage() {
               ? () =>
                 router.push({
                   pathname: "/profile/[userId]",
-                  params: { userId: uid },
+                  params: { userId: uid, returnTo: "/account" },
                 })
               : undefined
           }

@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -46,10 +47,38 @@ export interface SwipeableMealPlanCardProps {
   bulkExpandSignal?: MealPlanBulkExpandSignal | null;
   /** Opens Plans tab on this profile with this meal plan highlighted when the link is opened. */
   shareTargets?: { profileUserId: string; mealPlanId: string };
+  /** Optional per-slot dot colors (used by calendar to mirror line colors). */
+  mealDotColors?: { breakfast?: string; lunch?: string; dinner?: string };
+  /** Optional swipe action callback for "View full meal plan". */
+  onViewFullPlanPress?: () => void;
+  /** Optional route used when opening a recipe from this card. */
+  recipeReturnTo?: string;
 }
 
 function parseRecipeIds(input?: string | null): string[] {
   return parseMealSlotStored(input ?? null).map((e) => e.id);
+}
+
+/** RN Web often does not run `Alert.alert` button `onPress` handlers; use the browser confirm API. */
+function confirmAsync(title: string, message: string, confirmLabel: string): Promise<boolean> {
+  if (Platform.OS === "web" && typeof window !== "undefined" && typeof window.confirm === "function") {
+    const body = message.trim() ? `${title}\n\n${message}` : title;
+    return Promise.resolve(window.confirm(body));
+  }
+  return new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+      { text: confirmLabel, style: "destructive", onPress: () => resolve(true) },
+    ]);
+  });
+}
+
+function alertMessage(title: string, message?: string) {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    window.alert(message?.trim() ? `${title}\n\n${message}` : title);
+    return;
+  }
+  Alert.alert(title, message ?? "");
 }
 
 type Palette = (typeof palettes)["brand"]["light"];
@@ -142,6 +171,9 @@ export function SwipeableMealPlanCard({
   linkHighlightPlanId = undefined,
   bulkExpandSignal = null,
   shareTargets,
+  mealDotColors,
+  onViewFullPlanPress,
+  recipeReturnTo,
 }: SwipeableMealPlanCardProps) {
   const { deleteMealPlan } = useMealPlans();
   const colors = useProfilePalette();
@@ -257,9 +289,12 @@ export function SwipeableMealPlanCard({
         onRecipePress(recipeId);
         return;
       }
-      router.push({ pathname: "/recipe/[recipeId]", params: { recipeId } });
+      router.push({
+        pathname: "/recipe/[recipeId]",
+        params: recipeReturnTo ? { recipeId, returnTo: recipeReturnTo } : { recipeId },
+      });
     },
-    [onRecipePress],
+    [onRecipePress, recipeReturnTo],
   );
 
   const runDeleteMealPlan = useCallback(
@@ -268,14 +303,14 @@ export function SwipeableMealPlanCard({
         setLoading(true);
         const idToken = await AsyncStorage.getItem("idToken");
         if (!idToken) {
-          Alert.alert("Sign in required", "Please sign in to delete meal plans.");
+          alertMessage("Sign in required", "Please sign in to delete meal plans.");
           return;
         }
         await deleteMealPlan(String(id));
         closeSwipe();
         onMealPlanDeleted?.();
       } catch (e) {
-        Alert.alert(
+        alertMessage(
           "Could not delete",
           e instanceof Error ? e.message : "Something went wrong. Please try again.",
         );
@@ -288,20 +323,15 @@ export function SwipeableMealPlanCard({
 
   const requestDeleteMealPlan = useCallback(
     (closeSwipe: () => void) => {
-      Alert.alert(
-        "Delete meal plan?",
-        "Are you sure you want to remove this meal plan? This cannot be undone.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => {
-              void runDeleteMealPlan(closeSwipe);
-            },
-          },
-        ],
-      );
+      void (async () => {
+        const ok = await confirmAsync(
+          "Delete meal plan?",
+          "Are you sure you want to remove this meal plan? This cannot be undone.",
+          "Delete",
+        );
+        if (!ok) return;
+        await runDeleteMealPlan(closeSwipe);
+      })();
     },
     [runDeleteMealPlan],
   );
@@ -332,6 +362,18 @@ export function SwipeableMealPlanCard({
       swipeableMethods: { close: () => void },
     ) => (
       <View style={styles.swipeActionsRow}>
+        {onViewFullPlanPress ? (
+          <Pressable
+            onPress={() => {
+              swipeableMethods.close();
+              onViewFullPlanPress();
+            }}
+            style={[styles.swipeBtn, styles.swipeBtnView]}
+          >
+            <MaterialCommunityIcons name="open-in-new" size={24} color="#ffffff" />
+            <Text style={styles.swipeBtnText}>View</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={() => {
             swipeableMethods.close();
@@ -340,13 +382,19 @@ export function SwipeableMealPlanCard({
               params: { mealPlanId: String(id) },
             });
           }}
-          style={[styles.swipeBtn, styles.swipeBtnEdit]}
+          style={[
+            styles.swipeBtn,
+            styles.swipeBtnEdit,
+            onViewFullPlanPress ? styles.swipeBtnMiddle : null,
+          ]}
         >
           <MaterialCommunityIcons name="pencil-outline" size={28} color="#ffffff" />
           <Text style={styles.swipeBtnText}>Edit</Text>
         </Pressable>
         <Pressable
-          onPress={() => requestDeleteMealPlan(swipeableMethods.close)}
+          onPress={() => {
+            requestDeleteMealPlan(swipeableMethods.close);
+          }}
           style={[styles.swipeBtn, styles.swipeBtnDelete]}
           disabled={loading}
         >
@@ -359,7 +407,7 @@ export function SwipeableMealPlanCard({
         </Pressable>
       </View>
     ),
-    [id, loading, requestDeleteMealPlan],
+    [id, loading, onViewFullPlanPress, requestDeleteMealPlan],
   );
 
   const headerInner = (
@@ -385,7 +433,7 @@ export function SwipeableMealPlanCard({
           accessibilityLabel={expanded ? "Collapse meal plan" : "Expand meal plan"}
         >
           <Text style={[styles.headerTitle, { color: colors["--color-foreground"] }]}>
-            {startDateLabel} – {endDateLabel}
+            {startDateLabel === endDateLabel ? startDateLabel : `${startDateLabel} – ${endDateLabel}`}
           </Text>
         </Pressable>
         <View style={styles.headerActions}>
@@ -458,19 +506,19 @@ export function SwipeableMealPlanCard({
             <>
               {breakfastRecipeIds.length > 0 ? (
                 <View style={styles.slotBlock}>
-                  {slotLabel("Breakfast", "#f0bb29")}
+                  {slotLabel("Breakfast", mealDotColors?.breakfast ?? "#f0bb29")}
                   {renderRecipeRows(breakfastRecipeIds, "Breakfast")}
                 </View>
               ) : null}
               {lunchRecipeIds.length > 0 ? (
                 <View style={styles.slotBlock}>
-                  {slotLabel("Lunch", "#4fa34b")}
+                  {slotLabel("Lunch", mealDotColors?.lunch ?? "#4fa34b")}
                   {renderRecipeRows(lunchRecipeIds, "Lunch")}
                 </View>
               ) : null}
               {dinnerRecipeIds.length > 0 ? (
                 <View style={styles.slotBlock}>
-                  {slotLabel("Dinner", "#bd9b64")}
+                  {slotLabel("Dinner", mealDotColors?.dinner ?? "#bd9b64")}
                   {renderRecipeRows(dinnerRecipeIds, "Dinner")}
                 </View>
               ) : null}
@@ -554,6 +602,15 @@ const styles = StyleSheet.create({
   },
   swipeBtnEdit: {
     backgroundColor: "#f97316",
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
+  },
+  swipeBtnMiddle: {
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+  },
+  swipeBtnView: {
+    backgroundColor: "#4b5563",
     borderTopLeftRadius: 12,
     borderBottomLeftRadius: 12,
   },

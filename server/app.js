@@ -188,6 +188,30 @@ app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-app.listen(port, "0.0.0.0", () => {
+// Do not pass a callback to app.listen: Express wires that same function to
+// server.once("error", ...), so on EADDRINUSE it still runs and can print
+// "listening" even though bind failed — then Node exits because no socket is open.
+const server = app.listen(port, "0.0.0.0");
+
+server.on("listening", () => {
   console.log(`Server listening on port ${port}`);
+  console.log(`PID ${process.pid} — leave this window open; Ctrl+C to stop`);
 });
+
+server.on("error", (err) => {
+  console.error("HTTP server error:", err.message);
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `Port ${port} is already in use. Stop the other process (Task Manager → node.exe) or pick another PORT.`,
+    );
+  }
+  process.exit(1);
+});
+
+// Some Windows terminals / launchers attach a stdin pipe that ends immediately.
+// Resuming stdin keeps a handle on the event loop alongside the HTTP server.
+try {
+  process.stdin.resume();
+} catch {
+  // ignore if stdin is unavailable
+}

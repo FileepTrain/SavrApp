@@ -1301,7 +1301,6 @@ export const oauthLogin = async (req, res) => {
 /**
  * Send Calendar Email (External Calendar Support)
  */
-const resend = new Resend(process.env.RESEND_API_KEY);
 export const sendCalendarEmail = async (req, res) => {
   const { icsContent } = req.body;
   const userEmail = req.user.email;
@@ -1313,6 +1312,16 @@ export const sendCalendarEmail = async (req, res) => {
   if (!icsContent) {
     return res.status(400).json({ error: "Missing calendar data" });
   }
+
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!resendApiKey) {
+    console.warn("sendCalendarEmail: RESEND_API_KEY is not set");
+    return res.status(503).json({
+      error: "Email is not configured (set RESEND_API_KEY to enable calendar export by email)",
+    });
+  }
+
+  const resend = new Resend(resendApiKey);
 
   try {
     const response = await resend.emails.send({

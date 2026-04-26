@@ -1,4 +1,5 @@
 import admin from "firebase-admin";
+import { buildHabitDaysArray } from "../utils/mealPlanHabitDays.js";
 
 function mealSlotToStored(value) {
   if (value == null) return null;
@@ -38,6 +39,19 @@ function mealSlotToStored(value) {
   return s.length ? s : null;
 }
 
+function resolveHabitDaysForResponse(data, startDateObj, endDateObj) {
+  if (Array.isArray(data.habitDays) && data.habitDays.length > 0) {
+    return data.habitDays;
+  }
+  return buildHabitDaysArray(
+    startDateObj,
+    endDateObj,
+    data.breakfast ?? null,
+    data.lunch ?? null,
+    data.dinner ?? null,
+  );
+}
+
 /**
  * POST /api/meal-plans
  * Body: { breakfast?, lunch?, dinner?, start_date, end_date }
@@ -62,6 +76,8 @@ export const createMealPlan = async (req, res) => {
       return res.status(400).json({ error: "Invalid start_date or end_date" });
     }
 
+    const habitDays = buildHabitDaysArray(startDate, endDate, breakfast, lunch, dinner);
+
     const doc = {
       userID,
       breakfast: mealSlotToStored(breakfast),
@@ -69,6 +85,7 @@ export const createMealPlan = async (req, res) => {
       dinner: mealSlotToStored(dinner),
       start_date: admin.firestore.Timestamp.fromDate(startDate),
       end_date: admin.firestore.Timestamp.fromDate(endDate),
+      habitDays,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
@@ -83,6 +100,7 @@ export const createMealPlan = async (req, res) => {
         dinner: doc.dinner,
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
+        habitDays,
       },
     });
   } catch (err) {
@@ -111,14 +129,21 @@ export const getMealPlan = async (req, res) => {
       const data = doc.data();
       const start = data.start_date?.toDate?.() ?? data.start_date;
       const end = data.end_date?.toDate?.() ?? data.end_date;
+      const startD = start ? new Date(start) : null;
+      const endD = end ? new Date(end) : null;
+      const habitDays =
+        startD && endD && !Number.isNaN(startD.getTime()) && !Number.isNaN(endD.getTime())
+          ? resolveHabitDaysForResponse(data, startD, endD)
+          : [];
       return {
         id: doc.id,
         userID: data.userID,
         breakfast: data.breakfast ?? null,
         lunch: data.lunch ?? null,
         dinner: data.dinner ?? null,
-        start_date: start ? new Date(start).toISOString() : null,
-        end_date: end ? new Date(end).toISOString() : null,
+        start_date: startD ? startD.toISOString() : null,
+        end_date: endD ? endD.toISOString() : null,
+        habitDays,
       };
       })
       .sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
@@ -159,6 +184,12 @@ export const getMealPlanById = async (req, res) => {
 
     const start = data.start_date?.toDate?.() ?? data.start_date;
     const end = data.end_date?.toDate?.() ?? data.end_date;
+    const startD = start ? new Date(start) : null;
+    const endD = end ? new Date(end) : null;
+    const habitDays =
+      startD && endD && !Number.isNaN(startD.getTime()) && !Number.isNaN(endD.getTime())
+        ? resolveHabitDaysForResponse(data, startD, endD)
+        : [];
 
     return res.status(200).json({
       mealPlan: {
@@ -167,8 +198,9 @@ export const getMealPlanById = async (req, res) => {
         breakfast: data.breakfast ?? null,
         lunch: data.lunch ?? null,
         dinner: data.dinner ?? null,
-        start_date: start ? new Date(start).toISOString() : null,
-        end_date: end ? new Date(end).toISOString() : null,
+        start_date: startD ? startD.toISOString() : null,
+        end_date: endD ? endD.toISOString() : null,
+        habitDays,
       },
     });
   } catch (err) {
@@ -216,12 +248,32 @@ export const updateMealPlan = async (req, res) => {
       return res.status(403).json({ error: "You can only update your own meal plans" });
     }
 
+    const old = snap.data() ?? {};
+    const prevFollow = new Map();
+    if (Array.isArray(old.habitDays)) {
+      for (const row of old.habitDays) {
+        if (row && row.date) prevFollow.set(String(row.date), !!row.followedPlan);
+      }
+    }
+
+    const habitDays = buildHabitDaysArray(
+      startDate,
+      endDate,
+      breakfast,
+      lunch,
+      dinner,
+    ).map((row) => ({
+      ...row,
+      followedPlan: prevFollow.has(row.date) ? prevFollow.get(row.date) : false,
+    }));
+
     await ref.update({
       breakfast: mealSlotToStored(breakfast),
       lunch: mealSlotToStored(lunch),
       dinner: mealSlotToStored(dinner),
       start_date: admin.firestore.Timestamp.fromDate(startDate),
       end_date: admin.firestore.Timestamp.fromDate(endDate),
+      habitDays,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
@@ -234,6 +286,7 @@ export const updateMealPlan = async (req, res) => {
         dinner: mealSlotToStored(dinner),
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
+        habitDays,
       },
     });
   } catch (err) {
@@ -246,6 +299,78 @@ export const updateMealPlan = async (req, res) => {
  * DELETE /api/meal-plans/:planId
  * Deletes a meal plan owned by the authenticated user.
  */
+/**
+ * PATCH /api/meal-plans/:planId/habit-day
+ * Body: { date: "YYYY-MM-DD", followedPlan?: boolean }
+ * If followedPlan is omitted, toggles the stored flag for that calendar day.
+ */
+export const patchMealPlanHabitDay = async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const userID = req.user.uid;
+    const planId = String(req.params.planId ?? "").trim();
+    const dateKey = String(req.body?.date ?? "").trim();
+    const { followedPlan } = req.body ?? {};
+
+    if (!planId) {
+      return res.status(400).json({ error: "planId is required" });
+    }
+    if (!dateKey) {
+      return res.status(400).json({ error: "date is required (YYYY-MM-DD)" });
+    }
+
+    const ref = db.collection("meal_plans").doc(planId);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Meal plan not found" });
+    }
+
+    const data = snap.data();
+    if (data?.userID !== userID) {
+      return res.status(403).json({ error: "You can only update your own meal plans" });
+    }
+
+    const start = data.start_date?.toDate?.() ?? data.start_date;
+    const end = data.end_date?.toDate?.() ?? data.end_date;
+    const startD = start ? new Date(start) : null;
+    const endD = end ? new Date(end) : null;
+
+    let habitDays =
+      Array.isArray(data.habitDays) && data.habitDays.length > 0
+        ? data.habitDays.map((row) => ({ ...row }))
+        : startD && endD
+          ? buildHabitDaysArray(startD, endD, data.breakfast, data.lunch, data.dinner)
+          : [];
+
+    const idx = habitDays.findIndex((h) => h && String(h.date) === dateKey);
+    if (idx === -1) {
+      return res.status(400).json({ error: "Date is not part of this meal plan" });
+    }
+
+    const nextFollowed =
+      followedPlan === undefined || followedPlan === null
+        ? !habitDays[idx].followedPlan
+        : Boolean(followedPlan);
+
+    habitDays[idx] = { ...habitDays[idx], followedPlan: nextFollowed };
+
+    await ref.update({
+      habitDays,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.status(200).json({
+      success: true,
+      day: habitDays[idx],
+      habitDays,
+    });
+  } catch (err) {
+    console.error("patchMealPlanHabitDay error:", err);
+    return res.status(500).json({ error: "Failed to update habit day" });
+  }
+};
+
 export const deleteMealPlan = async (req, res) => {
   try {
     const db = admin.firestore();
