@@ -1,6 +1,30 @@
 import admin from "firebase-admin";
 import { buildHabitDaysArray } from "../utils/mealPlanHabitDays.js";
 
+/** Optional `#RRGGBB` from client; invalid values omitted. */
+function normalizeHexColor(value) {
+  if (value == null || value === "") return undefined;
+  const s = String(value).trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(s) ? s : undefined;
+}
+
+function attachSlotColors(target, body) {
+  const b = normalizeHexColor(body?.breakfastColor);
+  const l = normalizeHexColor(body?.lunchColor);
+  const d = normalizeHexColor(body?.dinnerColor);
+  if (b) target.breakfastColor = b;
+  if (l) target.lunchColor = l;
+  if (d) target.dinnerColor = d;
+}
+
+function slotColorsForResponse(data) {
+  return {
+    breakfastColor: data?.breakfastColor ?? null,
+    lunchColor: data?.lunchColor ?? null,
+    dinnerColor: data?.dinnerColor ?? null,
+  };
+}
+
 function mealSlotToStored(value) {
   if (value == null) return null;
   if (Array.isArray(value)) {
@@ -88,6 +112,7 @@ export const createMealPlan = async (req, res) => {
       habitDays,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+    attachSlotColors(doc, req.body);
 
     const docRef = await db.collection("meal_plans").add(doc);
 
@@ -101,6 +126,7 @@ export const createMealPlan = async (req, res) => {
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
         habitDays,
+        ...slotColorsForResponse(doc),
       },
     });
   } catch (err) {
@@ -144,6 +170,7 @@ export const getMealPlan = async (req, res) => {
         start_date: startD ? startD.toISOString() : null,
         end_date: endD ? endD.toISOString() : null,
         habitDays,
+        ...slotColorsForResponse(data),
       };
       })
       .sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
@@ -201,6 +228,7 @@ export const getMealPlanById = async (req, res) => {
         start_date: startD ? startD.toISOString() : null,
         end_date: endD ? endD.toISOString() : null,
         habitDays,
+        ...slotColorsForResponse(data),
       },
     });
   } catch (err) {
@@ -236,6 +264,9 @@ export const updateMealPlan = async (req, res) => {
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       return res.status(400).json({ error: "Invalid start_date or end_date" });
     }
+
+    const colorUpdates = {};
+    attachSlotColors(colorUpdates, req.body);
 
     const ref = db.collection("meal_plans").doc(planId);
     const snap = await ref.get();
@@ -274,8 +305,12 @@ export const updateMealPlan = async (req, res) => {
       start_date: admin.firestore.Timestamp.fromDate(startDate),
       end_date: admin.firestore.Timestamp.fromDate(endDate),
       habitDays,
+      ...colorUpdates,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    const mergedSnap = await ref.get();
+    const mergedData = mergedSnap.data() ?? {};
 
     return res.status(200).json({
       mealPlan: {
@@ -287,6 +322,7 @@ export const updateMealPlan = async (req, res) => {
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
         habitDays,
+        ...slotColorsForResponse(mergedData),
       },
     });
   } catch (err) {

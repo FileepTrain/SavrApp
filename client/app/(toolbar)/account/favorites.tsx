@@ -12,7 +12,7 @@ import { CommonActions } from "@react-navigation/native";
 import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, ActivityIndicator, FlatList } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 
@@ -120,8 +120,10 @@ export default function FavoritesPage() {
       router.back();
     }
   };
-  const [favorites, setFavorites] = useState<any[]>([]);
+  const [favoritesById, setFavoritesById] = useState<Map<string, any>>(() => new Map());
   const [loading, setLoading] = useState(false);
+
+  const favorites = useMemo(() => Array.from(favoritesById.values()), [favoritesById]);
 
   // Stable fetchFavorites: reads isOnline from ref at call time so reconnect callbacks
   // always see the post-commit online status without needing to re-register.
@@ -133,14 +135,21 @@ export default function FavoritesPage() {
         // Read the full recipe objects from cache, then filter by the locally stored
         // favorite IDs so that any offline toggle is reflected immediately.
         const ids = await readCache<string[]>(CACHE_KEYS.FAVORITES_IDS) ?? [];
+        const idSet = new Set(ids.map(String));
         const allCached = await readCache<any[]>(CACHE_KEYS.FAVORITES_LIST) ?? [];
-        setFavorites(allCached.filter((r: any) => ids.includes(String(r.id))));
+        const next = new Map<string, any>();
+        for (const r of allCached) {
+          if (r?.id != null && idSet.has(String(r.id))) {
+            next.set(String(r.id), r);
+          }
+        }
+        setFavoritesById(next);
         return;
       }
 
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) {
-        setFavorites([]);
+        setFavoritesById(new Map());
         return;
       }
       const response = await fetch(`${SERVER_URL}/api/auth/get-favorites`, {
@@ -152,13 +161,13 @@ export default function FavoritesPage() {
       });
 
       if (!response.ok) {
-        setFavorites([]);
+        setFavoritesById(new Map());
         return;
       }
 
-      const data = await response.json();
-      // Ensure only plain strings are stored; the server returns an array of IDs.
-      const favoriteIds: string[] = (data.favoriteIds ?? []).map(String);
+      const data = await response.json() as { favoriteIds?: unknown[] };
+      const rawIds = Array.isArray(data.favoriteIds) ? data.favoriteIds : [];
+      const favoriteIds: string[] = [...new Set(rawIds.map((id) => String(id)))];
 
       const recipePromises = favoriteIds.map(async (id) => {
         try {
@@ -186,26 +195,36 @@ export default function FavoritesPage() {
       });
       const recipes = await Promise.all(recipePromises);
       const validRecipes = recipes.filter(r => r !== null);
+      const byId = new Map<string, any>();
+      for (const r of validRecipes) {
+        if (r?.id != null) byId.set(String(r.id), r);
+      }
 
       // Store the plain ID list so [recipeId].tsx can check isFavorited without
       // touching the full recipe objects cache.
       await writeCache(CACHE_KEYS.FAVORITES_IDS, favoriteIds);
 
       // Cache the full recipe objects for the offline display list.
-      await writeCache(CACHE_KEYS.FAVORITES_LIST, validRecipes);
+      await writeCache(CACHE_KEYS.FAVORITES_LIST, Array.from(byId.values()));
 
       // Cache each recipe individually so the detail page works offline.
       await Promise.allSettled(
-        validRecipes.map((r: any) => cacheFavoriteRecipeDetail(r))
+        Array.from(byId.values()).map((r: any) => cacheFavoriteRecipeDetail(r))
       );
 
-      setFavorites(validRecipes);
+      setFavoritesById(byId);
 
     } catch (error) {
       console.error("Error fetching favorite recipes:", error);
       // If the server request fails, fall back to the previously cached list.
       const cached = await readCache<any[]>(CACHE_KEYS.FAVORITES_LIST);
-      if (cached) setFavorites(cached);
+      if (cached) {
+        const next = new Map<string, any>();
+        for (const r of cached) {
+          if (r?.id != null) next.set(String(r.id), r);
+        }
+        setFavoritesById(next);
+      }
     } finally {
       setLoading(false);
     }

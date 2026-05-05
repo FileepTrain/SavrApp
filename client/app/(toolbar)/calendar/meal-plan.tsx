@@ -22,8 +22,14 @@ import {
   type MealPlanSlotEntry,
 } from "@/utils/meal-plan-slot";
 import { loadUserCookware } from "@/utils/cookware";
+import 'react-native-gesture-handler';
+import ColorPicker, { HueSlider, Panel1, Swatches, Preview } from "reanimated-color-picker";
 
 import { SERVER_URL } from "@/utils/server-url";
+import {
+  DEFAULT_MEAL_SLOT_COLORS,
+  type MealSlotColorKey,
+} from "@/utils/meal-plan-slot-colors";
 
 const NativeDateTimePicker =
   Platform.OS === "web"
@@ -189,6 +195,17 @@ const CAL_SLIDER_STEP = 25;
 
 type MealSlot = "Breakfast" | "Lunch" | "Dinner";
 
+function mealSlotToColorKey(meal: MealSlot): MealSlotColorKey {
+  switch (meal) {
+    case "Breakfast":
+      return "breakfast";
+    case "Lunch":
+      return "lunch";
+    case "Dinner":
+      return "dinner";
+  }
+}
+
 function singleQueryParam(v: string | string[] | undefined): string | undefined {
   if (typeof v === "string" && v.trim()) return v.trim();
   if (Array.isArray(v) && v[0] != null && String(v[0]).trim()) return String(v[0]).trim();
@@ -233,6 +250,13 @@ export default function MealPlanPage() {
   const [calorieMax, setCalorieMax] = useState(700);
   /** When on, auto meal plan ranks filtered candidates by overlap with pantry ingredients. */
   const [prioritizePantryItems, setPrioritizePantryItems] = useState(false);
+
+  const [slotColors, setSlotColors] = useState<Record<MealSlotColorKey, string>>({
+    breakfast: DEFAULT_MEAL_SLOT_COLORS.breakfast,
+    lunch: DEFAULT_MEAL_SLOT_COLORS.lunch,
+    dinner: DEFAULT_MEAL_SLOT_COLORS.dinner,
+  });
+  const [colorPickerSlot, setColorPickerSlot] = useState<MealSlot | null>(null);
 
   //filter state
   const { appliedFilters, openFilterModal } = useMealPlanFilter();
@@ -279,6 +303,9 @@ export default function MealPlanPage() {
               dinner?: string | null;
               start_date?: string | null;
               end_date?: string | null;
+              breakfastColor?: string | null;
+              lunchColor?: string | null;
+              dinnerColor?: string | null;
             }[]
           >(CACHE_KEYS.MEAL_PLANS);
           const plan = cachedList?.find((p) => String(p.id) === String(mealPlanIdParam));
@@ -288,6 +315,11 @@ export default function MealPlanPage() {
           const start = plan.start_date ? new Date(plan.start_date) : new Date();
           if (!cancelled) {
             setStartDate(start);
+            setSlotColors({
+              breakfast: plan.breakfastColor ?? DEFAULT_MEAL_SLOT_COLORS.breakfast,
+              lunch: plan.lunchColor ?? DEFAULT_MEAL_SLOT_COLORS.lunch,
+              dinner: plan.dinnerColor ?? DEFAULT_MEAL_SLOT_COLORS.dinner,
+            });
           }
           const bEntries = mealSlotEntriesFromPlanField(plan.breakfast);
           const lEntries = mealSlotEntriesFromPlanField(plan.lunch);
@@ -352,6 +384,11 @@ export default function MealPlanPage() {
           );
           setLunchRecipe(lEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
           setDinnerRecipe(dEntries.map((e) => mergeRecipeWithSlotEntry(byId[e.id] ?? { id: e.id }, e)));
+          setSlotColors({
+            breakfast: plan.breakfastColor ?? DEFAULT_MEAL_SLOT_COLORS.breakfast,
+            lunch: plan.lunchColor ?? DEFAULT_MEAL_SLOT_COLORS.lunch,
+            dinner: plan.dinnerColor ?? DEFAULT_MEAL_SLOT_COLORS.dinner,
+          });
         }
       } catch (e) {
         if (!cancelled && mealPlanIdParam) {
@@ -363,12 +400,20 @@ export default function MealPlanPage() {
               dinner?: string | null;
               start_date?: string | null;
               end_date?: string | null;
+              breakfastColor?: string | null;
+              lunchColor?: string | null;
+              dinnerColor?: string | null;
             }[]
           >(CACHE_KEYS.MEAL_PLANS);
           const plan = cachedList?.find((p) => String(p.id) === String(mealPlanIdParam));
           if (plan) {
             const start = plan.start_date ? new Date(plan.start_date) : new Date();
             setStartDate(start);
+            setSlotColors({
+              breakfast: plan.breakfastColor ?? DEFAULT_MEAL_SLOT_COLORS.breakfast,
+              lunch: plan.lunchColor ?? DEFAULT_MEAL_SLOT_COLORS.lunch,
+              dinner: plan.dinnerColor ?? DEFAULT_MEAL_SLOT_COLORS.dinner,
+            });
             const bEntries = mealSlotEntriesFromPlanField(plan.breakfast);
             const lEntries = mealSlotEntriesFromPlanField(plan.lunch);
             const dEntries = mealSlotEntriesFromPlanField(plan.dinner);
@@ -396,6 +441,16 @@ export default function MealPlanPage() {
     return () => {
       cancelled = true;
     };
+  }, [mealPlanIdParam]);
+
+  useEffect(() => {
+    if (!mealPlanIdParam) {
+      setSlotColors({
+        breakfast: DEFAULT_MEAL_SLOT_COLORS.breakfast,
+        lunch: DEFAULT_MEAL_SLOT_COLORS.lunch,
+        dinner: DEFAULT_MEAL_SLOT_COLORS.dinner,
+      });
+    }
   }, [mealPlanIdParam]);
 
   // Preset start date for "new plan" only — end date is derived from recipes.
@@ -462,6 +517,9 @@ export default function MealPlanPage() {
         dinner: dinnerRecipe.map(toSlotEntry),
         start_date: start_date.toISOString(),
         end_date: end_date.toISOString(),
+        breakfastColor: slotColors.breakfast,
+        lunchColor: slotColors.lunch,
+        dinnerColor: slotColors.dinner,
       };
       if (mealPlanIdParam) {
         await updateMealPlan(mealPlanIdParam, body);
@@ -486,6 +544,7 @@ export default function MealPlanPage() {
     dinnerRecipe,
     count,
     batchCount,
+    slotColors,
     mealPlanIdParam,
     refetchMealPlans,
     createMealPlan,
@@ -734,16 +793,26 @@ export default function MealPlanPage() {
     );
   };
 
-  const renderMealContainer = (meal: MealSlot, color: string, recipeData: Recipe[]) => {
+  const renderMealContainer = (meal: MealSlot, recipeData: Recipe[]) => {
+    const colorKey = mealSlotToColorKey(meal);
+    const color = slotColors[colorKey];
     return (
       <View className="gap-2 py-4">
         {/*header*/}
-        <View className="flex-row items-center">
+        <View className="flex-row items-center gap-2">
           <View
             className="h-4 w-4 rounded-full"
             style={{ backgroundColor: color }}
           />
           <Text className="font-bold text-xl"> {meal} </Text>
+          <Pressable
+            className="bg-white rounded-full p-2"
+            onPress={() => setColorPickerSlot(meal)}
+            accessibilityRole="button"
+            accessibilityLabel={`Change ${meal} color`}
+          >
+            <IconSymbol name="palette-outline" size={22} color="--color-foreground" />
+          </Pressable>
         </View>
 
         {recipeData.map((recipe: Recipe) => {
@@ -974,13 +1043,13 @@ export default function MealPlanPage() {
             </View>
 
             {/*Breakfast container*/}
-            <View>{renderMealContainer("Breakfast", "#fcba03", breakfastRecipe)}</View>
+            <View>{renderMealContainer("Breakfast", breakfastRecipe)}</View>
 
             {/*Lunch container*/}
-            <View>{renderMealContainer("Lunch", "#14cc0a", lunchRecipe)}</View>
+            <View>{renderMealContainer("Lunch", lunchRecipe)}</View>
 
             {/*dinner container*/}
-            <View>{renderMealContainer("Dinner", "#bd9b64", dinnerRecipe)}</View>
+            <View>{renderMealContainer("Dinner", dinnerRecipe)}</View>
 
             {/*Save button*/}
             <View className="w-full max-w-md self-center items-stretch">
@@ -1166,6 +1235,69 @@ export default function MealPlanPage() {
                     portalSafe
                     className="rounded-xl"
                     onPress={() => setSettingsModalVisible(false)}
+                  >
+                    Done
+                  </Button>
+                </View>
+              </View>
+            </Modal>
+
+            <Modal
+              transparent
+              visible={colorPickerSlot !== null}
+              animationType="fade"
+              statusBarTranslucent
+              onRequestClose={() => setColorPickerSlot(null)}
+            >
+              <View className="flex-1 justify-center items-center">
+                <Pressable
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                  }}
+                  onPress={() => setColorPickerSlot(null)}
+                />
+                <View
+                  className="mx-4 w-[90%] max-w-sm rounded-2xl p-5 gap-4 shadow-lg"
+                  style={{ backgroundColor: theme["--color-background"] }}
+                >
+                  <Text className="text-lg font-bold text-center text-foreground">
+                    {colorPickerSlot ? `${colorPickerSlot} color` : "Color"}
+                  </Text>
+                  {colorPickerSlot ? (
+                    <ColorPicker
+                      key={colorPickerSlot}
+                      value={slotColors[mealSlotToColorKey(colorPickerSlot)]}
+                      onChangeJS={(formats) => {
+                        const key = mealSlotToColorKey(colorPickerSlot);
+                        setSlotColors((prev) => ({ ...prev, [key]: formats.hex }));
+                      }}
+                      style={{ width: "100%", maxWidth: 360, alignSelf: "center" }}
+                    >
+                      <Preview style={{ marginBottom: 12 }} />
+                      <Panel1 style={{ marginBottom: 12 }} />
+                      <HueSlider style={{ marginBottom: 12 }} sliderThickness={28} />
+                      <Swatches
+                        colors={[
+                          DEFAULT_MEAL_SLOT_COLORS.breakfast,
+                          DEFAULT_MEAL_SLOT_COLORS.lunch,
+                          DEFAULT_MEAL_SLOT_COLORS.dinner,
+                          "#888888",
+                          "#ffffff",
+                          "#000000",
+                        ]}
+                      />
+                    </ColorPicker>
+                  ) : null}
+                  <Button
+                    variant="default"
+                    portalSafe
+                    className="rounded-xl"
+                    onPress={() => setColorPickerSlot(null)}
                   >
                     Done
                   </Button>

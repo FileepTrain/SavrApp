@@ -16,6 +16,7 @@ import { generateICS } from "@/services/calendarExport";
 import { Alert } from "react-native";
 import { SERVER_URL } from "@/utils/server-url";
 import { localDateKeysInclusive, planCoversCalendarDateLocal } from "@/utils/meal-plan-habit-days";
+import { DEFAULT_MEAL_SLOT_COLORS } from "@/utils/meal-plan-slot-colors";
 
 const dateOnlyFromISO = (iso: string): string => {
   const d = new Date(iso);
@@ -30,15 +31,6 @@ const dateOnlyFromISO = (iso: string): string => {
 function localTodayYMD(): string {
   const t = new Date();
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
-}
-
-function colorForRecipeId(recipeId: string): string {
-  let hash = 0;
-  for (let i = 0; i < recipeId.length; i++) {
-    hash = (hash * 31 + recipeId.charCodeAt(i)) | 0;
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 72%, 52%)`;
 }
 
 function selectedDaySlotStored(recipeId: string | null): string | null {
@@ -200,6 +192,11 @@ export default function CalendarPage() {
           breakfastId: day?.breakfast?.id ?? null,
           lunchId: day?.lunch?.id ?? null,
           dinnerId: day?.dinner?.id ?? null,
+          slotColors: {
+            breakfast: p.breakfastColor ?? DEFAULT_MEAL_SLOT_COLORS.breakfast,
+            lunch: p.lunchColor ?? DEFAULT_MEAL_SLOT_COLORS.lunch,
+            dinner: p.dinnerColor ?? DEFAULT_MEAL_SLOT_COLORS.dinner,
+          },
         };
       }),
     [mealPlansForSelectedDay, selectedDate],
@@ -229,17 +226,16 @@ export default function CalendarPage() {
   );
 
   const markedDates = useMemo(() => {
-    // Colors for breakfast / lunch / dinner periods
-    const breakfastColor = "#f0bb29";
-    const lunchColor = "#4fa34b";
-    const dinnerColor = "#bd9b64";
-
     // Initialize the marks object to store all marking info
     const marks: Record<string, any> = {};
     type MealSlot = "breakfast" | "lunch" | "dinner";
 
     for (const plan of mealPlans ?? []) {
       if (!plan.start_date || !plan.end_date) continue;
+
+      const breakfastBar = plan.breakfastColor ?? DEFAULT_MEAL_SLOT_COLORS.breakfast;
+      const lunchBar = plan.lunchColor ?? DEFAULT_MEAL_SLOT_COLORS.lunch;
+      const dinnerBar = plan.dinnerColor ?? DEFAULT_MEAL_SLOT_COLORS.dinner;
 
       const dayKeys = localDateKeysInclusive(plan.start_date, plan.end_date);
       if (!dayKeys.length) continue;
@@ -274,7 +270,7 @@ export default function CalendarPage() {
         if (breakfastRecipeId || plan.breakfast) {
           const prev = periodsByMeal.breakfast;
           periodsByMeal.breakfast = {
-            color: breakfastRecipeId ? colorForRecipeId(breakfastRecipeId) : breakfastColor,
+            color: breakfastBar,
             startingDay:
               !!prev?.startingDay ||
               (breakfastRecipeId
@@ -290,7 +286,7 @@ export default function CalendarPage() {
         if (lunchRecipeId || plan.lunch) {
           const prev = periodsByMeal.lunch;
           periodsByMeal.lunch = {
-            color: lunchRecipeId ? colorForRecipeId(lunchRecipeId) : lunchColor,
+            color: lunchBar,
             startingDay:
               !!prev?.startingDay ||
               (lunchRecipeId ? lunchPrevId !== lunchRecipeId : dayKey === rangeStart),
@@ -302,7 +298,7 @@ export default function CalendarPage() {
         if (dinnerRecipeId || plan.dinner) {
           const prev = periodsByMeal.dinner;
           periodsByMeal.dinner = {
-            color: dinnerRecipeId ? colorForRecipeId(dinnerRecipeId) : dinnerColor,
+            color: dinnerBar,
             startingDay:
               !!prev?.startingDay ||
               (dinnerRecipeId ? dinnerPrevId !== dinnerRecipeId : dayKey === rangeStart),
@@ -562,9 +558,9 @@ export default function CalendarPage() {
                         lunchId={selectedDaySlotStored(item.lunchId)}
                         dinnerId={selectedDaySlotStored(item.dinnerId)}
                         mealDotColors={{
-                          breakfast: item.breakfastId ? colorForRecipeId(item.breakfastId) : undefined,
-                          lunch: item.lunchId ? colorForRecipeId(item.lunchId) : undefined,
-                          dinner: item.dinnerId ? colorForRecipeId(item.dinnerId) : undefined,
+                          breakfast: item.breakfastId ? item.slotColors.breakfast : undefined,
+                          lunch: item.lunchId ? item.slotColors.lunch : undefined,
+                          dinner: item.dinnerId ? item.slotColors.dinner : undefined,
                         }}
                         recipeReturnTo="/calendar"
                         readOnly={false}

@@ -17,6 +17,9 @@ export type CreateMealPlanQueuedPayload = {
   dinner: MealPlanSlotEntry[];
   start_date: string;
   end_date: string;
+  breakfastColor?: string;
+  lunchColor?: string;
+  dinnerColor?: string;
   clientPlanId?: string;
 };
 
@@ -33,6 +36,9 @@ export type QueuedMutation =
         dinner: MealPlanSlotEntry[];
         start_date: string;
         end_date: string;
+        breakfastColor?: string;
+        lunchColor?: string;
+        dinnerColor?: string;
       };
     }
   | { type: "DELETE_MEAL_PLAN"; payload: { planId: string } }
@@ -229,11 +235,30 @@ async function replayMutation(mutation: QueuedMutation, idToken: string): Promis
     }
 
     case "UPDATE_MEAL_PLAN": {
-      const { planId, breakfast, lunch, dinner, start_date, end_date } = mutation.payload;
+      const {
+        planId,
+        breakfast,
+        lunch,
+        dinner,
+        start_date,
+        end_date,
+        breakfastColor,
+        lunchColor,
+        dinnerColor,
+      } = mutation.payload;
       const res = await fetch(`${SERVER_URL}/api/meal-plans/${encodeURIComponent(planId)}`, {
         method: "PUT",
         headers,
-        body: JSON.stringify({ breakfast, lunch, dinner, start_date, end_date }),
+        body: JSON.stringify({
+          breakfast,
+          lunch,
+          dinner,
+          start_date,
+          end_date,
+          ...(breakfastColor ? { breakfastColor } : {}),
+          ...(lunchColor ? { lunchColor } : {}),
+          ...(dinnerColor ? { dinnerColor } : {}),
+        }),
       });
       return { ok: res.ok };
     }

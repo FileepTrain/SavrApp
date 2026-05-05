@@ -37,6 +37,9 @@ export interface MealPlanItem {
   dinner: string | null;
   start_date: string | null; // ISO
   end_date: string | null; // ISO
+  breakfastColor?: string | null;
+  lunchColor?: string | null;
+  dinnerColor?: string | null;
   /** Per-day recipe assignments + habit flag; from API or derived locally when offline. */
   habitDays?: MealPlanHabitDay[];
 }
@@ -48,6 +51,9 @@ export interface CreateMealPlanPayload {
   dinner: MealPlanSlotEntry[];
   start_date: string;
   end_date: string;
+  breakfastColor?: string;
+  lunchColor?: string;
+  dinnerColor?: string;
 }
 
 export type { MealPlanSlotEntry } from "@/utils/meal-plan-slot";
@@ -125,6 +131,14 @@ async function fetchAndCacheMealPlans(): Promise<MealPlanItem[]> {
       dinner: raw.dinner != null ? (raw.dinner as string | null) : null,
       start_date: start,
       end_date: end,
+      breakfastColor:
+        raw.breakfastColor != null && raw.breakfastColor !== ""
+          ? String(raw.breakfastColor)
+          : null,
+      lunchColor:
+        raw.lunchColor != null && raw.lunchColor !== "" ? String(raw.lunchColor) : null,
+      dinnerColor:
+        raw.dinnerColor != null && raw.dinnerColor !== "" ? String(raw.dinnerColor) : null,
       habitDays,
     };
   });
@@ -271,6 +285,9 @@ function applyMealPlanPatchToList(
       dinner: slotToStored(payload.dinner),
       start_date: payload.start_date,
       end_date: payload.end_date,
+      breakfastColor: payload.breakfastColor ?? p.breakfastColor ?? null,
+      lunchColor: payload.lunchColor ?? p.lunchColor ?? null,
+      dinnerColor: payload.dinnerColor ?? p.dinnerColor ?? null,
       habitDays: nextHabit,
     };
   });
@@ -330,6 +347,9 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
           dinner: slotToStored(payload.dinner),
           start_date: payload.start_date,
           end_date: payload.end_date,
+          breakfastColor: payload.breakfastColor ?? null,
+          lunchColor: payload.lunchColor ?? null,
+          dinnerColor: payload.dinnerColor ?? null,
           habitDays: buildMealPlanHabitDaysFromPlanFields(
             payload.start_date,
             payload.end_date,
@@ -389,6 +409,9 @@ export function MealPlansProvider({ children }: { children: React.ReactNode }) {
               dinner: payload.dinner,
               start_date: payload.start_date,
               end_date: payload.end_date,
+              breakfastColor: payload.breakfastColor,
+              lunchColor: payload.lunchColor,
+              dinnerColor: payload.dinnerColor,
             },
           });
         }
