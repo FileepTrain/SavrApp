@@ -489,7 +489,6 @@ export default function PantryPage() {
           <Text className="text-3xl font-bold text-white">+</Text>
         </Pressable>
       </View>
-        </View>
         </AccountSubpageBody>
       </AccountWebColumn>
     </ThemedSafeView>

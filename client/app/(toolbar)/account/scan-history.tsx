@@ -10,7 +10,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { router, Stack } from "expo-router";
-import { SERVER_URL } from "@/constants/api";
+import { SERVER_URL } from "@/utils/server-url";
 
 type ScanHistoryItem = {
   id: string;

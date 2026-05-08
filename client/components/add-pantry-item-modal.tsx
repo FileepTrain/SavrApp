@@ -1,12 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  Alert,
-  Modal,
-  Pressable,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import {Alert, Modal, Pressable, Text, TextInput, View,} from "react-native";
 
 export type PantryModalItem = {
   id?: string | null;

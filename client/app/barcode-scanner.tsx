@@ -10,8 +10,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-
-import { SERVER_URL } from "@/constants/api";
+import { SERVER_URL } from "@/utils/server-url";
 
 export default function BarcodeScannerPage() {
   const [permission, requestPermission] = useCameraPermissions();

@@ -169,7 +169,6 @@ export const login = async (req, res) => {
     }
 
     // Update daily login streak
-    const db = admin.firestore();
     const userRef = db.collection("users").doc(localId);
     const userSnap = await userRef.get();
 
