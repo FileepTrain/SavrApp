@@ -6,7 +6,7 @@ import { AddReviewModal } from "@/components/add-review-pop-up";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams } from "expo-router";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/constants/api";
 
 export default function ReviewsPage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();

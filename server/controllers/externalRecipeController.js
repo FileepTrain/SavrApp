@@ -371,6 +371,7 @@ export const getExternalRecipeDetails = async (req, res) => {
       EXTERNAL_SOURCE,
       id,
     );
+
     if (!recipeFromDb) {
       return res.status(404).json({
         error:
@@ -385,10 +386,33 @@ export const getExternalRecipeDetails = async (req, res) => {
       recipeFromDb.nutrition = nutritionOnlyNutrients(recipeFromDb.nutrition);
     }
 
-    // Track view (external recipes have no owner, so always increment)
-    ExternalRecipeModel.incrementViewCount(EXTERNAL_SOURCE, id).catch((err) =>
-      console.warn("External recipe view count increment failed:", err?.message),
-    );
+    // Track view and update trending fields
+    try {
+      const updatedRecipe = await ExternalRecipeModel.incrementViewCount(
+        EXTERNAL_SOURCE,
+        id,
+      );
+
+      const reviewCount = Number(updatedRecipe?.reviewCount) || 0;
+      const totalStars = Number(updatedRecipe?.totalStars) || 0;
+      const viewCount = Number(updatedRecipe?.viewCount) || 0;
+
+      const averageRating = reviewCount > 0 ? totalStars / reviewCount : 0;
+
+      const trendingScore =
+        averageRating * 0.5 +
+        Math.log10(viewCount + 1) * 0.3 +
+        Math.log10(reviewCount + 1) * 0.2;
+
+      await ExternalRecipeModel.updateTrendingStats(
+        EXTERNAL_SOURCE,
+        id,
+        Number(averageRating.toFixed(1)),
+        Number(trendingScore.toFixed(4)),
+      );
+    } catch (err) {
+      console.warn("External recipe trending update failed:", err?.message);
+    }
 
     return res.json({ success: true, recipe: recipeFromDb });
   } catch (error) {
@@ -432,8 +456,7 @@ export const getExternalRecipeFeed = async (req, res) => {
       ? Math.min(limit * 5, 100)
       : limit;
     let results = await ExternalRecipeModel.getLatestCached(fetchLimit);
-    const viewCount = (r) => (r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0);
-    results.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
+
     if (budgetMin > 0 || budgetMax < 100) {
       results = results.filter((r) => {
         const price = r.price;

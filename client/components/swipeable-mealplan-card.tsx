@@ -6,7 +6,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { RecipeCard } from "@/components/recipe-card";
 import { router } from "expo-router";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://192.168.1.105:3000";
 
 export interface SwipeableMealPlanCardProps {
   id: string;

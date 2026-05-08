@@ -10,8 +10,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
-
+import { SERVER_URL } from "@/constants/api";
 const SignUpPage = () => {
   const [username, setUsername] = useState("");
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(

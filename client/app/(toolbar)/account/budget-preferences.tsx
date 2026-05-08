@@ -8,8 +8,7 @@ import Input from '@/components/ui/input';
 import Button from '@/components/ui/button';
 
 const BUDGET_STORAGE_KEY = "USER_BUDGET";
-const SERVER_URL = "http://10.0.2.2:3000";
-
+import { SERVER_URL } from "@/constants/api";
 const BudgetPreferencesPage = () => {
   const [budget, setBudget] = useState(0);
   const [loading, setLoading] = useState(true);

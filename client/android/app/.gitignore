@@ -1,6 +1,0 @@
-debug.keystore
-proguard-rules.pro
-
-src/debug
-src/debugOptimized
-src/main/res

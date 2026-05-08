@@ -14,8 +14,7 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
-
+import { SERVER_URL } from "@/constants/api";
 type NutrientRow = {
   name: string;
   amount: number;

@@ -9,7 +9,7 @@ import Input from "@/components/ui/input";
 import { useHomeFilter } from "@/contexts/home-filter-context";
 import { loadUserCookware } from "@/utils/cookware";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/constants/api";
 
 type ExternalRecipe = {
   id: number;
@@ -126,7 +126,7 @@ export default function HomeScreen() {
               id={String(item.id)}
               title={item.title}
               calories={item.calories ?? undefined}
-              rating={4.5}
+              rating={item.rating ?? 0}
               imageUrl={item.image ?? undefined}
             />
           )}

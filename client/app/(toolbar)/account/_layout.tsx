@@ -50,6 +50,11 @@ export default function AccountStackLayout() {
           name="edit-recipe/[recipeId]"
           options={{ title: "Edit Recipe" }}
         />
+        {/* Dashboard */}
+        <Stack.Screen
+          name="dashboard"
+          options={{ title: "Dashboard" }}
+        />
         {/* Settings */}
         <Stack.Screen
           name="settings"

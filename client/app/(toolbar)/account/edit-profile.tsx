@@ -7,8 +7,7 @@ import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
-
+import { SERVER_URL } from "@/constants/api";
 export default function EditProfilesPage() {
     const [username, setUsername] = useState("");
     const [email, setEmail] = useState("");

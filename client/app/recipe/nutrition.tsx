@@ -5,7 +5,7 @@ import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/constants/api";
 
 type Nutrient = {
   name: string;

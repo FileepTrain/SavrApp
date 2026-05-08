@@ -62,13 +62,36 @@ async function findByExternal(externalSource, externalId) {
   };
 }
 
+// Increment View Count in Firebase
 async function incrementViewCount(externalSource, externalId) {
-  if (!externalSource || !externalId) return;
   const db = getDb();
   const docId = makeDocId(externalSource, externalId);
   const docRef = db.collection(COLL).doc(docId);
   await docRef.set(
-    { viewCount: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    {
+      viewCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  const snap = await docRef.get();
+  return { ...snap.data(), _docId: docId };
+}
+
+// Update Trending for Firebase
+async function updateTrendingStats(externalSource, externalId, averageRating, trendingScore) {
+  if (!externalSource || !externalId) return;
+
+  const db = getDb();
+  const docId = makeDocId(externalSource, externalId);
+  const docRef = db.collection(COLL).doc(docId);
+
+  await docRef.set(
+    {
+      averageRating,
+      trendingScore,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
     { merge: true },
   );
 }
@@ -246,6 +269,11 @@ async function upsertFromExternal(externalSource, externalId, simplified) {
     diets: simplified.diets ?? null,
     cuisines: simplified.cuisines ?? null,
     price: simplified.price ?? null,
+    reviewCount: 0,
+    totalStars: 0,
+    viewCount: 0,
+    averageRating: 0,
+    trendingScore: 0,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 
@@ -260,37 +288,83 @@ async function upsertFromExternal(externalSource, externalId, simplified) {
   return { docId };
 }
 
-// Home feed get latest cached recipes
+// Home feed get trending cached recipes
 async function getLatestCached(limit = 20) {
   const db = getDb();
 
-  const snap = await db
+  let docs = [];
+
+  const trendingSnap = await db
     .collection(COLL)
-    .orderBy("updatedAt", "desc")
+    .orderBy("trendingScore", "desc")
     .limit(limit)
     .get();
 
-  return snap.docs.map((d) => {
+  docs = trendingSnap.docs;
+
+  // Fill homepage
+  if (docs.length < limit) {
+    const existingIds = new Set(docs.map((d) => d.id));
+
+    const fallbackSnap = await db
+      .collection(COLL)
+      .orderBy("updatedAt", "desc")
+      .limit(limit * 2)
+      .get();
+
+    for (const doc of fallbackSnap.docs) {
+      if (!existingIds.has(doc.id)) {
+        docs.push(doc);
+        existingIds.add(doc.id);
+      }
+      if (docs.length >= limit) break;
+    }
+  }
+
+  return docs.map((d) => {
     const data = d.data();
+
+    const reviewCount = Number.isFinite(Number(data.reviewCount))
+      ? Number(data.reviewCount)
+      : (Array.isArray(data.reviews) ? data.reviews.length : 0);
+
+    const totalStars = Number.isFinite(Number(data.totalStars))
+      ? Number(data.totalStars)
+      : (Array.isArray(data.reviews)
+          ? data.reviews.reduce((s, r) => s + (r && r.rating ? r.rating : 0), 0)
+          : 0);
+
+    const rating =
+      reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
+
     let calories = data.calories != null ? data.calories : null;
     if (calories == null && Array.isArray(data.nutrition?.nutrients)) {
-      const cal = data.nutrition.nutrients.find((n) => String(n?.name || "").toLowerCase() === "calories");
+      const cal = data.nutrition.nutrients.find(
+        (n) => String(n?.name || "").toLowerCase() === "calories"
+      );
       if (cal?.amount != null) calories = Math.round(Number(cal.amount));
     }
+
     return {
       id: Number(data.externalId),
       title: data.title ?? null,
       image: data.image ?? null,
       calories: calories ?? null,
       price: typeof data.price === "number" ? data.price : null,
-      viewCount: Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0,
+      rating,
+      reviewsLength: reviewCount,
+      viewCount: Number.isFinite(Number(data.viewCount))
+        ? Number(data.viewCount)
+        : 0,
+      trendingScore: Number.isFinite(Number(data.trendingScore))
+        ? Number(data.trendingScore)
+        : 0,
       equipment: data.equipment ?? [],
       _cached: true,
       _docId: d.id,
     };
   });
 }
-
 export default {
   findByExternal,
   searchCachedByTitle,
@@ -298,4 +372,5 @@ export default {
   upsertFromExternal,
   getLatestCached,
   incrementViewCount,
+  updateTrendingStats,
 };

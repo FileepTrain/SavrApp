@@ -30,7 +30,7 @@ export const ALL_COOKWARE = [
 
 /** Sorted alphabetically for display */
 export const ALL_COOKWARE_SORTED = [...ALL_COOKWARE].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-const SERVER_URL = "http://10.0.2.2:3000"; // Adjust if needed
+import { SERVER_URL } from "@/constants/api"; // Adjust if needed
 
 /**
  * Load user's cookware preferences from server (with AsyncStorage fallback)

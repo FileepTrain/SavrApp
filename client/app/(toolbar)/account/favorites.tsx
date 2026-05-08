@@ -7,8 +7,7 @@ import { useState, useEffect } from "react";
 import { View, Text, ActivityIndicator, FlatList, TouchableOpacity } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 
-const SERVER_URL = "http://10.0.2.2:3000";
-
+import { SERVER_URL } from "@/constants/api";
 export default function FavoritesPage() {
   const router = useRouter();
   const { mode } = useLocalSearchParams<{ mode?: string }>();

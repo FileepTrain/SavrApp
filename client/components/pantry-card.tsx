@@ -9,6 +9,7 @@ type PantryItem = {
   name: string;
   quantity: number;
   unit: string;
+  expirationDate?: string | null;
 };
 
 type Props = {
@@ -20,7 +21,6 @@ type Props = {
 export function SwipeablePantryItemCard({ item, onEdit, onDelete }: Props) {
   const [loading, setLoading] = useState(false);
 
-  /* Delete pantry item */
   const handleDelete = async () => {
     try {
       setLoading(true);
@@ -32,7 +32,7 @@ export function SwipeablePantryItemCard({ item, onEdit, onDelete }: Props) {
       setLoading(false);
     }
   };
-  /* Render right actions with edit and delete */
+
   const renderRightActions = (
     _progress: unknown,
     _translation: unknown,
@@ -75,9 +75,16 @@ export function SwipeablePantryItemCard({ item, onEdit, onDelete }: Props) {
     >
       <View className="bg-background rounded-xl shadow-lg p-4 mb-3">
         <Text className="text-lg font-bold text-red-primary">{item.name}</Text>
+
         <Text className="text-foreground">
           {item.quantity} {item.unit}
         </Text>
+
+        {item.expirationDate && (
+          <Text className="text-xs text-muted-foreground mt-1">
+            Expires: {item.expirationDate}
+          </Text>
+        )}
       </View>
     </ReanimatedSwipeable>
   );

@@ -107,6 +107,16 @@ export const register = async (req, res) => {
   }
 };
 
+function getDateString(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getYesterdayString() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
  * Login user
  * POST /api/auth/login
@@ -130,6 +140,43 @@ export const login = async (req, res) => {
     const { idToken, refreshToken, localId, displayName } =
       firebaseResponse.data;
 
+    // Update daily login streak
+    const db = admin.firestore();
+    const userRef = db.collection("users").doc(localId);
+    const userSnap = await userRef.get();
+
+    const today = getDateString();
+    const yesterday = getYesterdayString();
+
+    let loginStreak = 1;
+    let lastLoginDate = null;
+
+    if (userSnap.exists) {
+      const userData = userSnap.data() || {};
+      lastLoginDate = userData.lastLoginDate ?? null;
+
+      const prevStreak = Number.isFinite(Number(userData.loginStreak))
+        ? Number(userData.loginStreak)
+        : 0;
+
+      if (lastLoginDate === today) {
+        loginStreak = prevStreak || 1;
+      } else if (lastLoginDate === yesterday) {
+        loginStreak = (prevStreak || 0) + 1;
+      } else {
+        loginStreak = 1;
+      }
+    }
+
+    await userRef.set(
+      {
+        lastLoginDate: today,
+        loginStreak,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
     return res.json({
       success: true,
       uid: localId,
@@ -137,6 +184,7 @@ export const login = async (req, res) => {
       refreshToken,
       email,
       username: displayName,
+      loginStreak,
       message: "Login successful",
     });
   } catch (error) {

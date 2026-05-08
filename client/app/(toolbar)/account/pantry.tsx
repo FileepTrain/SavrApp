@@ -7,28 +7,45 @@ import {
   Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-import { AddIngredientModal } from "@/components/add-ingredient-modal";
+import { router, useLocalSearchParams } from "expo-router";
+import { AddPantryItemModal } from "@/components/add-pantry-item-modal";import { ConfirmScannedItemModal } from "@/components/scanned-item-modal.tsx";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { Ingredient } from "@/types/ingredient";
 import { SwipeablePantryItemCard } from "@/components/pantry-card";
-
-const SERVER_URL = "http://10.0.2.2:3000";
+import { Pressable } from "react-native";
+import { SERVER_URL } from "@/constants/api";
 
 type PantryItem = {
   id: string;
   name: string;
   quantity: number;
   unit: string;
+  expirationDate?: string | null;
+};
+
+type ScannedPantryItem = {
+  name: string;
+  quantity: number;
+  unit: string;
+  expirationDate?: string | null;
 };
 
 export default function PantryPage() {
+  const params = useLocalSearchParams();
+
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isScanConfirmOpen, setIsScanConfirmOpen] = useState(false);
   const [pantryItems, setPantryItems] = useState<PantryItem[]>([]);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
+  const [scannedItem, setScannedItem] = useState<ScannedPantryItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const getParamString = (value: string | string[] | undefined) => {
+    if (Array.isArray(value)) return value[0];
+    return value;
+  };
 
   const fetchPantry = async () => {
     try {
@@ -49,7 +66,10 @@ export default function PantryPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to fetch pantry");
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to fetch pantry");
+      }
 
       setPantryItems(Array.isArray(data.items) ? data.items : []);
     } catch (err) {
@@ -63,6 +83,30 @@ export default function PantryPage() {
     fetchPantry();
   }, []);
 
+  useEffect(() => {
+    const scannedName = getParamString(params.scannedName);
+    const scannedQuantityParam = getParamString(params.scannedQuantity);
+    const scannedUnit = getParamString(params.scannedUnit) || "each";
+
+    if (!scannedName || scannedName.trim() === "") return;
+
+    const parsedQuantity = Number(scannedQuantityParam ?? 1);
+
+    const nextScannedItem = {
+      name: scannedName,
+      quantity:
+        Number.isFinite(parsedQuantity) && parsedQuantity > 0
+          ? parsedQuantity
+          : 1,
+      unit: scannedUnit,
+    };
+
+    console.log("PANTRY RECEIVED SCANNED ITEM:", nextScannedItem);
+
+    setScannedItem(nextScannedItem);
+    setIsScanConfirmOpen(true);
+  }, [params.scannedName, params.scannedQuantity, params.scannedUnit]);
+
   const handleSubmitNewItem = async (item: Ingredient) => {
     try {
       const idToken = await AsyncStorage.getItem("idToken");
@@ -70,8 +114,9 @@ export default function PantryPage() {
 
       const payload = {
         name: item.name,
-        quantity: item.amount ?? 1,
+        quantity: item.quantity ?? 1,
         unit: item.unit ?? "each",
+        expirationDate: item.expirationDate ?? null,
       };
 
       const res = await fetch(`${SERVER_URL}/api/pantry`, {
@@ -84,25 +129,33 @@ export default function PantryPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to add pantry item");
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to add pantry item");
+      }
 
       setIsAddOpen(false);
       await fetchPantry();
     } catch (err) {
       console.error("Error adding pantry item:", err);
+      Alert.alert("Error", "Failed to add pantry item");
     }
   };
-/* Handles the submission of an edited pantry item */
+
   const handleSubmitEditedItem = async (item: Ingredient) => {
     try {
       if (!editingItem) return;
+
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
+
       const payload = {
         name: item.name,
-        quantity: item.amount ?? 1,
+        quantity: item.quantity ?? 1,
         unit: item.unit ?? "each",
+        expirationDate: item.expirationDate ?? null,
       };
+
       const res = await fetch(`${SERVER_URL}/api/pantry/${editingItem.id}`, {
         method: "PUT",
         headers: {
@@ -111,16 +164,20 @@ export default function PantryPage() {
         },
         body: JSON.stringify(payload),
       });
+
       const raw = await res.text();
       let data: any = null;
+
       try {
         data = raw ? JSON.parse(raw) : null;
       } catch {
-        throw new Error(`Failed to parse update response (status ${res.status})`);
+        throw new Error(`Failed to parse update response. Status: ${res.status}`);
       }
+
       if (!res.ok) {
         throw new Error(data?.error || "Failed to update pantry item");
       }
+
       setPantryItems((prev) =>
         prev.map((p) =>
           p.id === editingItem.id
@@ -129,13 +186,59 @@ export default function PantryPage() {
                 name: payload.name,
                 quantity: payload.quantity,
                 unit: payload.unit,
-              } : p
+                expirationDate: payload.expirationDate,
+
+
+              }
+            : p
         )
       );
+
       setIsAddOpen(false);
       setEditingItem(null);
     } catch (err) {
       console.error("Error updating pantry item:", err);
+      Alert.alert("Error", "Failed to update pantry item");
+    }
+  };
+
+  const handleSubmitScannedItem = async (item: ScannedPantryItem) => {
+    try {
+      const idToken = await AsyncStorage.getItem("idToken");
+      if (!idToken) return;
+
+      const payload = {
+        name: item.name,
+        quantity: item.quantity ?? 1,
+        unit: item.unit ?? "each",
+        expirationDate: item.expirationDate ?? null,
+
+      };
+
+      const res = await fetch(`${SERVER_URL}/api/pantry`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to add scanned pantry item");
+      }
+
+      setIsScanConfirmOpen(false);
+      setScannedItem(null);
+
+      await fetchPantry();
+
+      router.replace("/(toolbar)/account/pantry");
+    } catch (err) {
+      console.error("Error adding scanned pantry item:", err);
+      Alert.alert("Error", "Failed to add scanned pantry item");
     }
   };
 
@@ -158,19 +261,18 @@ export default function PantryPage() {
 
       try {
         data = raw ? JSON.parse(raw) : null;
-      } catch {
-        // not JSON
-      }
+      } catch {}
 
       if (!res.ok) {
-        const msg =
-          data?.error || `Failed to delete pantry item (status ${res.status})`;
-        throw new Error(msg);
+        throw new Error(
+          data?.error || `Failed to delete pantry item. Status: ${res.status}`
+        );
       }
 
       setPantryItems((prev) => prev.filter((x) => x.id !== id));
     } catch (err) {
       console.error("Error deleting pantry item:", err);
+      Alert.alert("Error", "Failed to delete pantry item");
     } finally {
       setDeletingId(null);
     }
@@ -194,41 +296,22 @@ export default function PantryPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <View className="gap-4">
-        <Button
-          variant="primary"
-          icon={{
-            name: "plus-circle-outline",
-            position: "left",
-            size: 20,
-            color: "--color-red-primary",
-          }}
-          className="h-24"
-          textClassName="text-xl font-bold text-red-primary"
-          onPress={() => {
-            setEditingItem(null);
-            setIsAddOpen(true);
-          }}
-        >
-          Add Pantry Item
-        </Button>
-
+      <View className="flex-1 gap-4">
         {loading ? (
           <ActivityIndicator size="large" color="red" />
         ) : (
           <FlatList
             data={pantryItems}
             keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingBottom: 120 }}
             ListEmptyComponent={
               <Text className="text-center text-foreground opacity-60 mt-6">
                 No pantry items yet.
               </Text>
             }
-        /* Creates swipeable pantry item cards */
             renderItem={({ item }) => (
               <SwipeablePantryItemCard
                 item={item}
-                deleting={deletingId === item.id}
                 onEdit={startEdit}
                 onDelete={confirmDelete}
               />
@@ -236,7 +319,7 @@ export default function PantryPage() {
           />
         )}
 
-        <AddIngredientModal
+        <AddPantryItemModal
           visible={isAddOpen}
           onClose={() => {
             setIsAddOpen(false);
@@ -258,6 +341,65 @@ export default function PantryPage() {
               : null
           }
         />
+
+        {scannedItem && (
+          <ConfirmScannedItemModal
+            key={`${scannedItem.name}-${scannedItem.quantity}-${scannedItem.unit}`}
+            visible={isScanConfirmOpen}
+            onClose={() => {
+              setIsScanConfirmOpen(false);
+              setScannedItem(null);
+              router.replace("/(toolbar)/account/pantry");
+            }}
+            initialData={scannedItem}
+            onSubmit={handleSubmitScannedItem}
+          />
+        )}
+
+        {isActionMenuOpen && (
+          <View className="absolute bottom-24 right-6 gap-3">
+            <Button
+              className="px-5 py-4 rounded-2xl"
+              textClassName="font-bold text-red-primary"
+              onPress={() => {
+                setIsActionMenuOpen(false);
+                setEditingItem(null);
+                setIsAddOpen(true);
+              }}
+            >
+              Add Pantry Item
+            </Button>
+
+            <Button
+              className="px-5 py-4 rounded-2xl"
+              textClassName="font-bold text-red-primary"
+              onPress={() => {
+                setIsActionMenuOpen(false);
+                router.push("/barcode-scanner");
+              }}
+            >
+              Scan Barcode
+            </Button>
+
+            <Button
+              className="px-5 py-4 rounded-2xl"
+              textClassName="font-bold text-red-primary"
+              onPress={() => {
+                setIsActionMenuOpen(false);
+                router.push("/(toolbar)/account/scan-history");
+              }}
+            >
+              View Scan History
+            </Button>
+          </View>
+        )}
+
+        <Pressable
+          onPress={() => setIsActionMenuOpen((prev) => !prev)}
+          className="absolute bottom-8 right-0 mr-4 w-16 h-16 rounded-full items-center justify-center bg-red-500"
+        >
+          <Text className="text-3xl font-bold text-white">+</Text>
+        </Pressable>
       </View>
     </ThemedSafeView>
   );

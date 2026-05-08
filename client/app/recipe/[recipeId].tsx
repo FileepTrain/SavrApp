@@ -16,7 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Your backend base (Android emulator -> host machine)
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/constants/api";
 const FAVORITES_KEY = "FAV_RECIPE_IDS";
 
 async function syncFavorites() {

@@ -7,7 +7,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { AddIngredientModal, ExtendedIngredient } from "@/components/add-ingredient-modal";
 import * as Location from "expo-location";
 
-const SERVER_URL = "http://10.0.2.2:3000"
+import { SERVER_URL } from "@/constants/api";
 
 type GroceryItem = {
   id: string;

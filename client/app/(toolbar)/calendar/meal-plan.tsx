@@ -12,7 +12,7 @@ import { Alert, Pressable, Text, View, Modal, ScrollView } from "react-native";
 import Button from "@/components/ui/button";
 import { RecipeCard } from "@/components/recipe-card";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/constants/api";
 
 type MealSlot = "Breakfast" | "Lunch" | "Dinner";
 

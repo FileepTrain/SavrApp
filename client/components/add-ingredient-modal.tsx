@@ -14,7 +14,7 @@ import {
   View,
 } from "react-native";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://192.168.1.105:3000";
 
 export type ExtendedIngredient = {
   id: number;

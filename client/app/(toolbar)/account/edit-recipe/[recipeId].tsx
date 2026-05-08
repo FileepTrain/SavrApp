@@ -16,8 +16,7 @@ import {
   usePersonalRecipes,
 } from "@/contexts/personal-recipes-context";
 
-const SERVER_URL = "http://10.0.2.2:3000";
-
+import { SERVER_URL } from "@/constants/api";
 export default function EditRecipePage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
   const { updateRecipe } = usePersonalRecipes();

@@ -10,7 +10,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
 
-const SERVER_URL = "http://10.0.2.2:3000";
+import { SERVER_URL } from "@/constants/api";
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -44,9 +44,10 @@ const LoginPage = () => {
         ["uid", data.uid],
         ["username", data.username ?? ""],
         ["email", data.email ?? email],
+        ["loginStreak", String(data.loginStreak ?? 1)],
       ]);
-
-      router.replace("/home"); // go to home screen
+      // Go to home screen
+      router.replace("/home");
     } catch (err: any) {
       Alert.alert("Login failed", err.message);
     } finally {
@@ -90,7 +91,12 @@ const LoginPage = () => {
           <Text className="text-right text-foreground font-medium">
             Forgot Password?
           </Text>
-          <Button size="lg" onPress={handleLogin} disabled={loading} textClassName="font-medium text-lg">
+          <Button
+            size="lg"
+            onPress={handleLogin}
+            disabled={loading}
+            textClassName="font-medium text-lg"
+          >
             {loading ? "Signing In..." : "Sign In"}
           </Button>
         </View>

@@ -27,20 +27,17 @@ export default function AccountPage() {
 
   return (
     <ThemedSafeView className="flex-1 bg-app-background">
-      {/* Title */}
       <View className="px-4">
         <Text className="text-foreground text-2xl font-semibold">
           Account
         </Text>
       </View>
 
-      {/* Profile */}
       <AccountProfileCard
         name={username ?? "Loading..."}
         email={email ?? "Loading..."}
       />
 
-      {/* Menu */}
       <View className="mt-6 mx-4 rounded-xl shadow-sm overflow-hidden">
         <AccountMenuItem
           title="My Pantry"
@@ -61,6 +58,13 @@ export default function AccountPage() {
           subtitle="Your own creations"
           iconName="book-open-outline"
           onPress={() => router.push("/account/personal-recipes")}
+        />
+
+        <AccountMenuItem
+          title="Dashboard"
+          subtitle="Nutrition, meal plans, and streaks"
+          iconName="view-dashboard-outline"
+          onPress={() => router.push("/account/dashboard")}
         />
 
         <AccountMenuItem
