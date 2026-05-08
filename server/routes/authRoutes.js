@@ -5,18 +5,36 @@ import {
   register,
   login,
   updateAccount,
+  deleteAccount,
   updateFavorites,
   getFavorites,
-  updateCookware,
-  getCookware,
-  deleteAccount,
-  getAllergies,
-  updateAllergies,
-  getDiets,
-  updateDiets,
-  getBudget,
-  updateBudget,
+  getPreferences,
+  updatePreferences,
+  listRecipeCollections,
+  createRecipeCollection,
+  getRecipeCollection,
+  updateRecipeCollection,
+  deleteRecipeCollection,
+  addRecipeToCollection,
+  removeRecipeFromCollection,
+  followRecipeCollection,
+  unfollowRecipeCollection,
+  listFollowedRecipeCollections,
+  getFollowCollectionStatus,
+  oauthLogin,
+  sendCalendarEmail,
 } from "../controllers/authController.js";
+import { uploadProfileImage } from "../middleware/multer.js";
+import {
+  getUserProfile,
+  updateProfilePrivacy,
+  uploadProfilePhoto,
+  getPublicCollection,
+} from "../controllers/userProfileController.js";
+import {
+  getRecipeNotes,
+  upsertRecipeNotes,
+} from "../controllers/recipeNotesController.js";
 
 const router = express.Router();
 
@@ -35,34 +53,58 @@ router.put("/update-account", verifyToken, updateAccount);
 // PUT /api/auth/update-favorites - Update user favorites
 router.put("/update-favorites", verifyToken, updateFavorites);
 
+// Public-style profile (authenticated viewers; respects privacy)
+router.get("/users/:userId/profile", verifyToken, getUserProfile);
+router.get(
+  "/users/:ownerUid/collections/:collectionId/public",
+  verifyToken,
+  getPublicCollection,
+);
+router.put("/profile-privacy", verifyToken, updateProfilePrivacy);
+router.post("/profile-photo", verifyToken, uploadProfileImage, uploadProfilePhoto);
+
 // GET /api/auth/get-favorites - Get array of favorite recipes
 router.get("/get-favorites", verifyToken, getFavorites);
 
-// PUT /api/auth/update-cookware - Update user cookware preferences
-router.put("/update-cookware", verifyToken, updateCookware);
+// Recipe collections (boards)
+router.get("/collections", verifyToken, listRecipeCollections);
+router.post("/collections", verifyToken, createRecipeCollection);
+router.get("/collections/:collectionId", verifyToken, getRecipeCollection);
+router.patch("/collections/:collectionId", verifyToken, updateRecipeCollection);
+router.delete("/collections/:collectionId", verifyToken, deleteRecipeCollection);
+router.post("/collections/:collectionId/recipes", verifyToken, addRecipeToCollection);
+router.delete(
+  "/collections/:collectionId/recipes/:recipeId",
+  verifyToken,
+  removeRecipeFromCollection,
+);
 
-// GET /api/auth/get-cookware - Get user cookware preferences
-router.get("/get-cookware", verifyToken, getCookware);
+router.get("/followed-collections/status", verifyToken, getFollowCollectionStatus);
+router.get("/followed-collections", verifyToken, listFollowedRecipeCollections);
+router.post("/followed-collections", verifyToken, followRecipeCollection);
+router.delete(
+  "/followed-collections/:ownerUid/:collectionId",
+  verifyToken,
+  unfollowRecipeCollection,
+);
+
+// GET /api/auth/get-preferences - Get user preferences (query: fields=cookware,diets,... or all)
+router.get("/get-preferences", verifyToken, getPreferences);
+
+// PUT /api/auth/update-preferences - Update user preferences (partial body OK)
+router.put("/update-preferences", verifyToken, updatePreferences);
+
+// Recipe notes
+router.get("/recipe-notes/:recipeId", verifyToken, getRecipeNotes);
+router.put("/recipe-notes/:recipeId", verifyToken, upsertRecipeNotes);
 
 // DELETE /api/auth/delete-account - Delete user account
 router.delete("/delete-account", verifyToken, deleteAccount);
 
-// GET /api/auth/get-allergies - Get array of user allergies
-router.get("/get-allergies", verifyToken, getAllergies);
+// OAuth
+router.post("/oauth-login", verifyToken, oauthLogin);
 
-// PUT /api/auth/update-allergies - Update array of user allergies
-router.put("/update-allergies", verifyToken, updateAllergies);
-
-// GET /api/auth/get-diets - Get array of user diets
-router.get("/get-diets", verifyToken, getDiets);
-
-// PUT /api/auth/update-allergies - Update array of user diets
-router.put("/update-diets", verifyToken, updateDiets);
-
-// GET /api/auth/get-budget - Get user budget
-router.get("/get-budget", verifyToken, getBudget);
-
-// PUT /api/auth/update-budget - Update user budget
-router.put("/update-budget", verifyToken, updateBudget);
+// External Calendar - Send to user email
+router.post("/send-calendar", verifyToken, sendCalendarEmail)
 
 export default router;

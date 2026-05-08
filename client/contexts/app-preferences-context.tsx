@@ -85,15 +85,21 @@ export const AppPreferencesProvider = ({
   };
 
   const setThemePreference = (value: ThemePreference) => {
-    const next: AppPreferences = { ...preferences, themePreference: value };
-    applyPreferences(next);
-    void persistPreferences(next);
+    setPreferences((prev) => {
+      const next: AppPreferences = { ...prev, themePreference: value };
+      applyPreferences(next);
+      void persistPreferences(next);
+      return next;
+    });
   };
 
   const setTextSize = (value: number) => {
-    const next: AppPreferences = { ...preferences, textSize: value };
-    setPreferences(next);
-    void persistPreferences(next);
+    setPreferences((prev) => {
+      const next: AppPreferences = { ...prev, textSize: value };
+      setPreferences(next);
+      void persistPreferences(next);
+      return next;
+    });
   };
 
   return (

@@ -1,8 +1,8 @@
 import dotenv from "dotenv";
 import axios from "axios";
+import { convertUnit, normalizeUnit } from "../models/ingredientNormalizationModel.js";
 dotenv.config();
 
-// TEMP HARDCODED - REMOVE LATER
 const KROGER_CLIENT_ID = process.env.KROGER_CLIENT_ID;
 const KROGER_CLIENT_SECRET = process.env.KROGER_CLIENT_SECRET;
 const KROGER_API_BASE = process.env.KROGER_API_BASE;
@@ -45,23 +45,54 @@ function parseUnitFromSize(sizeRaw) {
 
   const s = sizeRaw.trim().toLowerCase();
 
-  // e.g. "12 ct"
-  let m = s.match(/^(\d+(?:\.\d+)?)\s*ct\b/);
-  if (m) return { unitType: "ct", unitCount: Number(m[1]) };
+  // Normalize fractions like "1/2"
+  const fractionMatch = s.match(/^(\d+)\s*\/\s*(\d+)/);
+  let normalized = s;
 
-  // e.g. "3 each", "1 ea"
-  m = s.match(/^(\d+(?:\.\d+)?)\s*(each|ea)\b/);
-  if (m) return { unitType: "each", unitCount: Number(m[1]) };
+  if (fractionMatch) {
+    const num = Number(fractionMatch[1]);
+    const denom = Number(fractionMatch[2]);
+    const value = num / denom;
 
-  // e.g. "16 oz"
-  m = s.match(/^(\d+(?:\.\d+)?)\s*oz\b/);
-  if (m) return { unitType: "oz", unitCount: Number(m[1]) };
+    normalized = s.replace(fractionMatch[0], value.toString());
+  }
 
-  // e.g. "1 lb"
-  m = s.match(/^(\d+(?:\.\d+)?)\s*lb\b/);
-  if (m) return { unitType: "lb", unitCount: Number(m[1]) };
+  // General pattern: "number unit"
+  const m = normalized.match(/^(\d+(?:\.\d+)?)\s*(\w+)/);
 
-  return null;
+  if (!m) return null;
+
+  const value = Number(m[1]);
+  let unit = m[2];
+
+  // Normalize unit names
+  const unitMap = {
+    gallon: "gal",
+    gallons: "gal",
+    gal: "gal",
+
+    ounce: "oz",
+    ounces: "oz",
+    oz: "oz",
+
+    pound: "lb",
+    pounds: "lb",
+    lb: "lb",
+
+    ml: "ml",
+    l: "l",
+
+    ct: "each",
+    each: "each",
+    ea: "each"
+  };
+
+  unit = unitMap[unit] || unit;
+
+  return {
+    unitType: unit,
+    unitCount: value
+  };
 }
 
 // Helper: Median calculation
@@ -72,41 +103,98 @@ function median(values) {
   return nums.length % 2 === 0 ? (nums[mid - 1] + nums[mid]) / 2 : nums[mid];
 }
 
+// Helper: Assign points to products to determine if they match term
+function scoreProductMatch(term, description) {
+  if (!term || !description) return 0;
+  const normalize = (str) =>
+    str
+      .toLowerCase()
+      .replace(/[.,()]/g, "")
+      .split(/\s+/)
+      .filter(Boolean);
+  const termTokens = normalize(term);
+  const descTokens = normalize(description);
+  let score = 0;
+  // Exact phrase match (VERY strong signal)
+  if (description.toLowerCase().includes(term.toLowerCase())) {
+    score += 15;
+  }
+  // Token overlap
+  for (const token of termTokens) {
+    if (descTokens.includes(token)) {
+      score += 5;
+    }
+  }
+  // Penalize extra unrelated words (light penalty)
+  const unmatchedTokens = descTokens.filter(
+    (t) => !termTokens.includes(t)
+  );
+  score -= unmatchedTokens.length * 1.5;
+  return score;
+}
+
+
 // Helper: Fetch price for specific term
-async function fetchPriceForTerm(term, locationId, limit = 5, method = "median", includeCandidates = false) {
+async function fetchPriceForTerm(
+  term,
+  locationId,
+  limit = 5,
+  method = "median",
+  includeCandidates = false,
+  targetAmount = null,
+  targetUnit = null
+) {
   const token = await getAccessToken();
 
   const productResp = await axios.get(`${KROGER_API_BASE}/products`, {
     params: {
       "filter.term": term,
       "filter.locationId": locationId,
-      "filter.limit": Math.min(Math.max(limit, 1), 20),
+      "filter.limit": 15,
     },
     headers: { Authorization: `Bearer ${token}` },
   });
 
   const products = productResp.data?.data || [];
+
   if (products.length === 0) {
     return {
       found: false,
       term,
       product: null,
       cost: null,
-      candidates: includeCandidates ? [] : undefined
+      candidates: includeCandidates ? [] : undefined,
     };
   }
 
-  // Build candidates
-  const candidates = products.map((p) => {
+  // ----- BUILD CANDIDATES -----
+  const originalCandidates = products.map((p) => {
     const item = p.items?.[0] || null;
-    const regular = item?.price?.regular ?? null;
+    const regular = item?.price?.regular ?? item?.price?.promo ?? item?.price?.sale ?? null;
     const size = item?.size || null;
 
     const unitInfo = parseUnitFromSize(size);
-    const unitCost =
-      unitInfo && regular && unitInfo.unitCount > 0
-        ? Number((regular / unitInfo.unitCount).toFixed(2))
-        : null;
+
+    let effectiveUnitCost = null;
+
+    if (unitInfo && regular && unitInfo.unitCount > 0) {
+      const normalizedUnit = normalizeUnit(unitInfo.unitType);
+
+      if (targetAmount != null && targetUnit) {
+        const converted = convertUnit(
+          unitInfo.unitCount,
+          normalizedUnit,
+          targetUnit
+        );
+
+        if (converted !== null && converted > 0) {
+          effectiveUnitCost = regular / converted;
+        }
+      } else {
+        effectiveUnitCost = regular / unitInfo.unitCount;
+      }
+    }
+    const matchScore = scoreProductMatch(term, p.description)
 
     return {
       productId: p.productId,
@@ -114,50 +202,97 @@ async function fetchPriceForTerm(term, locationId, limit = 5, method = "median",
       brand: p.brand || null,
       size,
       price: regular,
+      effectiveUnitCost,
+      matchScore,
       unit: unitInfo
-        ? { unitType: unitInfo.unitType, unitCount: unitInfo.unitCount, unitCost }
-        : null
+        ? { unitType: unitInfo.unitType, unitCount: unitInfo.unitCount }
+        : null,
     };
   });
+  // STEP 1: Remove items with no usable prices
+  const pricedCandidates = originalCandidates.filter(
+    (c) =>
+      typeof c.price === "number" ||
+      typeof c.effectiveUnitCost === "number"
+  );
+  // 1a. fallback if everything is null
+  const baseCandidates =
+    pricedCandidates.length > 0 ? pricedCandidates : originalCandidates;
+  // Step 2. Determine Top 5 Candidates by Term Accuracy (Score)
+  const topCandidates = [...baseCandidates].sort((a, b) => b.matchScore - a.matchScore).slice(0, 5);
+  // Score Gap Filter
+  const bestScore = Math.max(...topCandidates.map(c => c.matchScore));
+  const SCORE_GAP_THRESHOLD = 8;
+  const relevantCandidates = topCandidates.filter((c) => bestScore - c.matchScore <= SCORE_GAP_THRESHOLD);
+  // Step 3. Filter by required unit amount (If # of units is not greater than what is needed, ignore)
+  const filteredCandidates = relevantCandidates.filter((c) => {
+    if (!targetAmount || !targetUnit) return true;
 
-  // Selection logic
+    if (!c.unit) return false;
+
+    const converted = convertUnit(
+      c.unit.unitCount,
+      normalizeUnit(c.unit.unitType),
+      targetUnit
+    );
+
+    return converted !== null && converted >= targetAmount;
+  });
+
+  const candidates =
+    filteredCandidates.length > 0 
+      ? filteredCandidates
+      : relevantCandidates.length > 0
+      ? relevantCandidates
+      : topCandidates;
+
+  // ----- SELECTION LOGIC -----
   let selected;
 
   if (method === "cheapest") {
-    selected = candidates
-      .filter(c => typeof c.price === "number")
-      .sort((a, b) => a.price - b.price)[0] || null;
+    selected =
+      candidates
+        .filter((c) => typeof c.price === "number")
+        .sort((a, b) => a.price - b.price)[0] || null;
 
   } else if (method === "cheapest_unit") {
-    selected = candidates
-      .filter(c => typeof c.unit?.unitCost === "number")
-      .sort((a, b) => a.unit.unitCost - b.unit.unitCost)[0] || null;
+    selected =
+      candidates
+        .filter((c) => typeof c.effectiveUnitCost === "number")
+        .sort((a, b) => a.effectiveUnitCost - b.effectiveUnitCost)[0] || null;
 
   } else {
-    // Median
     const unitCosts = candidates
-      .filter(c => typeof c.unit?.unitCost === "number")
-      .map(c => c.unit.unitCost);
+      .filter((c) => typeof c.effectiveUnitCost === "number")
+      .map((c) => c.effectiveUnitCost);
 
     if (unitCosts.length >= 3) {
       const med = median(unitCosts);
+
       selected = candidates.reduce((best, c) => {
-        if (typeof c.unit?.unitCost !== "number") return best;
-        const diff = Math.abs(c.unit.unitCost - med);
+        if (typeof c.effectiveUnitCost !== "number") return best;
+
+        const diff = Math.abs(c.effectiveUnitCost - med);
+
         if (!best || diff < best.diff) return { c, diff };
+
         return best;
       }, null)?.c;
 
     } else {
       const regulars = candidates
-        .map(c => c.price)
-        .filter(v => typeof v === "number");
+        .map((c) => c.price)
+        .filter((v) => typeof v === "number");
 
       const med = median(regulars);
+
       selected = candidates.reduce((best, c) => {
         if (typeof c.price !== "number") return best;
+
         const diff = Math.abs(c.price - med);
+
         if (!best || diff < best.diff) return { c, diff };
+
         return best;
       }, null)?.c;
     }
@@ -168,12 +303,12 @@ async function fetchPriceForTerm(term, locationId, limit = 5, method = "median",
     term,
     product: selected,
     cost:
-      typeof selected?.unit?.unitCost === "number"
-        ? selected.unit.unitCost
+      typeof selected?.effectiveUnitCost === "number"
+        ? selected.effectiveUnitCost
         : selected?.price ?? null,
     rawPrice: selected?.price ?? null,
-    unitCost: selected?.unit?.unitCost ?? null,
-    candidates: includeCandidates ? candidates : undefined
+    unitCost: selected?.effectiveUnitCost ?? null,
+    candidates: includeCandidates ? candidates : undefined,
   };
 }
 
@@ -191,49 +326,72 @@ async function getStoresByZip(zip, limit = 3) {
 
   return resp.data?.data?.map(store => store.locationId) || [];
 }
+// Helper: Get Stores by Latitude / Longitude
+async function getStoresByLocation(lat, lng, limit = 3) {
+  const token = await getAccessToken();
+
+  const resp = await axios.get(`${KROGER_API_BASE}/locations`, {
+    params: {
+      "filter.lat.near": lat,
+      "filter.lon.near": lng,
+      "filter.limit": limit,
+    },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return resp.data?.data?.map(store => store.locationId) || [];
+}
 
 // GET /api/kroger/quick-location?zip=#####
 export const getQuickLocation = async (req, res) => {
-  const zip = req.query.zip;
-  if (!zip) return res.status(400).json({ error: "Missing ?zip= parameter" });
+  const { zip, lat, lng } = req.query;
+
+  if (!zip && (!lat || !lng)) {
+    return res.status(400).json({
+      error: "Provide either zip OR lat & lng",
+    });
+  }
 
   try {
-    //console.log("CLIENT_ID present?", !!process.env.KROGER_CLIENT_ID);
-    //console.log("CLIENT_SECRET present?", !!process.env.KROGER_CLIENT_SECRET);
-    //console.log("API_BASE:", process.env.KROGER_API_BASE);
-    // 1) Get token
     const token = await getAccessToken();
 
-    // 2) Get locations from ZIP
-    const locResp = await axios.get(
-      `${KROGER_API_BASE}/locations`, // add process.env. before kroger when fixing
-      {
-        params: {
-          "filter.zipCode.near": zip,
-          "filter.limit": 1
-        },
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    );
+    let params = {
+      "filter.limit": 1
+    };
 
-    const stores = locResp.data?.data || [];
+    // Prefer lat/lng if provided
+    if (lat && lng) {
+      params["filter.lat.near"] = lat;
+      params["filter.lon.near"] = lng;
+    } else {
+      params["filter.zipCode.near"] = zip;
+    }
+
+    const resp = await axios.get(`${KROGER_API_BASE}/locations`, {
+      params,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const stores = resp.data?.data || [];
+
     if (stores.length === 0) {
       return res.json({ error: "No stores found" });
     }
 
-    // 3) Return the first locationId
     res.json({
       locationId: stores[0].locationId,
       name: stores[0].name,
       address: stores[0].address,
-      raw: stores[0]
     });
 
   } catch (err) {
     console.error("Quick-location error:", err.response?.data || err.message);
-    res.status(500).json({error: "Failed to fetch store", details: err.response?.data || err.message,});
+    res.status(500).json({
+      error: "Failed to fetch store",
+      details: err.response?.data || err.message,
+    });
   }
 };
 

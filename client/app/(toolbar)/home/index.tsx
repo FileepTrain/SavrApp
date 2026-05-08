@@ -1,5 +1,6 @@
+import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, View, Text } from "react-native";
+import { ActivityIndicator, FlatList, Platform, View, Text } from "react-native";
 import { router } from "expo-router";
 
 import { RecipeCard } from "@/components/recipe-card";
@@ -9,7 +10,7 @@ import Input from "@/components/ui/input";
 import { useHomeFilter } from "@/contexts/home-filter-context";
 import { loadUserCookware } from "@/utils/cookware";
 
-import { SERVER_URL } from "@/constants/api";
+import { SERVER_URL } from '@/utils/server-url';
 
 type ExternalRecipe = {
   id: number;
@@ -19,11 +20,23 @@ type ExternalRecipe = {
 };
 
 // Display Home Screen
+const H_PADDING = 48; // matches ThemedSafeView px-6 (24+24)
+
 export default function HomeScreen() {
   const { appliedFilters, openFilterModal } = useHomeFilter();
+  const { isWebDesktop, contentWidth } = useWebDesktopLayout();
   const [searchQuery, setSearchQuery] = useState("");
   const [recipes, setRecipes] = useState<ExternalRecipe[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const gridInner = Math.max(0, contentWidth - H_PADDING);
+  const numColumns =
+    Platform.OS !== "web" ? 2 : !isWebDesktop ? 2 : gridInner >= 1000 ? 4 : gridInner >= 720 ? 3 : 2;
+  const gridGap = 16;
+  const tileWidth =
+    numColumns > 0
+      ? (gridInner - gridGap * (numColumns - 1)) / numColumns
+      : undefined;
 
   const handleSearch = () => {
     const q = searchQuery.trim();
@@ -37,6 +50,7 @@ export default function HomeScreen() {
       allergies: appliedFilters.allergies.join(","),
       foodTypes: appliedFilters.foodTypes.join(","),
       cookware: appliedFilters.cookware.join(","),
+      sortBy: appliedFilters.sortBy ?? "mostViewed",
     });
 
     router.push(`/(toolbar)/home/search?${params.toString()}`);
@@ -87,16 +101,16 @@ export default function HomeScreen() {
 
   // Keep header stable
   const Header = useMemo(() => {
-    return (
-      <View className="flex-row justify-center items-center gap-2 mb-4">
+    const row = (
+      <View className="flex-row items-center gap-2">
         <Button
           variant="outline"
           icon={{ name: "filter-outline", color: "--color-icon" }}
-          className="w-14 h-14 rounded-full"
+          className="w-14 h-14 rounded-full shrink-0"
           onPress={openFilterModal}
         />
         <Input
-          className="flex-1"
+          className="flex-1 min-w-0"
           placeholder="Search for a Recipe"
           iconName="magnify"
           inputClassName="h-14"
@@ -109,7 +123,15 @@ export default function HomeScreen() {
         />
       </View>
     );
-  }, [searchQuery, appliedFilters]);
+    if (Platform.OS === "web" && isWebDesktop) {
+      return (
+        <View className="w-full items-center mb-4">
+          <View className="w-full max-w-xl">{row}</View>
+        </View>
+      );
+    }
+    return <View className="mb-4">{row}</View>;
+  }, [searchQuery, appliedFilters, isWebDesktop]);
 
   return (
     <ThemedSafeView className="flex-1">
@@ -119,6 +141,7 @@ export default function HomeScreen() {
         </View>
       ) : (
         <FlatList
+          key={`home-feed-${numColumns}`}
           data={recipes}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
@@ -128,12 +151,20 @@ export default function HomeScreen() {
               calories={item.calories ?? undefined}
               rating={item.rating ?? 0}
               imageUrl={item.image ?? undefined}
+              tileWidth={tileWidth}
+              prominent={isWebDesktop}
             />
           )}
           onRefresh={fetchFeed}
           refreshing={loading}
-          numColumns={2}
-          columnWrapperStyle={{ gap: 16, justifyContent: "center" }}
+          numColumns={numColumns}
+          columnWrapperStyle={
+            numColumns > 1
+              ? Platform.OS === "web" && isWebDesktop
+                ? { gap: gridGap, justifyContent: "flex-start" }
+                : { gap: gridGap, justifyContent: "center" }
+              : undefined
+          }
           contentContainerStyle={{
             paddingHorizontal: 24,
             paddingTop: 24,

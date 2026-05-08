@@ -1,19 +1,27 @@
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import { useHomeFilter, DEFAULT_FILTERS } from "@/contexts/home-filter-context";
+import { useNetwork } from "@/contexts/network-context";
 import { loadUserCookware } from "@/utils/cookware";
+import { CommonActions } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
+import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   Text,
   View,
 } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 import type { Filters } from "@/components/ui/filter_pop_up";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
+import { SERVER_URL as API_BASE } from "@/utils/server-url";
 
 type SearchResult = {
   id: number | string;
@@ -26,8 +34,16 @@ type SearchResult = {
   viewCount?: number;
 };
 
-const API_BASE = "http://10.0.2.2:3000";
+function singleQueryParam(v: string | string[] | undefined): string | undefined {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (Array.isArray(v) && v[0] != null && String(v[0]).trim()) return String(v[0]).trim();
+  return undefined;
+}
 const PAGE_SIZE = 10;
+/** ThemedSafeView horizontal inset (px-6). */
+const SEARCH_SAFE_H_PADDING = 48;
+/** FlatList `paddingHorizontal: 24` × 2 — width available for tiles/grid. */
+const SEARCH_LIST_H_PADDING = 48;
 
 type SearchCacheEntry = {
   personalResults: SearchResult[];
@@ -47,6 +63,7 @@ function buildSearchKey(query: string, filters: Filters): string {
     [...(filters.foodTypes || [])].sort().join(","),
     [...(filters.cookware || [])].sort().join(","),
     filters.useMyCookwareOnly ? "1" : "0",
+    filters.sortBy ?? "mostViewed",
   ].join("|");
 }
 
@@ -78,15 +95,58 @@ function getResultKey(item: SearchResult): string {
 }
 
 export default function HomeSearchScreen() {
-  const {mode} = useLocalSearchParams<{mode?: string}>();
-  const {setPendingSelectedRecipe} = useMealPlanSelection();
+  const navigation = useNavigation();
+  const { isWebDesktop, contentWidth } = useWebDesktopLayout();
+  const accountMax = useAccountWebColumnWidth();
+  const parentInner = Math.max(0, contentWidth - SEARCH_SAFE_H_PADDING);
+  const columnWidth = useMemo(() => {
+    if (isWebDesktop && accountMax != null) {
+      return Math.min(accountMax, parentInner);
+    }
+    return parentInner;
+  }, [isWebDesktop, accountMax, parentInner]);
+  const searchGridInner = Math.max(0, columnWidth - SEARCH_LIST_H_PADDING);
+  const searchNumColumns =
+    !isWebDesktop ? 1 : searchGridInner >= 1000 ? 4 : searchGridInner >= 720 ? 3 : 2;
+  const searchGridGap = 16;
+  const searchTileWidth =
+    searchNumColumns > 1
+      ? (searchGridInner - searchGridGap * (searchNumColumns - 1)) /
+        searchNumColumns
+      : undefined;
+
+  const { mode, mealPlanId, mealPlanDate } = useLocalSearchParams<{
+    mode?: string;
+    mealPlanId?: string;
+    mealPlanDate?: string;
+  }>();
+  const { setPendingSelectedRecipe } = useMealPlanSelection();
   const isSelectionMode = mode === "select";
-  //console.log("mode:", mode, "isSelectionMode:", isSelectionMode);
+  const { isOnline } = useNetwork();
 
   const handleSelectRecipe = (recipe: { id: string; [key: string]: unknown }) => {
     setPendingSelectedRecipe(recipe);
-    router.back();
-    router.push(`/calendar/meal-plan`)
+    const returnPlanId = singleQueryParam(mealPlanId);
+    const returnDate = singleQueryParam(mealPlanDate);
+    if (returnPlanId || returnDate) {
+      router.navigate({
+        pathname: "/calendar/meal-plan",
+        params: {
+          ...(returnPlanId ? { mealPlanId: returnPlanId } : {}),
+          ...(returnDate ? { date: returnDate } : {}),
+        },
+      });
+      setTimeout(() => {
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: "index" }],
+          }),
+        );
+      }, 0);
+    } else {
+      router.back();
+    }
   };
 
   const { appliedFilters, openFilterModal } = useHomeFilter();
@@ -111,7 +171,7 @@ export default function HomeSearchScreen() {
 
   const fetchingRef = useRef(false);
 
-  // Merge personal + external, dedupe, then sort by view count (most viewed first); stable sort by id when viewCount ties
+  // Merge + dedupe then apply selected ordering.
   const results = useMemo(() => {
     const merged = [...personalResults, ...externalResults];
     const seen = new Set<string>();
@@ -123,10 +183,21 @@ export default function HomeSearchScreen() {
       unique.push(item);
     }
     const v = (x: SearchResult) => Number(x?.viewCount) || 0;
+    const r = (x: SearchResult) => Number(x?.rating) || 0;
+    const c = (x: SearchResult) => Number(x?.calories) || 0;
     const id = (x: SearchResult) => String(x?.id ?? "");
-    unique.sort((a, b) => v(b) - v(a) || id(a).localeCompare(id(b)));
+    const sortBy = appliedFilters.sortBy ?? "mostViewed";
+    if (sortBy === "rating") {
+      unique.sort((a, b) => r(b) - r(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
+    } else if (sortBy === "caloriesAsc") {
+      unique.sort((a, b) => c(a) - c(b) || v(b) - v(a) || id(a).localeCompare(id(b)));
+    } else if (sortBy === "caloriesDesc") {
+      unique.sort((a, b) => c(b) - c(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
+    } else {
+      unique.sort((a, b) => v(b) - v(a) || id(a).localeCompare(id(b)));
+    }
     return unique;
-  }, [personalResults, externalResults]);
+  }, [personalResults, externalResults, appliedFilters.sortBy]);
 
   const searchKey = useMemo(
     () => buildSearchKey(queryParam, appliedFilters),
@@ -172,6 +243,7 @@ export default function HomeSearchScreen() {
         allergies: (appliedFilters.allergies || []).join(","),
         cookware: (appliedFilters.cookware || []).join(","),
         useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
+        sortBy: appliedFilters.sortBy ?? "mostViewed",
       });
       if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
         params.set("userCookware", userCookwareList.join(","));
@@ -270,6 +342,7 @@ export default function HomeSearchScreen() {
       allergies: (appliedFilters.allergies || []).join(","),
       cookware: (appliedFilters.cookware || []).join(","),
       useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
+      sortBy: appliedFilters.sortBy ?? "mostViewed",
     });
     if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
       params.set("userCookware", userCookwareList.join(","));
@@ -363,77 +436,148 @@ export default function HomeSearchScreen() {
 
   const renderItem = ({ item }: { item: SearchResult }) => {
     const id = String(item.id);
+    const common = {
+      id,
+      title: item.title,
+      imageUrl: item.image ?? undefined,
+      calories: item.calories ?? undefined,
+      rating: item.rating ?? 0,
+      reviewsLength: item.reviewsLength ?? 0,
+      onPress: isSelectionMode ? () => handleSelectRecipe({ id }) : undefined,
+    };
+
+    if (isWebDesktop && searchNumColumns > 1) {
+      return (
+        <RecipeCard
+          {...common}
+          variant="default"
+          tileWidth={searchTileWidth}
+          prominent
+        />
+      );
+    }
+
     return (
       <View className="mb-3">
-        <RecipeCard
-          id={id}
-          variant="horizontal"
-          title={item.title}
-          imageUrl={item.image ?? undefined}
-          calories={item.calories ?? undefined}
-          rating={item.rating ?? 0}
-          reviewsLength={item.reviewsLength ?? 0}
-          onPress={
-            isSelectionMode
-              ? () => handleSelectRecipe({id})
-              :undefined
-          }
-        />
+        <RecipeCard {...common} variant="horizontal" />
       </View>
     );
   };
 
+  // Search requires live API access; show a clear offline state instead of a broken experience.
+  if (!isOnline) {
+    return (
+      <ThemedSafeView className="flex-1 pt-safe-or-20 bg-app-background">
+        <AccountWebColumn className="flex-1 min-h-0">
+        <View className="px-6 pb-2">
+          <View className="flex-row justify-center items-center gap-2 mb-3">
+            <Button
+              variant="outline"
+              icon={{ name: "filter-outline", color: "--color-icon" }}
+              className="w-14 h-14 rounded-full opacity-40"
+              disabled
+              onPress={() => {}}
+            />
+            <Input
+              className="flex-1 opacity-40"
+              placeholder="Search unavailable offline"
+              iconName="magnify"
+              inputClassName="h-14"
+              editable={false}
+              value=""
+              onChangeText={() => {}}
+            />
+          </View>
+        </View>
+        <View className="flex-1 items-center justify-center px-8 gap-3">
+          <Text className="text-foreground text-center text-lg font-semibold">
+            Search is unavailable offline
+          </Text>
+          <Text className="text-muted-foreground text-center">
+            Connect to the internet to search for recipes.
+          </Text>
+        </View>
+        </AccountWebColumn>
+      </ThemedSafeView>
+    );
+  }
+
+  const searchHeader = (
+    <View className="pb-2">
+      <View
+        className={
+          Platform.OS === "web" && isWebDesktop
+            ? "w-full items-center mb-3"
+            : "mb-3"
+        }
+      >
+        <View
+          className={
+            Platform.OS === "web" && isWebDesktop
+              ? "flex-row items-center gap-2 w-full max-w-xl"
+              : "flex-row justify-center items-center gap-2"
+          }
+        >
+          <View>
+            {hasActiveFilters(appliedFilters) && (
+              <View className="absolute w-3 h-3 top-0 right-0 bg-red-primary z-10 rounded-full" />
+            )}
+            <Button
+              variant="outline"
+              icon={{ name: "filter-outline", color: "--color-icon" }}
+              className="w-14 h-14 rounded-full shrink-0"
+              onPress={openFilterModal}
+            />
+          </View>
+          <Input
+            className="flex-1 min-w-0"
+            placeholder="Search for a Recipe"
+            iconName="magnify"
+            inputClassName="h-14"
+            touchableIcon
+            onPressIcon={handleSubmitSearch}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={handleSubmitSearch}
+            returnKeyType="search"
+          />
+        </View>
+      </View>
+
+      {!!queryParam && (
+        <Text className="text-muted-foreground">
+          Results for: <Text className="font-bold">{queryParam}</Text>
+        </Text>
+      )}
+
+      {loading && <ActivityIndicator className="mt-3" color="red" />}
+
+      {!!error && <Text style={{ color: "red" }}>{error}</Text>}
+    </View>
+  );
+
   return (
-    <ThemedSafeView className="flex-1 pt-safe-or-20">
+    <ThemedSafeView className="flex-1 pt-safe-or-20 bg-app-background">
+      <AccountWebColumn className="flex-1 min-h-0">
       <FlatList
+        key={`search-${searchNumColumns}`}
         data={results}
         keyExtractor={getResultKey}
         renderItem={renderItem}
+        numColumns={isWebDesktop && searchNumColumns > 1 ? searchNumColumns : 1}
+        columnWrapperStyle={
+          isWebDesktop && searchNumColumns > 1
+            ? { gap: searchGridGap, justifyContent: "flex-start" }
+            : undefined
+        }
         showsVerticalScrollIndicator={false}
         onEndReached={queryParam ? handleLoadMore : undefined}
         onEndReachedThreshold={0.6}
-        ListHeaderComponent={
-          <View className="pb-2">
-            <View className="flex-row justify-center items-center gap-2 mb-3">
-              <View>
-                {hasActiveFilters(appliedFilters) && (
-                  <View className="absolute w-3 h-3 top-0 right-0 bg-red-primary z-10 rounded-full" />
-                )}
-                <Button
-                  variant="outline"
-                  icon={{ name: "filter-outline", color: "--color-icon" }}
-                  className="w-14 h-14 rounded-full"
-                  onPress={openFilterModal}
-                />
-              </View>
-              <Input
-                className="flex-1"
-                placeholder="Search for a Recipe"
-                iconName="magnify"
-                inputClassName="h-14"
-                touchableIcon
-                onPressIcon={handleSubmitSearch}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                onSubmitEditing={handleSubmitSearch}
-                returnKeyType="search"
-              />
-            </View>
-
-            {!!queryParam && (
-              <Text className="text-muted-foreground">
-                Results for: <Text className="font-bold">{queryParam}</Text>
-              </Text>
-            )}
-
-            {loading && <ActivityIndicator className="mt-3" color="red" />}
-
-            {!!error && <Text style={{ color: "red" }}>{error}</Text>}
-          </View>
-        }
+        ListHeaderComponent={searchHeader}
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingBottom: 24,
+          rowGap: isWebDesktop && searchNumColumns > 1 ? 16 : 0,
         }}
         ListEmptyComponent={
           !loading && !error ? (
@@ -450,6 +594,7 @@ export default function HomeSearchScreen() {
           ) : null
         }
       />
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

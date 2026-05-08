@@ -3,9 +3,17 @@ import admin from "firebase-admin";
 import axios from "axios";
 import { z } from "zod";
 import { _computeAndStorePriceForDoc } from "./combinedRecipeController.js";
+import {
+  galleryImagesForApiResponse,
+  normalizeGalleryImagesArray,
+} from "../utils/recipeGalleryNormalize.js";
 
 //  Store personal recipes in their own collection
 const RECIPES_COLL = "personal_recipes";
+
+//
+const EXTERNAL_RECIPES_COLL = "external_recipes";
+const EXTERNAL_SOURCE = "spoonacular";
 const SPOON_BASE = "https://api.spoonacular.com";
 
 /**
@@ -111,6 +119,86 @@ async function _deleteRecipeImageFolder(uid, recipeId) {
 }
 
 /**
+ * Deletes only the main thumbnail in the recipe folder (not files under gallery/)
+ * Used when replacing or removing the primary image so extra gallery photos stay intact
+ */
+async function _deleteRecipeThumbnailFiles(uid, recipeId) {
+  const bucket = admin.storage().bucket();
+  const prefix = `users/${uid}/recipes/${recipeId}/`;
+  const [files] = await bucket.getFiles({ prefix });
+  const toDelete = files.filter((f) => {
+    const rel = f.name.slice(prefix.length);
+    return !rel.includes("/") && rel.startsWith("thumbnail.");
+  });
+  await Promise.all(toDelete.map((f) => f.delete()));
+}
+
+async function _deleteStorageObjectByPath(storagePath) {
+  if (!storagePath || typeof storagePath !== "string") return;
+  try {
+    const bucket = admin.storage().bucket();
+    await bucket.file(storagePath).delete();
+  } catch (e) {
+    console.warn("Gallery storage delete failed:", storagePath, e?.message);
+  }
+}
+
+/**
+ * Gallery lives on personal_recipes, or on external_recipes (doc id spoonacular_<numericId>).
+ * @returns {Promise<null | {
+ *   docRef: import("firebase-admin/firestore").DocumentReference,
+ *   existing: Record<string, unknown>,
+ *   recipeOwnerId: string | null,
+ *   kind: "personal" | "external",
+ *   routeId: string,
+ *   extDocId: string | null,
+ * }>}
+ */
+async function _resolveGalleryTarget(db, rawId) {
+  const routeId = String(rawId ?? "").trim();
+  if (!routeId) return null;
+
+  const personalRef = db.collection(RECIPES_COLL).doc(routeId);
+  const personalSnap = await personalRef.get();
+  if (personalSnap.exists) {
+    const d = personalSnap.data() || {};
+    return {
+      docRef: personalRef,
+      existing: d,
+      recipeOwnerId: d.userId || null,
+      kind: "personal",
+      routeId,
+      extDocId: null,
+    };
+  }
+
+  let extDocId;
+  if (routeId.startsWith("spoonacular_")) {
+    extDocId = routeId;
+  } else if (/^\d+$/.test(routeId)) {
+    extDocId = `${EXTERNAL_SOURCE}_${routeId}`;
+  } else {
+    return null;
+  }
+
+  const extRef = db.collection(EXTERNAL_RECIPES_COLL).doc(extDocId);
+  const extSnap = await extRef.get();
+  if (!extSnap.exists) {
+    return null;
+  }
+
+  const d = extSnap.data() || {};
+  return {
+    docRef: extRef,
+    existing: d,
+    recipeOwnerId: d.userId || null,
+    kind: "external",
+    routeId,
+    extDocId,
+  };
+}
+
+/**
  * Build a Spoonacular ingredient line like "2 tbsp olive oil"
  */
 function _toIngredientLine(ing) {
@@ -155,7 +243,11 @@ async function _computeAndStoreNutritionForDoc(docRef, recipe) {
     instructions: recipe.instructions || "",
   };
 
-  console.log("[Spoonacular] POST /recipes/analyze", { title: body.title, servings: body.servings, ingredientsCount: ingredientLines.length });
+  console.log("[Spoonacular] POST /recipes/analyze", {
+    title: body.title,
+    servings: body.servings,
+    ingredientsCount: ingredientLines.length,
+  });
 
   const resp = await axios.post(`${SPOON_BASE}/recipes/analyze`, body, {
     params: { includeNutrition: true },
@@ -241,7 +333,9 @@ export const createRecipe = async (req, res) => {
       })),
 
       instructions: recipeData.instructions,
-      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
+      equipment: Array.isArray(recipeData.equipment)
+        ? recipeData.equipment
+        : [],
 
       nutrition: null,
       calories: null,
@@ -394,6 +488,93 @@ export const getUserRecipes = async (req, res) => {
   }
 };
 
+function isValidFirestoreUid(id) {
+  return (
+    typeof id === "string" &&
+    id.length > 0 &&
+    id.length <= 128 &&
+    /^[a-zA-Z0-9]+$/.test(id)
+  );
+}
+
+/**
+ * GET /api/recipes/by-user/:userId
+ * Personal recipes created by that user (any authenticated viewer).
+ */
+export const getRecipesByUserId = async (req, res) => {
+  const { userId } = req.params;
+
+  if (!isValidFirestoreUid(userId)) {
+    return res.status(400).json({
+      error: "Invalid user id",
+      code: "INVALID_REQUEST",
+    });
+  }
+
+  const db = admin.firestore();
+
+  try {
+    const userSnap = await db.collection("users").doc(userId).get();
+    const username = userSnap.exists
+      ? userSnap.data().username || "User"
+      : "User";
+
+    let snap;
+    try {
+      snap = await db
+        .collection(RECIPES_COLL)
+        .where("userId", "==", userId)
+        .orderBy("createdAt", "desc")
+        .get();
+    } catch (error) {
+      const msg = String(error?.message || "");
+      const needsIndex =
+        error?.code === 9 || msg.toLowerCase().includes("requires an index");
+
+      if (needsIndex) {
+        console.warn(
+          "Firestore missing composite index for (userId + createdAt desc). Falling back for by-user query.",
+        );
+        const snap2 = await db
+          .collection(RECIPES_COLL)
+          .where("userId", "==", userId)
+          .get();
+
+        const recipes2 = snap2.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const ta = a?.createdAt?.toMillis?.() ?? 0;
+            const tb = b?.createdAt?.toMillis?.() ?? 0;
+            return tb - ta;
+          });
+
+        return res.json({
+          success: true,
+          userId,
+          username,
+          recipes: recipes2,
+        });
+      }
+
+      throw error;
+    }
+
+    const recipes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return res.json({
+      success: true,
+      userId,
+      username,
+      recipes,
+    });
+  } catch (error) {
+    console.error("Error fetching recipes by user:", error);
+    return res.status(500).json({
+      error: error.message || "Internal server error",
+      code: "FETCH_RECIPES_FAILED",
+    });
+  }
+};
+
 /**
  * Get all recipes (any user) that match optional filters and optional search query.
  * Used by combined-recipes feed. Does not require auth.
@@ -411,17 +592,36 @@ export const getAllRecipes = async (filters = {}) => {
   // Limit the number of recipes to fetch between 1 and 200
   const limit = Math.min(Math.max(Number(filters.limit) || 20, 1), 200);
   const q = typeof filters.q === "string" ? filters.q.trim().toLowerCase() : "";
-  const offset = Number.isFinite(Number(filters.offset)) ? Number(filters.offset) : 0;
-  const cookwareExclude = Array.isArray(filters.cookware) ? filters.cookware : [];
+  const offset = Number.isFinite(Number(filters.offset))
+    ? Number(filters.offset)
+    : 0;
+  const cookwareExclude = Array.isArray(filters.cookware)
+    ? filters.cookware
+    : [];
   const useMyCookwareOnly = Boolean(filters.useMyCookwareOnly);
-  const userCookware = Array.isArray(filters.userCookware) ? filters.userCookware : [];
-  const userCookwareLower = new Set(userCookware.map((c) => String(c).toLowerCase().trim()).filter(Boolean));
+  const userCookware = Array.isArray(filters.userCookware)
+    ? filters.userCookware
+    : [];
+  const userCookwareLower = new Set(
+    userCookware.map((c) => String(c).toLowerCase().trim()).filter(Boolean),
+  );
   // When My cookware is on, only apply exclude for cookware the user HAS (so adding "bowl" when user doesn't have bowl does nothing extra)
-  const effectiveExclude = useMyCookwareOnly && userCookwareLower.size > 0
-    ? cookwareExclude.filter((c) => userCookwareLower.has(String(c).toLowerCase().trim()))
-    : cookwareExclude;
+  const effectiveExclude =
+    useMyCookwareOnly && userCookwareLower.size > 0
+      ? cookwareExclude.filter((c) =>
+          userCookwareLower.has(String(c).toLowerCase().trim()),
+        )
+      : cookwareExclude;
 
-  console.log("[getAllRecipes] filters:", { budgetMin, budgetMax, limit, q, offset, cookwareExclude: cookwareExclude.length, useMyCookwareOnly });
+  console.log("[getAllRecipes] filters:", {
+    budgetMin,
+    budgetMax,
+    limit,
+    q,
+    offset,
+    cookwareExclude: cookwareExclude.length,
+    useMyCookwareOnly,
+  });
 
   const fetchLimit = 200;
   // Don't orderBy viewCount - Firestore excludes docs that don't have that field, which can return 0 results
@@ -446,13 +646,19 @@ export const getAllRecipes = async (filters = {}) => {
       const matches = tokens.every((token) => text.includes(token));
       if (!matches) return false;
     }
-    const equipmentRaw = Array.isArray(r.equipment) ? r.equipment : Array.isArray(r.cookware) ? r.cookware : [];
+    const equipmentRaw = Array.isArray(r.equipment)
+      ? r.equipment
+      : Array.isArray(r.cookware)
+        ? r.cookware
+        : [];
     const equipmentLower = equipmentRaw
       .map((e) => (typeof e === "string" ? e : (e && e.name) || ""))
       .filter(Boolean)
       .map((s) => String(s).toLowerCase().trim());
     if (effectiveExclude.length > 0) {
-      const excludeLower = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+      const excludeLower = new Set(
+        effectiveExclude.map((c) => String(c).toLowerCase().trim()),
+      );
       if (equipmentLower.some((e) => excludeLower.has(e))) return false;
     }
     if (useMyCookwareOnly && userCookwareLower.size > 0) {
@@ -462,10 +668,19 @@ export const getAllRecipes = async (filters = {}) => {
   });
 
   // Sort by viewCount desc (treat missing as 0) so "most viewed first" is preserved
-  filtered.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+  filtered.sort(
+    (a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0),
+  );
 
   const sliced = filtered.slice(offset, offset + limit);
-  console.log("[getAllRecipes] docs from DB:", docs.length, "| after filter:", filtered.length, "| returned (slice):", sliced.length);
+  console.log(
+    "[getAllRecipes] docs from DB:",
+    docs.length,
+    "| after filter:",
+    filtered.length,
+    "| returned (slice):",
+    sliced.length,
+  );
 
   // Return a set number of recipes containing all of its information
   return sliced;
@@ -495,6 +710,42 @@ export const getRecipeById = async (req, res) => {
     const data = snap.data();
     const recipePayload = { id: snap.id, ...data };
 
+    if (data.userId) {
+      try {
+        const authorSnap = await db.collection("users").doc(data.userId).get();
+        if (authorSnap.exists) {
+          const u = authorSnap.data() || {};
+          recipePayload.authorUsername = u.username ?? null;
+          const photoPath =
+            typeof u.profilePhotoStoragePath === "string"
+              ? u.profilePhotoStoragePath
+              : null;
+          if (photoPath) {
+            try {
+              const bucket = admin.storage().bucket();
+              const file = bucket.file(photoPath);
+              const [exists] = await file.exists();
+              if (exists) {
+                const [url] = await file.getSignedUrl({
+                  version: "v4",
+                  action: "read",
+                  expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+                });
+                recipePayload.authorProfilePhotoUrl = url;
+              }
+            } catch (photoErr) {
+              console.warn(
+                "Author profile photo URL failed:",
+                photoErr?.message,
+              );
+            }
+          }
+        }
+      } catch (lookupErr) {
+        console.warn("Author username lookup failed:", lookupErr?.message);
+      }
+    }
+
     // Increment view count only when the viewer is not the recipe owner (don't track own views)
     if (data.userId !== uid) {
       try {
@@ -507,6 +758,12 @@ export const getRecipeById = async (req, res) => {
       }
       recipePayload.viewCount = (Number(data.viewCount) || 0) + 1;
     }
+
+    const galleryNorm = normalizeGalleryImagesArray(
+      data.galleryImages,
+      data.userId || null,
+    );
+    recipePayload.galleryImages = galleryImagesForApiResponse(galleryNorm);
 
     return res.json({
       success: true,
@@ -577,14 +834,14 @@ export const updateRecipe = async (req, res) => {
 
     if (removeImage) {
       try {
-        await _deleteRecipeImageFolder(uid, id);
+        await _deleteRecipeThumbnailFiles(uid, id);
       } catch (e) {
         console.warn("Storage cleanup on image remove:", e.message);
       }
       imageUrl = null;
     } else if (req.file && req.file.buffer) {
       try {
-        await _deleteRecipeImageFolder(uid, id);
+        await _deleteRecipeThumbnailFiles(uid, id);
       } catch (e) {
         console.warn("Storage cleanup before replace:", e.message);
       }
@@ -631,7 +888,9 @@ export const updateRecipe = async (req, res) => {
       extendedIngredients,
 
       instructions: recipeData.instructions,
-      equipment: Array.isArray(recipeData.equipment) ? recipeData.equipment : [],
+      equipment: Array.isArray(recipeData.equipment)
+        ? recipeData.equipment
+        : [],
 
       nutrition: ingredientsWereProvided ? null : (existing.nutrition ?? null),
       calories: ingredientsWereProvided ? null : (existing.calories ?? null),
@@ -726,6 +985,183 @@ export const deleteRecipe = async (req, res) => {
     return res.status(500).json({
       error: error.message || "Internal server error",
       code: error.code || "DELETE_RECIPE_FAILED",
+    });
+  }
+};
+
+/**
+ * POST /api/recipes/:id/gallery-image
+ * Any authenticated user may append a gallery image. Files live under the recipe
+ * owner's folder when userId exists, otherwise under imported_recipes/:id/gallery/.
+ * STORAGE PATHS (I lowkey couldnt find in bucket)
+ *  user recipe: users/{recipeOwnerId}/recipes/{id}/gallery/...
+ *  external recipe: imported_recipes/{id}/gallery/...
+ */
+export const appendRecipeGalleryImage = async (req, res) => {
+  const db = admin.firestore();
+  const { uid } = req.user;
+  const { id } = req.params;
+
+  try {
+    if (!req.file?.buffer) {
+      return res.status(400).json({
+        error: "Image file is required",
+        code: "MISSING_IMAGE",
+      });
+    }
+
+    const target = await _resolveGalleryTarget(db, id);
+    if (!target) {
+      return res.status(404).json({
+        error:
+          "Recipe not found. For Spoonacular recipes, open a recipe that has been loaded in search first.",
+        code: "RECIPE_NOT_FOUND",
+      });
+    }
+
+    const { docRef, existing, recipeOwnerId, kind, routeId, extDocId } = target;
+
+    const ext = (req.file.originalname || "image").split(".").pop() || "jpg";
+    const safeExt = /^[a-z0-9]+$/i.test(ext) ? ext.toLowerCase() : "jpg";
+    const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const storagePath =
+      kind === "personal" && recipeOwnerId
+        ? `users/${recipeOwnerId}/recipes/${routeId}/gallery/${unique}.${safeExt}`
+        : kind === "personal"
+          ? `imported_recipes/${routeId}/gallery/${unique}.${safeExt}`
+          : `external_gallery/${extDocId}/${unique}.${safeExt}`;
+
+    const imageUrl = await _uploadImageToStorage(
+      req.file.buffer,
+      storagePath,
+      req.file.mimetype || "image/jpeg",
+    );
+
+    const prev = normalizeGalleryImagesArray(
+      existing.galleryImages,
+      recipeOwnerId,
+    );
+    const entry = {
+      url: imageUrl,
+      uploadedBy: uid,
+      storagePath,
+    };
+    const galleryImagesStored = [...prev, entry];
+
+    await docRef.update({
+      galleryImages: galleryImagesStored,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      success: true,
+      entry: { url: entry.url, uploadedBy: entry.uploadedBy },
+      galleryImages: galleryImagesForApiResponse(galleryImagesStored),
+    });
+  } catch (error) {
+    console.error("Error appending gallery image:", error);
+    return res.status(500).json({
+      error: error.message || "Internal server error",
+      code: error.code || "GALLERY_UPLOAD_FAILED",
+    });
+  }
+};
+
+/**
+ * DELETE /api/recipes/:id/gallery-image
+ * Body: { "url": "<image url>" }
+ * Removes the primary image (recipe.image) only for the recipe owner, or a gallery
+ * entry if the requester is the owner or the uploader.
+ */
+export const deleteRecipeGalleryImage = async (req, res) => {
+  const db = admin.firestore();
+  const { uid } = req.user;
+  const { id } = req.params;
+
+  try {
+    const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    if (!url) {
+      return res.status(400).json({
+        error: "url is required",
+        code: "MISSING_URL",
+      });
+    }
+
+    const target = await _resolveGalleryTarget(db, id);
+    if (!target) {
+      return res.status(404).json({
+        error: "Recipe not found",
+        code: "RECIPE_NOT_FOUND",
+      });
+    }
+
+    const { docRef, existing, recipeOwnerId } = target;
+
+    if (url === existing.image) {
+      if (!recipeOwnerId || uid !== recipeOwnerId) {
+        return res.status(403).json({
+          error: "Only the recipe owner can remove the main image",
+          code: "FORBIDDEN",
+        });
+      }
+      try {
+        await _deleteRecipeThumbnailFiles(recipeOwnerId, target.routeId);
+      } catch (e) {
+        console.warn("Thumbnail cleanup:", e?.message);
+      }
+      await docRef.update({
+        image: null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return res.json({
+        success: true,
+        image: null,
+        message: "Main image removed",
+      });
+    }
+
+    const normalized = normalizeGalleryImagesArray(
+      existing.galleryImages,
+      recipeOwnerId,
+    );
+    const idx = normalized.findIndex((e) => e.url === url);
+    if (idx === -1) {
+      return res.status(404).json({
+        error: "Image not found in gallery",
+        code: "GALLERY_IMAGE_NOT_FOUND",
+      });
+    }
+
+    const entry = normalized[idx];
+    const canDelete =
+      (recipeOwnerId && uid === recipeOwnerId) ||
+      (entry.uploadedBy && uid === entry.uploadedBy);
+
+    if (!canDelete) {
+      return res.status(403).json({
+        error:
+          "You can only remove photos you uploaded or if you own this recipe",
+        code: "FORBIDDEN",
+      });
+    }
+
+    await _deleteStorageObjectByPath(entry.storagePath);
+
+    const nextStored = normalized.filter((_, i) => i !== idx);
+    await docRef.update({
+      galleryImages: nextStored,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      success: true,
+      galleryImages: galleryImagesForApiResponse(nextStored),
+    });
+  } catch (error) {
+    console.error("Error deleting gallery image:", error);
+    return res.status(500).json({
+      error: error.message || "Internal server error",
+      code: error.code || "GALLERY_DELETE_FAILED",
     });
   }
 };

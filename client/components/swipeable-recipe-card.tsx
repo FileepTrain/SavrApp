@@ -15,6 +15,21 @@ interface SwipeableRecipeCardProps {
   image?: string | null;
 }
 
+/* Swipe to show only remove */
+export interface SwipeableRecipeCardRemovableProps {
+  id: string;
+  title: string;
+  calories?: number;
+  rating?: number;
+  reviewsLength?: number;
+  image?: string | null;
+  onActionPress: () => void;
+  /** Forwarded to `RecipeCard` for custom navigation */
+  onPress?: () => void;
+  /** Label under the trash icon */
+  actionLabel?: string;
+}
+
 export function SwipeableRecipeCard({
   id,
   title,
@@ -74,6 +89,64 @@ export function SwipeableRecipeCard({
       friction={2}
     >
       <RecipeCard id={id} title={title} calories={calories} rating={rating} reviewsLength={reviewsLength} variant="horizontal" imageUrl={image} />
+    </ReanimatedSwipeable>
+  );
+}
+
+export function SwipeableRecipeCardRemovable({
+  id,
+  title,
+  calories = 0,
+  rating = 0,
+  reviewsLength = 0,
+  image,
+  onActionPress,
+  onPress,
+  actionLabel = "Remove",
+}: SwipeableRecipeCardRemovableProps) {
+  const renderRightActions = (
+    _progress: unknown,
+    _translation: unknown,
+    swipeableMethods: { close: () => void }
+  ) => (
+    <View className="ml-2 flex flex-row">
+      <Pressable
+        onPress={() => {
+          onActionPress();
+          swipeableMethods.close();
+        }}
+        className="bg-red-primary justify-center items-center w-24 rounded-xl gap-1"
+      >
+        <IconSymbol name="trash-can-outline" size={28} color="--color-background" />
+        <Text className="text-background text-sm font-medium">{actionLabel}</Text>
+      </Pressable>
+    </View>
+  );
+
+  return (
+    <ReanimatedSwipeable
+      renderRightActions={renderRightActions}
+      overshootRight={false}
+      friction={2}
+    >
+      <View className="relative w-full">
+        <RecipeCard
+          id={id}
+          title={title}
+          calories={calories}
+          rating={rating}
+          reviewsLength={reviewsLength}
+          variant="horizontal"
+          imageUrl={image}
+          onPress={onPress}
+        />
+        <View
+          className="absolute right-2 top-0 bottom-0 justify-center pointer-events-none"
+          pointerEvents="none"
+        >
+          <IconSymbol name="chevron-left" size={22} color="--color-muted-foreground" />
+        </View>
+      </View>
     </ReanimatedSwipeable>
   );
 }

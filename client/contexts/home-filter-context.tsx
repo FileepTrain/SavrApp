@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { useSegments } from "expo-router";
 import FilterModal, { Filters } from "@/components/ui/filter_pop_up";
 
 // Initialize default filters when no filters are modified yet
@@ -9,6 +10,7 @@ const DEFAULT_FILTERS: Filters = {
   foodTypes: [],
   cookware: [],
   useMyCookwareOnly: false,
+  sortBy: "mostViewed",
 };
 
 type HomeFilterContextValue = {
@@ -21,6 +23,11 @@ type HomeFilterContextValue = {
 const HomeFilterContext = createContext<HomeFilterContextValue | null>(null);
 
 export function HomeFilterProvider({ children }: { children: React.ReactNode }) {
+  const segments = useSegments();
+  const showSortOptions = useMemo(
+    () => segments.includes("search"),
+    [segments],
+  );
   const [appliedFilters, setAppliedFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -58,6 +65,7 @@ export function HomeFilterProvider({ children }: { children: React.ReactNode }) 
         onCancel={() => setIsFilterOpen(false)}
         onReset={resetFilters}
         onApply={handleApply}
+        showSortOptions={showSortOptions}
       />
     </HomeFilterContext.Provider>
   );

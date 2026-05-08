@@ -1,25 +1,75 @@
 // app/(toolbar)/account/_layout.tsx
-import { Stack } from "expo-router";
-import { Text, TouchableOpacity } from "react-native";
-import { IconSymbol } from "@/components/ui/icon-symbol";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { PersonalRecipesProvider } from "@/contexts/personal-recipes-context";
+import { ToolbarSubstackScreenHeader } from "@/components/toolbar-substack-screen-header";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
+import { Stack, useRouter } from "expo-router";
+import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
+import React, { useCallback } from "react";
+import { Platform } from "react-native";
+
+function singleParam(v: unknown): string | undefined {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
+  return undefined;
+}
+
+/**
+ * Profile → collection passes `fromProfile=1`. We must handle back before
+ * `navigation.goBack()`, otherwise RN can pop the wrong navigator and land on Home.
+ */
+function AccountStackHeader(props: NativeStackHeaderProps) {
+  const { navigation, route } = props;
+  const router = useRouter();
+  const backInTabHistory = useToolbarHistoryBack();
+
+  const handleBack = useCallback(() => {
+    if (backInTabHistory()) return;
+
+    const p = (route.params ?? {}) as Record<string, unknown>;
+    const collectionId = singleParam(p.collectionId);
+    const ownerUid = singleParam(p.ownerUid);
+    const fromProfile = singleParam(p.fromProfile);
+
+    if (collectionId && fromProfile === "1" && ownerUid) {
+      router.replace({
+        pathname: "/profile/[userId]",
+        params: { userId: ownerUid },
+      });
+      return;
+    }
+
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    if (collectionId) {
+      if (ownerUid) {
+        router.replace({
+          pathname: "/profile/[userId]",
+          params: { userId: ownerUid },
+        });
+        return;
+      }
+      router.replace("/account/collections");
+      return;
+    }
+
+    router.replace("/account");
+  }, [backInTabHistory, navigation, route.params, router]);
+
+  return <ToolbarSubstackScreenHeader {...props} onPressBack={handleBack} />;
+}
 
 export default function AccountStackLayout() {
+  const isWeb = Platform.OS === "web";
   return (
     <PersonalRecipesProvider>
       <Stack
         screenOptions={{
           headerShown: true,
-          headerTransparent: true,
-          header: ({ options, navigation }) => (
-            <SafeAreaView className="px-4 pt-7 flex-row items-center">
-              <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-                <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
-              </TouchableOpacity>
-              <Text className="text-2xl font-bold text-foreground">{options.title}</Text>
-            </SafeAreaView>
-          ),
+          headerTransparent: !isWeb,
+          header: (props) => <AccountStackHeader {...props} />,
         }}
       >
         {/* Account */}
@@ -41,6 +91,18 @@ export default function AccountStackLayout() {
         <Stack.Screen
           name="personal-recipes"
           options={{ title: "Personal Recipes" }}
+        />
+        <Stack.Screen
+          name="collections"
+          options={{ title: "Collections" }}
+        />
+        <Stack.Screen
+          name="recipe-history"
+          options={{ title: "View History" }}
+        />
+        <Stack.Screen
+          name="collection/[collectionId]"
+          options={{ title: "Collection" }}
         />
         <Stack.Screen
           name="create-recipe"

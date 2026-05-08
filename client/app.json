@@ -27,9 +27,11 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.CAMERA"
       ]
+      "package": "com.anonymous.Savr",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png",
       "bundler": "metro"
     },
@@ -59,6 +61,8 @@
           }
         }
       ],
+      "@react-native-community/datetimepicker",
+      "@react-native-google-signin/google-signin"
       [
         "expo-camera",
         {

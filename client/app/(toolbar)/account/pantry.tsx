@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -7,14 +7,27 @@ import {
   Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import {
+  AccountSubpageBody,
+  accountCardShellClassName,
+  accountEmptyStateClassName,
+  accountPrimaryCtaTextClassName,
+} from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
+import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { router, useLocalSearchParams } from "expo-router";
 import { AddPantryItemModal } from "@/components/add-pantry-item-modal";import { ConfirmScannedItemModal } from "@/components/scanned-item-modal.tsx";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { Ingredient } from "@/types/ingredient";
 import { SwipeablePantryItemCard } from "@/components/pantry-card";
+import { useNetwork } from "@/contexts/network-context";
+import { CACHE_KEYS, readCache, writeCache } from "@/utils/offline-cache";
+import { enqueueMutation } from "@/utils/mutation-queue";
 import { Pressable } from "react-native";
-import { SERVER_URL } from "@/constants/api";
+
+import { SERVER_URL } from "@/utils/server-url";
 
 type PantryItem = {
   id: string;
@@ -47,9 +60,27 @@ export default function PantryPage() {
     return value;
   };
 
-  const fetchPantry = async () => {
+  const { isOnline, registerReconnectCallback, unregisterReconnectCallback } = useNetwork();
+
+  // Ref keeps isOnline current inside stable useCallback closures, avoiding stale
+  // closure captures when the reconnect callback fires before React re-renders.
+  const isOnlineRef = useRef(isOnline);
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
+
+  // Stable fetchPantry: reads isOnline from ref at call time.
+  // Serves cache immediately when offline to avoid a pending network timeout.
+  const fetchPantry = useCallback(async () => {
     try {
       setLoading(true);
+
+      if (!isOnlineRef.current) {
+        // No network: serve whatever is in the local cache.
+        const cached = await readCache<PantryItem[]>(CACHE_KEYS.PANTRY);
+        setPantryItems(cached ?? []);
+        return;
+      }
 
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) {
@@ -66,22 +97,33 @@ export default function PantryPage() {
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to fetch pantry");
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to fetch pantry");
-      }
+      const items: PantryItem[] = Array.isArray(data.items) ? data.items : [];
 
-      setPantryItems(Array.isArray(data.items) ? data.items : []);
+      // Cache the latest list so it is available on subsequent offline visits.
+      await writeCache(CACHE_KEYS.PANTRY, items);
+      setPantryItems(items);
     } catch (err) {
       console.error("Error fetching pantry:", err);
+      // On failure, fall back to cache rather than showing nothing.
+      const cached = await readCache<PantryItem[]>(CACHE_KEYS.PANTRY);
+      if (cached) setPantryItems(cached);
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // Stable -- reads isOnline via ref, not closure
 
+  // Load pantry once on mount. The reconnect callback below handles subsequent refreshes.
   useEffect(() => {
     fetchPantry();
-  }, []);
+  }, [fetchPantry]);
+
+  // Re-fetch after connectivity is restored and the mutation queue has been synced.
+  useEffect(() => {
+    registerReconnectCallback("pantry", fetchPantry);
+    return () => unregisterReconnectCallback("pantry");
+  }, [fetchPantry, registerReconnectCallback, unregisterReconnectCallback]);
 
   useEffect(() => {
     const scannedName = getParamString(params.scannedName);
@@ -108,6 +150,11 @@ export default function PantryPage() {
   }, [params.scannedName, params.scannedQuantity, params.scannedUnit]);
 
   const handleSubmitNewItem = async (item: Ingredient) => {
+    // Adding a new pantry item requires the server; block when offline.
+    if (!isOnlineRef.current) {
+      Alert.alert("Offline", "Adding pantry items requires an internet connection.");
+      return;
+    }
     try {
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
@@ -142,13 +189,18 @@ export default function PantryPage() {
     }
   };
 
+
+  /* Handles the submission of an edited pantry item */
   const handleSubmitEditedItem = async (item: Ingredient) => {
+    // Editing requires the ingredient API for validation; block when offline.
+    if (!isOnlineRef.current) {
+      Alert.alert("Offline", "Editing pantry items requires an internet connection.");
+      return;
+    }
     try {
       if (!editingItem) return;
-
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
-
       const payload = {
         name: item.name,
         quantity: item.quantity ?? 1,
@@ -164,20 +216,16 @@ export default function PantryPage() {
         },
         body: JSON.stringify(payload),
       });
-
       const raw = await res.text();
       let data: any = null;
-
       try {
         data = raw ? JSON.parse(raw) : null;
       } catch {
         throw new Error(`Failed to parse update response. Status: ${res.status}`);
       }
-
       if (!res.ok) {
         throw new Error(data?.error || "Failed to update pantry item");
       }
-
       setPantryItems((prev) =>
         prev.map((p) =>
           p.id === editingItem.id
@@ -193,7 +241,6 @@ export default function PantryPage() {
             : p
         )
       );
-
       setIsAddOpen(false);
       setEditingItem(null);
     } catch (err) {
@@ -246,6 +293,15 @@ export default function PantryPage() {
     try {
       setDeletingId(id);
 
+      if (!isOnlineRef.current) {
+        // Queue the delete and apply it to the local state immediately.
+        await enqueueMutation({ type: "DELETE_PANTRY_ITEM", payload: { id } });
+        const updated = pantryItems.filter((x) => x.id !== id);
+        setPantryItems(updated);
+        await writeCache(CACHE_KEYS.PANTRY, updated);
+        return;
+      }
+
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
 
@@ -261,7 +317,9 @@ export default function PantryPage() {
 
       try {
         data = raw ? JSON.parse(raw) : null;
-      } catch {}
+      } catch {
+        // not JSON
+      }
 
       if (!res.ok) {
         throw new Error(
@@ -296,22 +354,52 @@ export default function PantryPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
-      <View className="flex-1 gap-4">
+      <AccountWebColumn className="flex-1 min-h-0">
+        <AccountSubpageBody>
+        <View className="gap-4 flex-1">
+        <View className={accountCardShellClassName}>
+          <Button
+            variant="primary"
+            icon={{
+              name: "plus-circle-outline",
+              position: "left",
+              size: 20,
+              color: "--color-red-primary",
+            }}
+            className="h-[77px] rounded-none"
+            textClassName={accountPrimaryCtaTextClassName}
+            // Block opening the create modal when offline and explain why.
+            onPress={() => {
+              if (!isOnlineRef.current) {
+                Alert.alert("Offline", "Adding pantry items requires an internet connection.");
+                return;
+              }
+              setEditingItem(null);
+              setIsAddOpen(true);
+            }}
+          >
+            Add Pantry Item
+          </Button>
+        </View>
+
         {loading ? (
           <ActivityIndicator size="large" color="red" />
         ) : (
           <FlatList
+            style={{ flex: 1 }}
             data={pantryItems}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 120 }}
             ListEmptyComponent={
-              <Text className="text-center text-foreground opacity-60 mt-6">
+              <Text className={`${accountEmptyStateClassName} mt-6`}>
                 No pantry items yet.
               </Text>
             }
+        /* Creates swipeable pantry item cards */
             renderItem={({ item }) => (
               <SwipeablePantryItemCard
                 item={item}
+                deleting={deletingId === item.id}
                 onEdit={startEdit}
                 onDelete={confirmDelete}
               />
@@ -401,6 +489,9 @@ export default function PantryPage() {
           <Text className="text-3xl font-bold text-white">+</Text>
         </Pressable>
       </View>
+        </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

@@ -21,6 +21,7 @@ type Props = {
 export function SwipeablePantryItemCard({ item, onEdit, onDelete }: Props) {
   const [loading, setLoading] = useState(false);
 
+  /* Delete pantry item */
   const handleDelete = async () => {
     try {
       setLoading(true);
@@ -32,7 +33,7 @@ export function SwipeablePantryItemCard({ item, onEdit, onDelete }: Props) {
       setLoading(false);
     }
   };
-
+  /* Render right actions with edit and delete */
   const renderRightActions = (
     _progress: unknown,
     _translation: unknown,
@@ -73,10 +74,9 @@ export function SwipeablePantryItemCard({ item, onEdit, onDelete }: Props) {
       overshootRight={false}
       friction={2}
     >
-      <View className="bg-background rounded-xl shadow-lg p-4 mb-3">
-        <Text className="text-lg font-bold text-red-primary">{item.name}</Text>
-
-        <Text className="text-foreground">
+      <View className="bg-background rounded-xl shadow-sm p-4 mb-3">
+        <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">{item.name}</Text>
+        <Text className="text-[12px] text-muted-foreground tracking-[0.5px] mt-0.5">
           {item.quantity} {item.unit}
         </Text>
 

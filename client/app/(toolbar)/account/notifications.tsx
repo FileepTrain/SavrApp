@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { Switch, Text, View } from "react-native";
+import { AccountSubpageBody } from "@/components/account/account-subpage-body";
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 
 function NotificationRow({
@@ -14,10 +16,10 @@ function NotificationRow({
   onValueChange: (value: boolean) => void;
 }) {
   return (
-    <View className="bg-background rounded-xl shadow-lg px-4 py-5 flex-row items-center justify-between">
+    <View className="bg-background rounded-xl shadow-sm px-4 py-5 flex-row items-center justify-between">
       <View className="flex-1 pr-4">
-        <Text className="text-lg font-semibold text-foreground">{title}</Text>
-        <Text className="text-sm text-muted-foreground mt-1">{subtitle}</Text>
+        <Text className="text-[16px] font-medium tracking-[0.5px] text-foreground">{title}</Text>
+        <Text className="text-[12px] text-muted-foreground tracking-[0.5px] mt-1">{subtitle}</Text>
       </View>
 
       <Switch
@@ -37,6 +39,8 @@ export default function NotificationsPage() {
 
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
+      <AccountWebColumn className="flex-1">
+        <AccountSubpageBody>
       <View className="gap-4">
         <NotificationRow
           title="Meal Plan Notifications"
@@ -52,6 +56,8 @@ export default function NotificationsPage() {
           onValueChange={setCalendarNotifications}
         />
       </View>
+        </AccountSubpageBody>
+      </AccountWebColumn>
     </ThemedSafeView>
   );
 }

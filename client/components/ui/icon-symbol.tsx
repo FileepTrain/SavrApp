@@ -2,7 +2,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons/";
 import { ComponentProps } from "react";
 import { OpaqueColorValue, type StyleProp, type TextStyle } from "react-native";
 import { useThemePalette } from "@/components/theme-provider";
-import { useTheme } from "@react-navigation/native";
 
 export type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 

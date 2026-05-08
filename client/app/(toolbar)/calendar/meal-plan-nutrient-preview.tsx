@@ -1,5 +1,7 @@
 // Daily nutrient totals: 1 serving breakfast + 1 serving lunch + 1 serving dinner
+import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
+import { useNetwork } from "@/contexts/network-context";
 import {
   ALL_NUTRIENTS,
   loadNutrientDisplayPrefs,
@@ -14,7 +16,8 @@ import {
   View,
 } from "react-native";
 
-import { SERVER_URL } from "@/constants/api";
+import { SERVER_URL } from "@/utils/server-url";
+
 type NutrientRow = {
   name: string;
   amount: number;
@@ -138,6 +141,22 @@ export default function MealPlanNutrientPreviewPage() {
     dinnerIds?: string;
   }>();
 
+  const { isOnline } = useNetwork();
+
+  // Nutrient preview requires external API calls for nutrition data; it cannot function offline.
+  if (!isOnline) {
+    return (
+      <ThemedSafeView className="flex-1 items-center justify-center px-8 gap-4">
+        <Text className="text-foreground text-center text-lg font-semibold">
+          Nutrient preview is unavailable offline
+        </Text>
+        <Text className="text-muted-foreground text-center">
+          Connect to the internet to view nutrient totals for your meal plan.
+        </Text>
+      </ThemedSafeView>
+    );
+  }
+
   function parseIds(value?: string | string[]): string[] {
     if (!value) return [];
     const v = Array.isArray(value) ? value[0] : value;
@@ -238,12 +257,13 @@ export default function MealPlanNutrientPreviewPage() {
   }
 
   return (
-    <ThemedSafeView className="flex-1">
+    <ThemedSafeView className="flex-1 px-4">
       <ScrollView
-        className="flex-1 px-6 pt-6"
-        contentContainerStyle={{ paddingTop: 24 }}
+        className="flex-1 pt-6"
+        contentContainerStyle={{ paddingTop: 24, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
+        <AccountWebColumn>
         {error ? (
           <Text className="text-red-primary mb-3 text-base">{error}</Text>
         ) : toShow.length === 0 ? (
@@ -273,6 +293,7 @@ export default function MealPlanNutrientPreviewPage() {
             ))}
           </View>
         )}
+        </AccountWebColumn>
       </ScrollView>
     </ThemedSafeView>
   );
