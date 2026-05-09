@@ -15,6 +15,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useThemePalette } from "@/components/theme-provider";
 import { FilterCookwareModal } from "@/components/filter-cookware-modal";
 import { FilterAllergiesModal } from "@/components/filter-allergies-modal";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 // Filter modal state options
 export type Filters = {
@@ -104,7 +105,7 @@ export default function FilterModal({
               </Pressable>
             </View>
 
-            <ScrollView className="px-5 py-4" showsVerticalScrollIndicator={true} style={{ maxHeight: "100%" }}>
+            <ScrollView className="px-5 py-4" showsVerticalScrollIndicator={verticalScrollIndicatorVisible} style={{ maxHeight: "100%" }}>
               {/* Budget */}
               <View className="mb-6">
                 <View className="flex-row items-center justify-between mb-2">
@@ -359,7 +360,7 @@ export default function FilterModal({
 
           <ScrollView
             className="px-5 py-4"
-            showsVerticalScrollIndicator={true}
+            showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
             style={{ flex: 1, minHeight: 0 }}
             keyboardShouldPersistTaps="handled"
           >

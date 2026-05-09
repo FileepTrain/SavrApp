@@ -19,6 +19,7 @@ import {
 } from "@/contexts/personal-recipes-context";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 export default function EditRecipePage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
@@ -182,7 +183,7 @@ export default function EditRecipePage() {
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       <AccountWebColumn className="flex-1">
         <AccountSubpageBody>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={verticalScrollIndicatorVisible}>
         <View className="gap-4 pb-6">
           {/* Recipe Photo */}
           <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">

@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import PagerView from "./recipe-notes-pager";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://10.0.2.2:3000";
 
@@ -210,7 +211,7 @@ export function RecipeNotesModal({
                   className="p-5"
                   contentContainerStyle={{ gap: 20, paddingBottom: 32 }}
                   keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={false}
+                  showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
                 >
                   <Text className="text-lg font-bold text-foreground">Manage notes</Text>
 
@@ -293,7 +294,7 @@ export function RecipeNotesModal({
                 </Text>
                 {ingredients.length > 0 ? (
                   <ScrollView
-                    showsVerticalScrollIndicator={false}
+                    showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
                     keyboardShouldPersistTaps="handled"
                   >
                     <IngredientsList
@@ -321,7 +322,7 @@ export function RecipeNotesModal({
                   </View>
                 ) : (
                   <ScrollView
-                    showsVerticalScrollIndicator={false}
+                    showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
                     keyboardShouldPersistTaps="handled"
                     contentContainerStyle={{ gap: 16, paddingBottom: 16 }}
                   >

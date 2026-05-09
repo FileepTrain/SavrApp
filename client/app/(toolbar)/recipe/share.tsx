@@ -5,6 +5,7 @@ import { useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
 import React, { useMemo, useState } from "react";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { Alert, ScrollView, Text, View } from "react-native";
 
 export default function ShareRecipePage() {
@@ -43,6 +44,7 @@ export default function ShareRecipePage() {
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       <ScrollView
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
       >
         <View className="gap-3 mt-2">

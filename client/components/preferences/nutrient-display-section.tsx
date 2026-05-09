@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { ALL_NUTRIENTS, DEFAULT_DISPLAY_NUTRIENTS } from "@/utils/nutrients";
 import Input from "@/components/ui/input";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 interface NutrientDisplaySectionProps {
   value: string[];
@@ -47,7 +48,7 @@ export function NutrientDisplaySection({ value, onChange, error }: NutrientDispl
         </Text>
       </View>
 
-      <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={false}>
+      <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={verticalScrollIndicatorVisible}>
         <View className="gap-2 pb-4">
           {filteredNutrients.map((nutrient) => {
             const isSelected = value.includes(nutrient);

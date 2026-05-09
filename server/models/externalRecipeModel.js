@@ -282,14 +282,16 @@ async function upsertFromExternal(externalSource, externalId, simplified) {
   return { docId };
 }
 
-// Home feed get latest cached recipes
+// Home feed get latest cached recipes (newest first by updatedAt)
 async function getLatestCached(limit = 20) {
   const db = getDb();
+
+  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 500);
 
   const snap = await db
     .collection(COLL)
     .orderBy("updatedAt", "desc")
-    .limit(limit)
+    .limit(safeLimit)
     .get();
 
   return snap.docs.map((d) => {

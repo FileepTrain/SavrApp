@@ -16,6 +16,7 @@ import { IngredientsList } from "@/components/recipe/ingredients-list";
 
 import { usePersonalRecipes } from "@/contexts/personal-recipes-context";
 import { validateRecipe } from "@/types/recipe";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 export default function CreateRecipePage() {
   const { createRecipe } = usePersonalRecipes();
@@ -119,7 +120,7 @@ export default function CreateRecipePage() {
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       <AccountWebColumn className="flex-1">
         <AccountSubpageBody>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={verticalScrollIndicatorVisible}>
         <View className="gap-4 pb-6">
           {/* Photo */}
           <View className="bg-background p-4 gap-2 rounded-xl shadow-sm">

@@ -9,8 +9,8 @@ import { CommonActions } from "@react-navigation/native";
 import { useNavigation } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
+import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
 import {
   ActivityIndicator,
   FlatList,
@@ -22,6 +22,7 @@ import { RecipeCard } from "@/components/recipe-card";
 import type { Filters } from "@/components/ui/filter_pop_up";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { SERVER_URL as API_BASE } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 type SearchResult = {
   id: number | string;
@@ -40,18 +41,42 @@ function singleQueryParam(v: string | string[] | undefined): string | undefined 
   return undefined;
 }
 const PAGE_SIZE = 10;
-/** ThemedSafeView horizontal inset (px-6). */
-const SEARCH_SAFE_H_PADDING = 48;
-/** FlatList `paddingHorizontal: 24` × 2 — width available for tiles/grid. */
-const SEARCH_LIST_H_PADDING = 48;
+
+/** Larger horizontal thumbnails on web desktop search (default card is 128×96). */
+const DESKTOP_SEARCH_THUMB = { width: 208, height: 152 } as const;
+
+/** Whether another page likely exists for one segment (cached DB or live API). */
+function computeSegmentMore(params: {
+  nextOffset: number;
+  segmentTotal: number | null | undefined;
+  returned: number;
+  /** When true, prefer strict `nextOffset < segmentTotal` for numeric totals (Spoonacular-scale). */
+  strictNumericTotal: boolean;
+}): boolean {
+  const { nextOffset, segmentTotal, returned, strictNumericTotal } = params;
+  if (typeof segmentTotal === "number") {
+    if (strictNumericTotal || segmentTotal > 300) {
+      return nextOffset < segmentTotal;
+    }
+    if (nextOffset < segmentTotal) return true;
+    if (returned >= PAGE_SIZE) return true;
+    return returned > 0 && segmentTotal <= 250 && nextOffset >= segmentTotal;
+  }
+  return returned >= PAGE_SIZE;
+}
 
 type SearchCacheEntry = {
   personalResults: SearchResult[];
-  externalResults: SearchResult[];
+  cachedExternalResults: SearchResult[];
+  liveExternalResults: SearchResult[];
   personalOffset: number;
-  externalOffset: number;
+  cachedExternalOffset: number;
+  liveExternalOffset: number;
   personalExhausted: boolean;
+  cachedExternalExhausted: boolean;
+  liveExternalExhausted: boolean;
   hasMore: boolean;
+  liveStrictPagination?: boolean;
 };
 
 function buildSearchKey(query: string, filters: Filters): string {
@@ -94,26 +119,48 @@ function getResultKey(item: SearchResult): string {
   return isExternalId(item.id) ? `e-${id}` : `p-${id}`;
 }
 
+function dedupeResults(items: SearchResult[]): SearchResult[] {
+  const seen = new Set<string>();
+  const out: SearchResult[] = [];
+  for (const item of items) {
+    const key = getResultKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+/** Dedupe + sort (used for merged personal+cached, or a single source). */
+function sortSearchResults(
+  items: SearchResult[],
+  sortBy: string | undefined,
+): SearchResult[] {
+  const unique = dedupeResults(items);
+  const v = (x: SearchResult) => Number(x?.viewCount) || 0;
+  const r = (x: SearchResult) => Number(x?.rating) || 0;
+  const c = (x: SearchResult) => Number(x?.calories) || 0;
+  const id = (x: SearchResult) => String(x?.id ?? "");
+  const sb = sortBy ?? "mostViewed";
+  if (sb === "rating") {
+    unique.sort((a, b) => r(b) - r(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
+  } else if (sb === "caloriesAsc") {
+    unique.sort((a, b) => c(a) - c(b) || v(b) - v(a) || id(a).localeCompare(id(b)));
+  } else if (sb === "caloriesDesc") {
+    unique.sort((a, b) => c(b) - c(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
+  } else {
+    unique.sort((a, b) => v(b) - v(a) || id(a).localeCompare(id(b)));
+  }
+  return unique;
+}
+
+type SearchListRow = { kind: "recipe-row"; key: string; recipes: SearchResult[] };
+
 export default function HomeSearchScreen() {
   const navigation = useNavigation();
-  const { isWebDesktop, contentWidth } = useWebDesktopLayout();
-  const accountMax = useAccountWebColumnWidth();
-  const parentInner = Math.max(0, contentWidth - SEARCH_SAFE_H_PADDING);
-  const columnWidth = useMemo(() => {
-    if (isWebDesktop && accountMax != null) {
-      return Math.min(accountMax, parentInner);
-    }
-    return parentInner;
-  }, [isWebDesktop, accountMax, parentInner]);
-  const searchGridInner = Math.max(0, columnWidth - SEARCH_LIST_H_PADDING);
-  const searchNumColumns =
-    !isWebDesktop ? 1 : searchGridInner >= 1000 ? 4 : searchGridInner >= 720 ? 3 : 2;
-  const searchGridGap = 16;
-  const searchTileWidth =
-    searchNumColumns > 1
-      ? (searchGridInner - searchGridGap * (searchNumColumns - 1)) /
-        searchNumColumns
-      : undefined;
+  const { isWebDesktop } = useWebDesktopLayout();
+  const desktopColumnMax = useAccountWebColumnWidth();
+  const isDesktopWeb = Platform.OS === "web" && isWebDesktop;
 
   const { mode, mealPlanId, mealPlanDate } = useLocalSearchParams<{
     mode?: string;
@@ -159,66 +206,84 @@ export default function HomeSearchScreen() {
   const [searchQuery, setSearchQuery] = useState(queryParam);
 
   const [personalResults, setPersonalResults] = useState<SearchResult[]>([]);
-  const [externalResults, setExternalResults] = useState<SearchResult[]>([]);
+  const [cachedExternalResults, setCachedExternalResults] = useState<SearchResult[]>([]);
+  const [liveExternalResults, setLiveExternalResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false); // initial load
   const [loadingMore, setLoadingMore] = useState(false); // pagination load
   const [error, setError] = useState("");
 
   const [personalOffset, setPersonalOffset] = useState(0);
-  const [externalOffset, setExternalOffset] = useState(0);
+  const [cachedExternalOffset, setCachedExternalOffset] = useState(0);
+  const [liveExternalOffset, setLiveExternalOffset] = useState(0);
   const [personalExhausted, setPersonalExhausted] = useState(false);
+  const [cachedExternalExhausted, setCachedExternalExhausted] = useState(false);
+  const [liveExternalExhausted, setLiveExternalExhausted] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const fetchingRef = useRef(false);
+  /** Live Spoonacular totals: use strict offset vs total. */
+  const liveStrictPaginationRef = useRef(false);
 
-  // Merge + dedupe then apply selected ordering.
-  const results = useMemo(() => {
-    const merged = [...personalResults, ...externalResults];
-    const seen = new Set<string>();
-    const unique: SearchResult[] = [];
-    for (const item of merged) {
-      const key = getResultKey(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(item);
+  /** Personal + saved-in-app (cached) merged; live API rows listed after. */
+  const sortedMergedLocal = useMemo(
+    () =>
+      sortSearchResults(
+        [...personalResults, ...cachedExternalResults],
+        appliedFilters.sortBy ?? undefined,
+      ),
+    [personalResults, cachedExternalResults, appliedFilters.sortBy],
+  );
+  const sortedLiveExternal = useMemo(
+    () => sortSearchResults(liveExternalResults, appliedFilters.sortBy ?? undefined),
+    [liveExternalResults, appliedFilters.sortBy],
+  );
+
+  const listRows = useMemo((): SearchListRow[] => {
+    const rows: SearchListRow[] = [];
+
+    for (let i = 0; i < sortedMergedLocal.length; i += 1) {
+      rows.push({
+        kind: "recipe-row",
+        key: `row-local-${i}`,
+        recipes: sortedMergedLocal.slice(i, i + 1),
+      });
     }
-    const v = (x: SearchResult) => Number(x?.viewCount) || 0;
-    const r = (x: SearchResult) => Number(x?.rating) || 0;
-    const c = (x: SearchResult) => Number(x?.calories) || 0;
-    const id = (x: SearchResult) => String(x?.id ?? "");
-    const sortBy = appliedFilters.sortBy ?? "mostViewed";
-    if (sortBy === "rating") {
-      unique.sort((a, b) => r(b) - r(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
-    } else if (sortBy === "caloriesAsc") {
-      unique.sort((a, b) => c(a) - c(b) || v(b) - v(a) || id(a).localeCompare(id(b)));
-    } else if (sortBy === "caloriesDesc") {
-      unique.sort((a, b) => c(b) - c(a) || v(b) - v(a) || id(a).localeCompare(id(b)));
-    } else {
-      unique.sort((a, b) => v(b) - v(a) || id(a).localeCompare(id(b)));
+
+    for (let i = 0; i < sortedLiveExternal.length; i += 1) {
+      rows.push({
+        kind: "recipe-row",
+        key: `row-live-${i}`,
+        recipes: sortedLiveExternal.slice(i, i + 1),
+      });
     }
-    return unique;
-  }, [personalResults, externalResults, appliedFilters.sortBy]);
+
+    return rows;
+  }, [sortedMergedLocal, sortedLiveExternal]);
 
   const searchKey = useMemo(
     () => buildSearchKey(queryParam, appliedFilters),
     [queryParam, appliedFilters],
   );
 
-  // Single place for all API calls: personal (filters + search), and when there is a query, external search via combined endpoint
+  // Single place for all API calls: personal, cached external_recipes, live Spoonacular (combined endpoint)
   useEffect(() => {
     const trimmed = queryParam.trim();
     setError("");
 
-    // If we have a cached entry for this query + filters, restore it instead of refetching
     if (trimmed) {
       const cached = searchCache[searchKey];
       if (cached) {
         setPersonalResults(cached.personalResults);
-        setExternalResults(cached.externalResults);
+        setCachedExternalResults(cached.cachedExternalResults);
+        setLiveExternalResults(cached.liveExternalResults);
         setPersonalOffset(cached.personalOffset);
-        setExternalOffset(cached.externalOffset);
+        setCachedExternalOffset(cached.cachedExternalOffset);
+        setLiveExternalOffset(cached.liveExternalOffset);
         setPersonalExhausted(cached.personalExhausted);
+        setCachedExternalExhausted(cached.cachedExternalExhausted);
+        setLiveExternalExhausted(cached.liveExternalExhausted);
         setHasMore(cached.hasMore);
+        liveStrictPaginationRef.current = cached.liveStrictPagination ?? false;
         setLoading(false);
         return;
       }
@@ -226,9 +291,13 @@ export default function HomeSearchScreen() {
 
     setLoading(true);
     setPersonalOffset(0);
-    setExternalOffset(0);
+    setCachedExternalOffset(0);
+    setLiveExternalOffset(0);
     setPersonalExhausted(false);
+    setCachedExternalExhausted(false);
+    setLiveExternalExhausted(false);
     setHasMore(true);
+    liveStrictPaginationRef.current = false;
 
     let cancelled = false;
 
@@ -239,6 +308,8 @@ export default function HomeSearchScreen() {
         limit: String(PAGE_SIZE),
         q: trimmed,
         personalOffset: "0",
+        cachedExternalOffset: "0",
+        liveExternalOffset: "0",
         externalOffset: "0",
         allergies: (appliedFilters.allergies || []).join(","),
         cookware: (appliedFilters.cookware || []).join(","),
@@ -258,60 +329,98 @@ export default function HomeSearchScreen() {
       if (cancelled) return;
       const params = buildParams(userCookwareList);
       fetch(`${API_BASE}/api/combined-recipes?${params}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to load recipes.");
-        return r.json();
-      })
-      .then((combinedData) => {
-        if (cancelled) return;
+        .then((r) => {
+          if (!r.ok) throw new Error("Failed to load recipes.");
+          return r.json();
+        })
+        .then((combinedData) => {
+          if (cancelled) return;
 
-        const personal = combinedData?.personalResults ?? [];
-        const ext = combinedData?.externalResults ?? [];
-        const meta = combinedData?.meta ?? null;
+          const personal = combinedData?.personalResults ?? [];
+          const cachedExt = combinedData?.cachedExternalResults ?? [];
+          const liveExt = combinedData?.liveExternalResults ?? [];
+          const meta = combinedData?.meta ?? null;
+          const liveMeta = combinedData?.liveExternalMeta as { source?: string } | undefined;
 
-        setPersonalResults(personal);
-        setExternalResults(ext);
-        const personalReturned = meta?.personalReturned ?? personal.length;
-        const externalReturned = meta?.externalReturned ?? ext.length;
-        const externalTotal = meta?.externalTotalResults as number | null | undefined;
-        const nextPersonalOffset = (meta?.personalOffset ?? 0) + personalReturned;
-        const nextExternalOffset = (meta?.externalOffset ?? 0) + externalReturned;
+          const cachedTotal = meta?.cachedExternalTotal as number | null | undefined;
+          const liveTotal = meta?.liveExternalTotal as number | null | undefined;
+          const personalReturned = meta?.personalReturned ?? personal.length;
+          const cachedReturned = meta?.cachedExternalReturned ?? cachedExt.length;
+          const liveReturned = meta?.liveExternalReturned ?? liveExt.length;
 
-        setPersonalOffset(nextPersonalOffset);
-        setExternalOffset(nextExternalOffset);
+          const baseCachedOff = meta?.cachedExternalOffset ?? 0;
+          const baseLiveOff = meta?.liveExternalOffset ?? 0;
+          const nextPersonalOffset = (meta?.personalOffset ?? 0) + personalReturned;
+          const nextCachedOffset = baseCachedOff + cachedReturned;
+          const nextLiveOffset = baseLiveOff + liveReturned;
 
-        const personalExhausted = meta?.personalExhausted ?? personal.length < PAGE_SIZE;
-        const morePersonal = !personalExhausted;
-        // When personal is exhausted, allow loading more so fetchMore will request Spoonacular (externalOnly)
-        const moreExternal =
-          typeof externalTotal === "number"
-            ? nextExternalOffset < externalTotal
-            : true; // unknown total, so allow try
-        setHasMore(morePersonal || (personalExhausted && moreExternal));
-        setPersonalExhausted(personalExhausted);
+          if (
+            liveMeta?.source === "spoonacular-live" ||
+            (typeof liveTotal === "number" && liveTotal > 300)
+          ) {
+            liveStrictPaginationRef.current = true;
+          }
 
-        searchCache[searchKey] = {
-          personalResults: personal,
-          externalResults: ext,
-          personalOffset: nextPersonalOffset,
-          externalOffset: nextExternalOffset,
-          personalExhausted,
-          hasMore: morePersonal || (personalExhausted && moreExternal),
-        };
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e?.message ?? "Network error.");
-          setPersonalResults([]);
-          setExternalResults([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+          const moreCached = computeSegmentMore({
+            nextOffset: nextCachedOffset,
+            segmentTotal: cachedTotal,
+            returned: cachedReturned,
+            strictNumericTotal: false,
+          });
+          const cachedExh = !moreCached;
+
+          const moreLive = computeSegmentMore({
+            nextOffset: nextLiveOffset,
+            segmentTotal: liveTotal,
+            returned: liveReturned,
+            strictNumericTotal: liveStrictPaginationRef.current,
+          });
+          const liveExh = !moreLive;
+
+          const personalExhaustedNow = meta?.personalExhausted ?? false;
+          const hasMoreVal = !(personalExhaustedNow && cachedExh && liveExh);
+
+          setPersonalResults(personal);
+          setCachedExternalResults(cachedExt);
+          setLiveExternalResults(liveExt);
+          setPersonalOffset(nextPersonalOffset);
+          setCachedExternalOffset(nextCachedOffset);
+          setLiveExternalOffset(nextLiveOffset);
+          setPersonalExhausted(personalExhaustedNow);
+          setCachedExternalExhausted(cachedExh);
+          setLiveExternalExhausted(liveExh);
+          setHasMore(hasMoreVal);
+
+          searchCache[searchKey] = {
+            personalResults: personal,
+            cachedExternalResults: cachedExt,
+            liveExternalResults: liveExt,
+            personalOffset: nextPersonalOffset,
+            cachedExternalOffset: nextCachedOffset,
+            liveExternalOffset: nextLiveOffset,
+            personalExhausted: personalExhaustedNow,
+            cachedExternalExhausted: cachedExh,
+            liveExternalExhausted: liveExh,
+            hasMore: hasMoreVal,
+            liveStrictPagination: liveStrictPaginationRef.current,
+          };
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setError(e?.message ?? "Network error.");
+            setPersonalResults([]);
+            setCachedExternalResults([]);
+            setLiveExternalResults([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     };
     runFetch();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [queryParam, appliedFilters, searchKey]);
 
   // Keep search input in sync with URL param
@@ -329,16 +438,29 @@ export default function HomeSearchScreen() {
     setLoadingMore(true);
     setError("");
 
+    type Phase = "personal" | "cached" | "live" | "done";
+    let phase: Phase;
+    if (!personalExhausted) phase = "personal";
+    else if (!cachedExternalExhausted) phase = "cached";
+    else if (!liveExternalExhausted) phase = "live";
+    else phase = "done";
+
+    if (phase === "done") {
+      setLoadingMore(false);
+      fetchingRef.current = false;
+      setHasMore(false);
+      return;
+    }
+
     const userCookwareList = appliedFilters.useMyCookwareOnly
       ? Array.from(await loadUserCookware())
       : [];
+
     const params = new URLSearchParams({
       budgetMin: String(appliedFilters.budgetMin),
       budgetMax: String(appliedFilters.budgetMax),
       limit: String(PAGE_SIZE),
       q: trimmed,
-      personalOffset: String(personalOffset),
-      externalOffset: String(externalOffset),
       allergies: (appliedFilters.allergies || []).join(","),
       cookware: (appliedFilters.cookware || []).join(","),
       useMyCookwareOnly: appliedFilters.useMyCookwareOnly ? "true" : "false",
@@ -347,10 +469,16 @@ export default function HomeSearchScreen() {
     if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
       params.set("userCookware", userCookwareList.join(","));
     }
-    if (personalExhausted) {
-      params.set("externalOnly", "true");
-    } else {
+
+    if (phase === "personal") {
       params.set("personalOnly", "true");
+      params.set("personalOffset", String(personalOffset));
+    } else if (phase === "cached") {
+      params.set("cachedExternalOnly", "true");
+      params.set("cachedExternalOffset", String(cachedExternalOffset));
+    } else {
+      params.set("liveExternalOnly", "true");
+      params.set("liveExternalOffset", String(liveExternalOffset));
     }
 
     try {
@@ -364,60 +492,145 @@ export default function HomeSearchScreen() {
       }
 
       const personal = data?.personalResults ?? [];
-      const ext = data?.externalResults ?? [];
+      const cachedExt = data?.cachedExternalResults ?? [];
+      const liveExt = data?.liveExternalResults ?? [];
       const meta = data?.meta ?? null;
-      setPersonalExhausted(meta?.personalExhausted ?? false);
-      setPersonalResults((prev) => [...prev, ...personal]);
-      setExternalResults((prev) => [...prev, ...ext]);
+      const liveMeta = data?.liveExternalMeta as { source?: string } | undefined;
 
-      const personalReturned = meta?.personalReturned ?? 0;
-      const externalReturned = meta?.externalReturned ?? 0;
-      const externalTotal = meta?.externalTotalResults as number | null | undefined;
-      const externalOffsetFromMeta = meta?.externalOffset ?? 0;
+      const cachedTotal = meta?.cachedExternalTotal as number | null | undefined;
+      const liveTotal = meta?.liveExternalTotal as number | null | undefined;
+      const personalReturned = meta?.personalReturned ?? personal.length;
+      const cachedReturned = meta?.cachedExternalReturned ?? cachedExt.length;
+      const liveReturned = meta?.liveExternalReturned ?? liveExt.length;
 
-      setPersonalOffset((prev) => prev + personalReturned);
-      setExternalOffset((prev) => prev + externalReturned);
+      const baseCachedOff = meta?.cachedExternalOffset ?? 0;
+      const baseLiveOff = meta?.liveExternalOffset ?? 0;
+      const nextCachedOffset = baseCachedOff + cachedReturned;
+      const nextLiveOffset = baseLiveOff + liveReturned;
 
-      const morePersonal = !(meta?.personalExhausted ?? false);
-      const moreExternal =
-        typeof externalTotal === "number"
-          ? externalOffsetFromMeta + externalReturned < externalTotal
-          : externalReturned === PAGE_SIZE;
+      if (
+        liveMeta?.source === "spoonacular-live" ||
+        (typeof liveTotal === "number" && liveTotal > 300)
+      ) {
+        liveStrictPaginationRef.current = true;
+      }
 
-      /* Fetch more if: 
-      * - there are still more personal results to fetch
-      * - the number of external results consumed so far is less than the total number of external results
-      */
-      setHasMore(morePersonal || moreExternal);
+      const personalExhaustedNow = meta?.personalExhausted ?? false;
 
-      // Update cache entry for this query + filters if it exists
+      const moreCached = computeSegmentMore({
+        nextOffset: nextCachedOffset,
+        segmentTotal: cachedTotal,
+        returned: cachedReturned,
+        strictNumericTotal: false,
+      });
+
+      const moreLive = computeSegmentMore({
+        nextOffset: nextLiveOffset,
+        segmentTotal: liveTotal,
+        returned: liveReturned,
+        strictNumericTotal: liveStrictPaginationRef.current,
+      });
+
+      if (phase === "personal") {
+        setPersonalResults((prev) => [...prev, ...personal]);
+        setPersonalOffset((prev) => prev + personalReturned);
+        setPersonalExhausted(personalExhaustedNow);
+      } else if (phase === "cached") {
+        setCachedExternalResults((prev) => [...prev, ...cachedExt]);
+        setCachedExternalOffset(nextCachedOffset);
+        setCachedExternalExhausted(!moreCached);
+      } else {
+        setLiveExternalResults((prev) => [...prev, ...liveExt]);
+        setLiveExternalOffset(nextLiveOffset);
+        setLiveExternalExhausted(!moreLive);
+      }
+
+      const nextPe =
+        phase === "personal" ? personalExhaustedNow : personalExhausted;
+      const nextCe =
+        phase === "cached" ? !moreCached : cachedExternalExhausted;
+      const nextLe = phase === "live" ? !moreLive : liveExternalExhausted;
+
+      const hasMoreVal = !(nextPe && nextCe && nextLe);
+      setHasMore(hasMoreVal);
+
       const trimmedKey = trimmed ? searchKey : null;
       if (trimmedKey && searchCache[trimmedKey]) {
-        const cached = searchCache[trimmedKey];
+        const c = searchCache[trimmedKey];
+        const updatedPersonal =
+          phase === "personal"
+            ? [...c.personalResults, ...personal]
+            : c.personalResults;
+        const updatedCached =
+          phase === "cached"
+            ? [...c.cachedExternalResults, ...cachedExt]
+            : c.cachedExternalResults;
+        const updatedLive =
+          phase === "live"
+            ? [...c.liveExternalResults, ...liveExt]
+            : c.liveExternalResults;
         searchCache[trimmedKey] = {
-          ...cached,
-          personalResults: [...cached.personalResults, ...personal],
-          externalResults: [...cached.externalResults, ...ext],
-          personalOffset: cached.personalOffset + (meta?.personalReturned ?? 0),
-          externalOffset: cached.externalOffset + (meta?.externalReturned ?? 0),
-          personalExhausted:
-            meta?.personalExhausted
-              ? meta.personalExhausted
-              : cached.personalExhausted || (meta?.personalReturned ?? 0) < PAGE_SIZE,
-          hasMore:
-            morePersonal ||
-            (typeof externalTotal === "number"
-              ? externalOffsetFromMeta + externalReturned < externalTotal
-              : externalReturned === PAGE_SIZE),
+          ...c,
+          personalResults: updatedPersonal,
+          cachedExternalResults: updatedCached,
+          liveExternalResults: updatedLive,
+          personalOffset:
+            phase === "personal"
+              ? c.personalOffset + personalReturned
+              : c.personalOffset,
+          cachedExternalOffset:
+            phase === "cached" ? nextCachedOffset : c.cachedExternalOffset,
+          liveExternalOffset:
+            phase === "live" ? nextLiveOffset : c.liveExternalOffset,
+          personalExhausted: nextPe,
+          cachedExternalExhausted: nextCe,
+          liveExternalExhausted: nextLe,
+          hasMore: hasMoreVal,
+          liveStrictPagination: liveStrictPaginationRef.current,
         };
       }
-    } catch (e: any) {
-      setError(e?.message ?? "Network error.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Network error.");
       setHasMore(false);
     } finally {
       setLoadingMore(false);
       fetchingRef.current = false;
     }
+  };
+
+  const renderListRow = ({ item }: { item: SearchListRow }) => {
+    const recipes = item.recipes;
+    const recipeProps = (recipe: SearchResult) => {
+      const id = String(recipe.id);
+      return {
+        id,
+        title: recipe.title,
+        imageUrl: recipe.image ?? undefined,
+        calories: recipe.calories ?? undefined,
+        rating: recipe.rating ?? 0,
+        reviewsLength: recipe.reviewsLength ?? 0,
+        onPress: isSelectionMode ? () => handleSelectRecipe({ id }) : undefined,
+      };
+    };
+
+    return (
+      <>
+        {recipes.map((recipe) => (
+          <View key={getResultKey(recipe)} className="mb-3">
+            <RecipeCard
+              {...recipeProps(recipe)}
+              variant="horizontal"
+              {...(Platform.OS === "web" && isWebDesktop
+                ? {
+                    horizontalThumbnailWidth: DESKTOP_SEARCH_THUMB.width,
+                    horizontalThumbnailHeight: DESKTOP_SEARCH_THUMB.height,
+                  }
+                : {})}
+            />
+          </View>
+        ))}
+      </>
+    );
   };
 
   const handleSubmitSearch = () => {
@@ -432,36 +645,6 @@ export default function HomeSearchScreen() {
     if (loading || loadingMore) return;
 
     fetchMore();
-  };
-
-  const renderItem = ({ item }: { item: SearchResult }) => {
-    const id = String(item.id);
-    const common = {
-      id,
-      title: item.title,
-      imageUrl: item.image ?? undefined,
-      calories: item.calories ?? undefined,
-      rating: item.rating ?? 0,
-      reviewsLength: item.reviewsLength ?? 0,
-      onPress: isSelectionMode ? () => handleSelectRecipe({ id }) : undefined,
-    };
-
-    if (isWebDesktop && searchNumColumns > 1) {
-      return (
-        <RecipeCard
-          {...common}
-          variant="default"
-          tileWidth={searchTileWidth}
-          prominent
-        />
-      );
-    }
-
-    return (
-      <View className="mb-3">
-        <RecipeCard {...common} variant="horizontal" />
-      </View>
-    );
   };
 
   // Search requires live API access; show a clear offline state instead of a broken experience.
@@ -556,45 +739,55 @@ export default function HomeSearchScreen() {
     </View>
   );
 
+  const searchListContentStyle = {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    ...(isDesktopWeb && desktopColumnMax != null
+      ? {
+          maxWidth: desktopColumnMax,
+          width: "100%" as const,
+          alignSelf: "center" as const,
+        }
+      : {}),
+  };
+
+  const searchFlatList = (
+    <FlatList
+      key="search-list"
+      data={listRows}
+      keyExtractor={(row) => row.key}
+      renderItem={renderListRow}
+      style={isDesktopWeb ? { flex: 1, width: "100%" } : undefined}
+      showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
+      onEndReached={queryParam ? handleLoadMore : undefined}
+      onEndReachedThreshold={0.6}
+      ListHeaderComponent={searchHeader}
+      contentContainerStyle={searchListContentStyle}
+      ListEmptyComponent={
+        !loading && !error ? (
+          <Text className="opacity-60 mt-2 px-6">
+            No recipes found that match your filters and search query.
+          </Text>
+        ) : null
+      }
+      ListFooterComponent={
+        queryParam && loadingMore ? (
+          <View className="py-4">
+            <ActivityIndicator />
+          </View>
+        ) : null
+      }
+    />
+  );
+
   return (
     <ThemedSafeView className="flex-1 pt-safe-or-20 bg-app-background">
-      <AccountWebColumn className="flex-1 min-h-0">
-      <FlatList
-        key={`search-${searchNumColumns}`}
-        data={results}
-        keyExtractor={getResultKey}
-        renderItem={renderItem}
-        numColumns={isWebDesktop && searchNumColumns > 1 ? searchNumColumns : 1}
-        columnWrapperStyle={
-          isWebDesktop && searchNumColumns > 1
-            ? { gap: searchGridGap, justifyContent: "flex-start" }
-            : undefined
-        }
-        showsVerticalScrollIndicator={false}
-        onEndReached={queryParam ? handleLoadMore : undefined}
-        onEndReachedThreshold={0.6}
-        ListHeaderComponent={searchHeader}
-        contentContainerStyle={{
-          paddingHorizontal: 24,
-          paddingBottom: 24,
-          rowGap: isWebDesktop && searchNumColumns > 1 ? 16 : 0,
-        }}
-        ListEmptyComponent={
-          !loading && !error ? (
-            <Text className="opacity-60 mt-2 px-6">
-              No recipes found that match your filters and search query.
-            </Text>
-          ) : null
-        }
-        ListFooterComponent={
-          queryParam && loadingMore ? (
-            <View className="py-4">
-              <ActivityIndicator />
-            </View>
-          ) : null
-        }
-      />
-      </AccountWebColumn>
+      {isDesktopWeb ? (
+        <View className="flex-1 w-full min-h-0 self-stretch">{searchFlatList}</View>
+      ) : (
+        <AccountWebColumn className="flex-1 min-h-0">{searchFlatList}</AccountWebColumn>
+      )}
     </ThemedSafeView>
   );
 }

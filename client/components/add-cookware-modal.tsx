@@ -1,6 +1,7 @@
 import { useThemePalette } from "@/components/theme-provider";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { ALL_COOKWARE_SORTED, loadUserCookware } from "@/utils/cookware";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Modal,
@@ -155,7 +156,7 @@ export function AddCookwareModal({
             <ScrollView
               className="px-4 flex-1"
               style={{ flex: 1 }}
-              showsVerticalScrollIndicator={true}
+              showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
               keyboardShouldPersistTaps="handled"
             >
               {filteredList.length === 0 ? (

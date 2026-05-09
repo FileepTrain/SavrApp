@@ -994,6 +994,7 @@ export const getExternalRecipeDetails = async (req, res) => {
 export const getExternalRecipeFeed = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
+    const offset = Math.max(parseInt(req.query.offset ?? "0", 10), 0);
     const budgetMin = Number.isFinite(Number(req.query.budgetMin)) ? Number(req.query.budgetMin) : 0;
     const budgetMax = Number.isFinite(Number(req.query.budgetMax)) ? Number(req.query.budgetMax) : 100;
     const cookwareExclude = typeof req.query.cookware === "string"
@@ -1010,14 +1011,23 @@ export const getExternalRecipeFeed = async (req, res) => {
       ? cookwareExclude.filter((c) => userCookwareSet.has(String(c).toLowerCase().trim()))
       : cookwareExclude;
 
-    const fetchLimit = budgetMin > 0 || budgetMax < 100 || effectiveExclude.length > 0 || userCookwareSet
-      ? Math.min(limit * 5, 100)
-      : limit;
-    let results = await ExternalRecipeModel.getLatestCached(fetchLimit);
+    const hasNarrowingFilters =
+      budgetMin > 0 ||
+      budgetMax < 100 ||
+      effectiveExclude.length > 0 ||
+      Boolean(userCookwareSet);
+
+    const poolSize = hasNarrowingFilters
+      ? Math.min(Math.max((offset + limit) * 5, limit), 500)
+      : Math.min(offset + limit, 500);
+
+    let pool = await ExternalRecipeModel.getLatestCached(poolSize);
+    const rawLen = pool.length;
     const viewCount = (r) => (r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0);
-    results.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
+    pool.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
+    let filtered = pool;
     if (budgetMin > 0 || budgetMax < 100) {
-      results = results.filter((r) => {
+      filtered = filtered.filter((r) => {
         const price = r.price;
         if (price == null || typeof price !== "number") return true;
         return price >= budgetMin && price <= budgetMax;
@@ -1025,20 +1035,25 @@ export const getExternalRecipeFeed = async (req, res) => {
     }
     if (effectiveExclude.length > 0) {
       const excludeSet = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
-      results = results.filter((r) => {
+      filtered = filtered.filter((r) => {
         const names = equipmentNamesFromDoc(r.equipment);
         return !names.some((n) => excludeSet.has(n));
       });
     }
     if (userCookwareSet) {
-      results = results.filter((r) => {
+      filtered = filtered.filter((r) => {
         const names = equipmentNamesFromDoc(r.equipment);
         if (names.length === 0) return true;
         return names.every((n) => userCookwareSet.has(n));
       });
     }
-    results = results.slice(0, limit);
-    return res.json({ success: true, results });
+
+    const results = filtered.slice(offset, offset + limit);
+    const hasMore =
+      results.length === limit &&
+      (filtered.length > offset + limit || rawLen === poolSize);
+
+    return res.json({ success: true, results, hasMore });
   } catch (error) {
     console.error("Error getting external recipe feed:", error);
     return res.status(500).json({

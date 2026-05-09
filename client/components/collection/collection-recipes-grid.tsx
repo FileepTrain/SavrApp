@@ -2,6 +2,7 @@ import { RecipeCard } from "@/components/recipe-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { FlatList, TouchableOpacity, useWindowDimensions, View } from "react-native";
 
 type RecipeRow = {
@@ -44,6 +45,7 @@ export function CollectionRecipesGrid({
     <View className="flex-1" onLayout={(e) => setListW(e.nativeEvent.layout.width)}>
       <FlatList
         data={recipes}
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
         style={{ flex: 1 }}
         keyExtractor={(item, index) =>
           String((item as { id?: string }).id ?? `recipe-${index}`)

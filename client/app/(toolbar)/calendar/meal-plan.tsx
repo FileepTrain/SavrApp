@@ -26,6 +26,7 @@ import 'react-native-gesture-handler';
 import ColorPicker, { HueSlider, Panel1, Swatches, Preview } from "reanimated-color-picker";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import {
   DEFAULT_MEAL_SLOT_COLORS,
   type MealSlotColorKey,
@@ -890,7 +891,7 @@ export default function MealPlanPage() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
       >
         <AccountWebColumn>
         {loadingPlan ? (

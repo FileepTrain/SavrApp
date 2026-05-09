@@ -11,6 +11,7 @@ import React, { useEffect, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AccountMenuItem } from "@/components/account/account-menu-item";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import Button from "@/components/ui/button";
 import { LocationSharingSection } from "@/components/preferences";
 
@@ -58,7 +59,7 @@ export default function SettingsPage() {
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       <AccountWebColumn className="flex-1 min-h-0">
         <AccountSubpageBody>
-        <ScrollView className="h-full" showsVerticalScrollIndicator={false}>
+        <ScrollView className="h-full" showsVerticalScrollIndicator={verticalScrollIndicatorVisible}>
         <View className="gap-6">
           <View className="gap-1">
           <Text className={accountSectionLabelClassName}>Account</Text>

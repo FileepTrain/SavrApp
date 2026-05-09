@@ -11,6 +11,7 @@ import { AddIngredientModal, ExtendedIngredient } from "@/components/add-ingredi
 import * as Location from "expo-location";
 
 import { SERVER_URL } from '@/utils/server-url';
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 type GroceryItem = {
   id: string;
@@ -234,6 +235,7 @@ export default function GroceryListPage() {
           ) : (
             <FlatList<GroceryItem>
               data={items}
+              showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
               keyExtractor={(item) => item.id}
               ListEmptyComponent={
                 <View className="flex-1 items-center justify-center mt-8">

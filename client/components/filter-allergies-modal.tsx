@@ -1,6 +1,7 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useThemePalette } from "@/components/theme-provider";
 import { allergies, loadAllergies } from "@/utils/diet-preferences";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -143,7 +144,7 @@ export function FilterAllergiesModal({
             <ScrollView
               className="px-4 flex-1"
               style={{ flex: 1 }}
-              showsVerticalScrollIndicator={true}
+              showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
               keyboardShouldPersistTaps="handled"
             >
               {filteredList.length === 0 ? (

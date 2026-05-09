@@ -1,5 +1,6 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { prepareProfilePhotoForUpload } from "@/utils/prepare-profile-photo-upload";
+import { horizontalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -318,7 +319,7 @@ export function RecipeHeroGallery({
             keyExtractor={(it, i) => `${it.url}-${i}`}
             horizontal
             pagingEnabled
-            showsHorizontalScrollIndicator={false}
+            showsHorizontalScrollIndicator={horizontalScrollIndicatorVisible}
             renderItem={renderHeroItem}
             onMomentumScrollEnd={onHeroScrollEnd}
             getItemLayout={(_, index) => ({
@@ -381,7 +382,7 @@ export function RecipeHeroGallery({
             keyExtractor={(it, i) => `modal-${it.url}-${i}`}
             horizontal
             pagingEnabled
-            showsHorizontalScrollIndicator={false}
+            showsHorizontalScrollIndicator={horizontalScrollIndicatorVisible}
             initialScrollIndex={items.length > 0 ? Math.min(modalIndex, items.length - 1) : 0}
             renderItem={renderModalItem}
             getItemLayout={(_, index) => ({

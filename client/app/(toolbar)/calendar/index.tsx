@@ -15,6 +15,7 @@ import { useThemePalette } from "@/components/theme-provider";
 import { generateICS } from "@/services/calendarExport";
 import { Alert } from "react-native";
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { localDateKeysInclusive, planCoversCalendarDateLocal } from "@/utils/meal-plan-habit-days";
 import { DEFAULT_MEAL_SLOT_COLORS } from "@/utils/meal-plan-slot-colors";
 
@@ -343,7 +344,7 @@ export default function CalendarPage() {
   return (
     <ThemedSafeView className="flex-1 bg-app-background">
       <AccountWebColumn className="flex-1 min-h-0">
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+        <ScrollView showsVerticalScrollIndicator={verticalScrollIndicatorVisible} contentContainerStyle={{ paddingBottom: 24 }}>
           <View className="px-4 pt-2">
             <Text className="text-foreground text-2xl font-semibold">Calendar</Text>
           </View>
@@ -535,6 +536,7 @@ export default function CalendarPage() {
               ) : (
                 <FlatList
                   data={selectedDayEntries}
+                  showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
                   keyExtractor={(item) => String(item.planId)}
                   scrollEnabled={false}
                   ListEmptyComponent={

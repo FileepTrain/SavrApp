@@ -1,5 +1,6 @@
 import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
 import React, { useMemo } from "react";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { ScrollView, View, type ScrollViewProps } from "react-native";
 
 /** Readable max width for email/password forms on wide web (below recipe column cap). */
@@ -31,6 +32,7 @@ export function AuthFormScroll({
   return (
     <ScrollView
       className="w-full flex-1"
+      showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
       keyboardShouldPersistTaps={keyboardShouldPersistTaps}
       contentContainerStyle={{
         flexGrow: 1,

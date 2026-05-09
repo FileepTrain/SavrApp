@@ -25,6 +25,7 @@ import { CACHE_KEYS, readCache, writeCache } from "@/utils/offline-cache";
 import { enqueueMutation } from "@/utils/mutation-queue";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 type PantryItem = {
   id: string;
@@ -289,6 +290,7 @@ export default function PantryPage() {
         ) : (
           <FlatList
             style={{ flex: 1 }}
+            showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
             data={pantryItems}
             keyExtractor={(item) => item.id}
             ListEmptyComponent={
