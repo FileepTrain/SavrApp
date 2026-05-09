@@ -483,7 +483,8 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   }
 
   // Order by view count (most viewed first)
-  results.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+  //Results in the same recipes being returned over and over, bad for recipe discovery/diversity
+  //results.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
 
   return {
     results,
@@ -506,9 +507,15 @@ function toDishTypeSet(value) {
   );
 }
 
-/** Weights for auto meal plan pantry fit (tweak-friendly). */
-const PANTRY_SCORE_WEIGHT_MATCH_RATIO = 0.8;
-const PANTRY_SCORE_WEIGHT_MISSING = 0.2;
+/** Weights for auto meal plan pantry fit (tweak-friendly). 
+ *  If I had more time I would have liked to make a weighted list for ingredients,
+ *  ex. missing chicken docks more points than missing spices. But I would need more time
+ *  and trying to weigh every single ingredient would be too much.
+ *  For now we use this
+ * **/
+const PANTRY_SCORE_WEIGHT_MATCH_RATIO = 0.7; // the higher the more matching ingredients matter
+const PANTRY_SCORE_WEIGHT_MISSING = 0.4; // the higher the more recipes with fewer missing ingredients matter
+
 
 function normalizePantryNamesFromQuery(req) {
   const raw = req.query?.pantry;
@@ -637,10 +644,11 @@ function pickRecipeForSlot(
     return pickBestByPantryScore(pool, pantryPick.namesLower);
   }
 
-  //keep top 10, those recipes usually fit range. If pool is too big you get weird picks
-  const TOP_N = 10;
+  //Keep top num, those recipes usually fit range. If pool is too big you get weird picks, too small and you get same recipes
+  //Still not satisfied but it will do for now
+  const TOP_N = 15;
   const trimmedPool = pool.slice(0, TOP_N);
-  //randomly choose from top ten
+  //randomly choose from top contenders
   const randomIndex = Math.floor(Math.random() * trimmedPool.length);
   return trimmedPool[randomIndex] ?? null;
 }

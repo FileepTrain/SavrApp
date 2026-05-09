@@ -1,10 +1,11 @@
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View, Pressable, FlatList } from "react-native";
+import { ActivityIndicator, FlatList, Modal, Pressable, Text, TouchableOpacity, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useState } from "react";
 import { AccountWebColumn } from "@/components/account/account-web-column";
 import { AccountSubpageBody } from "@/components/account/account-subpage-body";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { AddIngredientModal, ExtendedIngredient } from "@/components/add-ingredient-modal";
 import * as Location from "expo-location";
@@ -30,6 +31,25 @@ export default function GroceryListPage() {
   const [totalCost, setTotalCost] = useState<number | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [manualZipDraft, setManualZipDraft] = useState("");
+
+  function closeLocationModal() {
+    setIsLocationModalOpen(false);
+    setManualZipDraft("");
+  }
+
+  function handleConfirmManualZip() {
+    const zipcode = manualZipDraft.trim();
+    console.log("zipcode:", zipcode);
+    closeLocationModal();
+  }
+
+  async function handleUseDeviceLocationFromModal() {
+    await getLocation();
+    closeLocationModal();
+  }
+
   /*
    * Location
    */
@@ -170,7 +190,7 @@ export default function GroceryListPage() {
           <Button
             variant="primary"
             className="rounded-xl"
-            onPress={getLocation}
+            onPress={() => setIsLocationModalOpen(true)}
           >
             LOCATION
           </Button>
@@ -267,6 +287,61 @@ export default function GroceryListPage() {
         nameLabel="Item Name"
         namePlaceholder="Type and select an ingredient…"
       />
+
+      <Modal
+        visible={isLocationModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={closeLocationModal}
+      >
+        <Pressable
+          className="flex-1 justify-center bg-black/50 px-6"
+          onPress={closeLocationModal}
+        >
+          <Pressable
+            className="bg-background rounded-xl p-5 gap-4 shadow-lg"
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text className="text-lg font-semibold text-foreground">
+              Set location
+            </Text>
+            <Text className="text-sm text-foreground opacity-70">
+              Enter a ZIP code or use your device location.
+            </Text>
+            <Input
+              label="ZIP code"
+              placeholder="e.g. 43215"
+              value={manualZipDraft}
+              onChangeText={setManualZipDraft}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View className="gap-2">
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onPress={handleConfirmManualZip}
+              >
+                Use ZIP code
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onPress={handleUseDeviceLocationFromModal}
+              >
+                Use device location
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onPress={closeLocationModal}
+              >
+                Cancel
+              </Button>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ThemedSafeView>
   );
 }
