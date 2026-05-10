@@ -12,7 +12,9 @@ function baseUsernameFromAuth(email, displayName) {
     return String(displayName).trim();
   }
   const local = emailStr.split("@")[0];
-  return local && local.trim() ? local.trim() : `user_${Date.now().toString(36)}`;
+  return local && local.trim()
+    ? local.trim()
+    : `user_${Date.now().toString(36)}`;
 }
 
 /**
@@ -71,7 +73,9 @@ function buildRepairs(d, { email, displayName, forceFullRepair }) {
   }
 
   if (!Array.isArray(existing.cookware) || forceFullRepair) {
-    repairs.cookware = Array.isArray(existing.cookware) ? existing.cookware : [];
+    repairs.cookware = Array.isArray(existing.cookware)
+      ? existing.cookware
+      : [];
   }
   if (!Array.isArray(existing.allergies) || forceFullRepair) {
     repairs.allergies = Array.isArray(existing.allergies)
@@ -142,7 +146,6 @@ export async function ensureUserFirestoreFromAuth(db, opts) {
     const patch = {
       email: emailStr,
       username: usernameBase,
-      onboarding: false,
       onboarded: treatMissingDocAsReturningUser,
       favoriteIds: [],
       cookware: [],
@@ -164,9 +167,8 @@ export async function ensureUserFirestoreFromAuth(db, opts) {
   const d = userSnap.data() || {};
   const repairs = buildRepairs(d, { email, displayName, forceFullRepair });
 
-  if (typeof d.onboarded !== "boolean" && typeof d.onboarding !== "boolean") {
+  if (typeof d.onboarded !== "boolean") {
     repairs.onboarded = treatMissingDocAsReturningUser;
-    repairs.onboarding = false;
   }
 
   let finalUsername =

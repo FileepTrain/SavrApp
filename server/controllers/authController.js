@@ -73,7 +73,6 @@ export const register = async (req, res) => {
     batch.set(db.collection("users").doc(uid), {
       email,
       username,
-      onboarding: false, // legacy flag
       onboarded: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -133,14 +132,14 @@ export const login = async (req, res) => {
 
     const { idToken, refreshToken, localId, displayName } =
       firebaseResponse.data;
-    
+
     // Verify token using firebase
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     if (!decodedToken.email_verified) {
       return res.status(403).json({
         error: "Please verify your email before signing in.",
         code: "EMAIL_NOT_VERIFIED",
-      })
+      });
     }
 
     let userData = {};
@@ -516,11 +515,7 @@ export const getPreferences = async (req, res) => {
           break;
         case "onboarded":
           output.onboarded =
-            typeof d.onboarded === "boolean"
-              ? d.onboarded
-              : typeof d.onboarding === "boolean"
-                ? d.onboarding
-                : false;
+            typeof d.onboarded === "boolean" ? d.onboarded : false;
           break;
         default:
           break;
@@ -622,7 +617,9 @@ function collectionsRef(db, uid) {
 export const listRecipeCollections = async (req, res) => {
   const uid = req.user?.uid;
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   try {
@@ -631,7 +628,10 @@ export const listRecipeCollections = async (req, res) => {
     try {
       snap = await collectionsRef(db, uid).orderBy("updatedAt", "desc").get();
     } catch (orderErr) {
-      console.warn("Collections orderBy failed, falling back:", orderErr?.message);
+      console.warn(
+        "Collections orderBy failed, falling back:",
+        orderErr?.message,
+      );
       snap = await collectionsRef(db, uid).get();
     }
     const collections = snap.docs.map((doc) => {
@@ -662,10 +662,13 @@ export const listRecipeCollections = async (req, res) => {
 export const createRecipeCollection = async (req, res) => {
   const uid = req.user?.uid;
   const rawName = req.body?.name;
-  const recipeId = typeof req.body?.recipeId === "string" ? req.body.recipeId.trim() : "";
+  const recipeId =
+    typeof req.body?.recipeId === "string" ? req.body.recipeId.trim() : "";
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   const name = String(rawName ?? "").trim();
@@ -722,7 +725,9 @@ export const getRecipeCollection = async (req, res) => {
   const { collectionId } = req.params;
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   if (!collectionId) {
@@ -776,7 +781,9 @@ export const updateRecipeCollection = async (req, res) => {
   const recipeIdsRaw = body.recipeIds;
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   if (!collectionId) {
@@ -786,7 +793,8 @@ export const updateRecipeCollection = async (req, res) => {
     });
   }
 
-  const hasName = typeof nameRaw === "string" && String(nameRaw).trim().length > 0;
+  const hasName =
+    typeof nameRaw === "string" && String(nameRaw).trim().length > 0;
   const hasRecipeIds = Array.isArray(recipeIdsRaw);
 
   if (!hasName && !hasRecipeIds) {
@@ -860,7 +868,9 @@ export const deleteRecipeCollection = async (req, res) => {
   const { collectionId } = req.params;
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   if (!collectionId) {
@@ -902,7 +912,9 @@ export const addRecipeToCollection = async (req, res) => {
   const recipeId = String(req.body?.recipeId ?? "").trim();
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   if (!collectionId || !recipeId) {
@@ -946,7 +958,9 @@ export const removeRecipeFromCollection = async (req, res) => {
   const { collectionId, recipeId } = req.params;
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   if (!collectionId || !recipeId) {
@@ -972,7 +986,10 @@ export const removeRecipeFromCollection = async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return res.json({ success: true, message: "Recipe removed from collection" });
+    return res.json({
+      success: true,
+      message: "Recipe removed from collection",
+    });
   } catch (error) {
     console.error("Error removing recipe from collection:", error);
     return res.status(400).json({
@@ -1020,10 +1037,14 @@ export const followRecipeCollection = async (req, res) => {
   const collectionId = String(req.body?.collectionId ?? "").trim();
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
   if (!isValidFirestoreUid(ownerUid) || !collectionId) {
-    return res.status(400).json({ error: "Invalid request", code: "INVALID_REQUEST" });
+    return res
+      .status(400)
+      .json({ error: "Invalid request", code: "INVALID_REQUEST" });
   }
   if (ownerUid === uid) {
     return res.status(400).json({
@@ -1036,7 +1057,9 @@ export const followRecipeCollection = async (req, res) => {
     const db = admin.firestore();
     const ownerSnap = await db.collection("users").doc(ownerUid).get();
     if (!ownerSnap.exists) {
-      return res.status(404).json({ error: "User not found", code: "USER_NOT_FOUND" });
+      return res
+        .status(404)
+        .json({ error: "User not found", code: "USER_NOT_FOUND" });
     }
 
     const privacy = normalizeProfilePrivacy(ownerSnap.data()?.profilePrivacy);
@@ -1050,7 +1073,9 @@ export const followRecipeCollection = async (req, res) => {
     const colRef = collectionsRef(db, ownerUid).doc(collectionId);
     const colSnap = await colRef.get();
     if (!colSnap.exists) {
-      return res.status(404).json({ error: "Collection not found", code: "NOT_FOUND" });
+      return res
+        .status(404)
+        .json({ error: "Collection not found", code: "NOT_FOUND" });
     }
 
     const d = colSnap.data() || {};
@@ -1097,10 +1122,14 @@ export const unfollowRecipeCollection = async (req, res) => {
   const collectionId = String(req.params?.collectionId ?? "").trim();
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
   if (!isValidFirestoreUid(ownerUid) || !collectionId) {
-    return res.status(400).json({ error: "Invalid request", code: "INVALID_REQUEST" });
+    return res
+      .status(400)
+      .json({ error: "Invalid request", code: "INVALID_REQUEST" });
   }
 
   try {
@@ -1128,16 +1157,23 @@ export const unfollowRecipeCollection = async (req, res) => {
 export const listFollowedRecipeCollections = async (req, res) => {
   const uid = req.user?.uid;
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
 
   try {
     const db = admin.firestore();
     let snap;
     try {
-      snap = await followedCollectionsRef(db, uid).orderBy("createdAt", "desc").get();
+      snap = await followedCollectionsRef(db, uid)
+        .orderBy("createdAt", "desc")
+        .get();
     } catch (orderErr) {
-      console.warn("followedCollections orderBy failed, falling back:", orderErr?.message);
+      console.warn(
+        "followedCollections orderBy failed, falling back:",
+        orderErr?.message,
+      );
       snap = await followedCollectionsRef(db, uid).get();
     }
 
@@ -1145,7 +1181,8 @@ export const listFollowedRecipeCollections = async (req, res) => {
     for (const doc of snap.docs) {
       const row = doc.data() || {};
       const ownerUid = typeof row.ownerUid === "string" ? row.ownerUid : "";
-      const collectionId = typeof row.collectionId === "string" ? row.collectionId : "";
+      const collectionId =
+        typeof row.collectionId === "string" ? row.collectionId : "";
       if (!isValidFirestoreUid(ownerUid) || !collectionId) continue;
 
       const ownerSnap = await db.collection("users").doc(ownerUid).get();
@@ -1154,7 +1191,9 @@ export const listFollowedRecipeCollections = async (req, res) => {
       const privacy = normalizeProfilePrivacy(ownerSnap.data()?.profilePrivacy);
       if (!privacy.showCollections) continue;
 
-      const colSnap = await collectionsRef(db, ownerUid).doc(collectionId).get();
+      const colSnap = await collectionsRef(db, ownerUid)
+        .doc(collectionId)
+        .get();
       if (!colSnap.exists) continue;
 
       const d = colSnap.data() || {};
@@ -1196,10 +1235,14 @@ export const getFollowCollectionStatus = async (req, res) => {
   const collectionId = String(req.query?.collectionId ?? "").trim();
 
   if (!uid) {
-    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized", code: "UNAUTHORIZED" });
   }
   if (!isValidFirestoreUid(ownerUid) || !collectionId) {
-    return res.status(400).json({ error: "Invalid request", code: "INVALID_REQUEST" });
+    return res
+      .status(400)
+      .json({ error: "Invalid request", code: "INVALID_REQUEST" });
   }
 
   try {
@@ -1237,9 +1280,7 @@ export const oauthLogin = async (req, res) => {
       isNewUser = true;
 
       const baseUsername =
-        displayName.trim() ||
-        email.split("@")[0] ||
-        `user_${uid.slice(0, 8)}`;
+        displayName.trim() || email.split("@")[0] || `user_${uid.slice(0, 8)}`;
 
       finalUsername = baseUsername;
       let suffix = 1;
@@ -1261,7 +1302,6 @@ export const oauthLogin = async (req, res) => {
       batch.set(userRef, {
         email,
         username: finalUsername,
-        onboarding: false,
         onboarded: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1283,9 +1323,7 @@ export const oauthLogin = async (req, res) => {
       uid,
       email,
       username: finalUsername,
-      onboarded: userDoc.exists
-        ? userDoc.data().onboarded
-        : false,
+      onboarded: userDoc.exists ? userDoc.data().onboarded : false,
       isNewUser,
       message: "OAuth login successful",
     });
@@ -1317,7 +1355,8 @@ export const sendCalendarEmail = async (req, res) => {
   if (!resendApiKey) {
     console.warn("sendCalendarEmail: RESEND_API_KEY is not set");
     return res.status(503).json({
-      error: "Email is not configured (set RESEND_API_KEY to enable calendar export by email)",
+      error:
+        "Email is not configured (set RESEND_API_KEY to enable calendar export by email)",
     });
   }
 

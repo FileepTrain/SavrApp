@@ -109,7 +109,7 @@ const LoginPage = () => {
             Alert.alert(
               "Email not verified",
               "Please check your inbox and verify your email before signing in."
-          );
+            );
           }
           return;
         }
