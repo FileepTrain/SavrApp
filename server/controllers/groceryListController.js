@@ -1,6 +1,7 @@
 import admin from "firebase-admin";
 import {normalizeItem, mergeItemIntoList, normalizeName} from "../models/ingredientNormalizationModel.js"
-import { fetchPriceForTerm } from "./krogerController.js";
+import { fetchPriceForTerm, getAccessToken } from "./krogerController.js";
+import axios from "axios";
 
 const GROCERY_LIST_COLL = "grocery-lists";
 
@@ -50,7 +51,7 @@ export const addItemToGroceryList = async (req, res) => {
   const { uid } = req.user;
   
   try {
-    const { name, amount = 1, unit = "each" } = req.body;
+    const { name, amount = 1, unit = "each", zipcode, latitude, longitude } = req.body;
     
     if (!name || typeof name !== "string") {
       return res.status(400).json({
@@ -79,7 +80,60 @@ export const addItemToGroceryList = async (req, res) => {
       (i) => i.ingredient === normalizedItem.ingredient
     );
 
-    const locationId = "70300165"; // temp
+    let locationId = "70300165";
+
+    try {
+      if (zipcode) {
+        console.log("Using ZIP for Kroger lookup:", zipcode);
+
+        const token = await getAccessToken();
+
+        const resp = await axios.get(`${process.env.KROGER_API_BASE}/locations`, {
+          params: {
+            "filter.zipCode.near": zipcode,
+            "filter.limit": 1,
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const stores = resp.data?.data || [];
+
+        if (stores.length > 0) {
+          locationId = stores[0].locationId;
+          console.log("Resolved locationId from ZIP:", locationId);
+        }
+      }
+      else if (latitude && longitude) {
+        console.log("Using latitude/longitude for Kroger lookup");
+
+        const token = await getAccessToken();
+
+        const resp = await axios.get(`${process.env.KROGER_API_BASE}/locations`, {
+          params: {
+            "filter.lat.near": latitude,
+            "filter.lon.near": longitude,
+            "filter.limit": 1,
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const stores = resp.data?.data || [];
+
+        if (stores.length > 0) {
+          locationId = stores[0].locationId;
+          console.log("Resolved locationId from coordinates:", locationId);
+        }
+      }
+      else {
+        console.log("Using fallback locationId:", locationId);
+      }
+    } catch (locErr) {
+      console.log("Location resolution failed, using fallback:", locErr.message);
+    }
 
     if (updatedItem) {
       try {
@@ -315,6 +369,7 @@ export const calculateGroceryListPrice = async (req, res) => {
   const db = admin.firestore();
   const { uid } = req.user;
   try {
+    const { zipcode, latitude, longitude, } = req.body
     const docRef = db.collection(GROCERY_LIST_COLL).doc(uid);
     const snap = await docRef.get();
 
@@ -333,7 +388,60 @@ export const calculateGroceryListPrice = async (req, res) => {
       });
     }
 
-    const locationId = "70300165"; // temp
+    let locationId = "70300165";
+
+    try {
+      if (zipcode) {
+        console.log("Using ZIP for Kroger lookup:", zipcode);
+
+        const token = await getAccessToken();
+
+        const resp = await axios.get(`${process.env.KROGER_API_BASE}/locations`, {
+          params: {
+            "filter.zipCode.near": zipcode,
+            "filter.limit": 1,
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const stores = resp.data?.data || [];
+
+        if (stores.length > 0) {
+          locationId = stores[0].locationId;
+          console.log("Resolved locationId from ZIP:", locationId);
+        }
+      }
+      else if (latitude && longitude) {
+        console.log("Using latitude/longitude for Kroger lookup");
+
+        const token = await getAccessToken();
+
+        const resp = await axios.get(`${process.env.KROGER_API_BASE}/locations`, {
+          params: {
+            "filter.lat.near": latitude,
+            "filter.lon.near": longitude,
+            "filter.limit": 1,
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const stores = resp.data?.data || [];
+
+        if (stores.length > 0) {
+          locationId = stores[0].locationId;
+          console.log("Resolved locationId from coordinates:", locationId);
+        }
+      }
+      else {
+        console.log("Using fallback locationId:", locationId);
+      }
+    } catch (locErr) {
+      console.log("Location resolution failed, using fallback:", locErr.message);
+    }
 
     let totalCost = 0;
 
