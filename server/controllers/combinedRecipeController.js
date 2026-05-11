@@ -17,6 +17,169 @@ import ExternalRecipeModel from "../models/externalRecipeModel.js";
 
 const KROGER_API_BASE = process.env.KROGER_API_BASE;
 
+function normalizeAllergiesToIntolerances(allergiesValue) {
+  const allowed = new Set([
+    "dairy",
+    "egg",
+    "gluten",
+    "grain",
+    "peanut",
+    "seafood",
+    "sesame",
+    "shellfish",
+    "soy",
+    "sulfite",
+    "tree nut",
+    "wheat",
+  ]);
+
+  const rawList = Array.isArray(allergiesValue)
+    ? allergiesValue
+    : typeof allergiesValue === "string"
+      ? allergiesValue.split(",")
+      : [];
+
+  const seen = new Set();
+  const result = [];
+
+  for (const item of rawList) {
+    if (!item) continue;
+
+    const value = String(item).toLowerCase().trim();
+
+    if (allowed.has(value) && !seen.has(value)) {
+      seen.add(value);
+      result.push(value);
+    }
+  }
+
+  return result;
+}
+
+function recipeContainsAllergen(recipe, intolerance) {
+  const ingredientText = Array.isArray(recipe?.extendedIngredients)
+    ? recipe.extendedIngredients
+        .map((ing) =>
+          String(
+            ing?.name ??
+              ing?.original ??
+              ing?.originalName ??
+              ""
+          ).toLowerCase()
+        )
+        .join(" ")
+    : "";
+
+  if (!ingredientText) return false;
+
+  if (intolerance === "peanut") {
+    return (
+      ingredientText.includes("peanut") ||
+      ingredientText.includes("peanuts") ||
+      ingredientText.includes("peanut butter")
+    );
+  }
+
+  if (intolerance === "tree nut") {
+    return (
+      ingredientText.includes("almond") ||
+      ingredientText.includes("walnut") ||
+      ingredientText.includes("cashew") ||
+      ingredientText.includes("pecan") ||
+      ingredientText.includes("hazelnut") ||
+      ingredientText.includes("pistachio") ||
+      ingredientText.includes("macadamia")
+    );
+  }
+
+  if (intolerance === "dairy") {
+    return (
+      recipe?.dairyFree === false ||
+      ingredientText.includes("milk") ||
+      ingredientText.includes("cheese") ||
+      ingredientText.includes("butter") ||
+      ingredientText.includes("cream") ||
+      ingredientText.includes("yogurt") ||
+      ingredientText.includes("chocolate chips")
+    );
+  }
+
+  if (intolerance === "egg") {
+    return (
+      ingredientText.includes("egg") ||
+      ingredientText.includes("eggs")
+    );
+  }
+
+  if (
+    intolerance === "gluten" ||
+    intolerance === "wheat" ||
+    intolerance === "grain"
+  ) {
+    return (
+      recipe?.glutenFree === false ||
+      ingredientText.includes("wheat") ||
+      ingredientText.includes("flour") ||
+      ingredientText.includes("gluten")
+    );
+  }
+
+  if (intolerance === "soy") {
+    return (
+      ingredientText.includes("soy") ||
+      ingredientText.includes("soybean") ||
+      ingredientText.includes("tofu")
+    );
+  }
+
+  if (intolerance === "seafood" || intolerance === "shellfish") {
+    return (
+      ingredientText.includes("shrimp") ||
+      ingredientText.includes("crab") ||
+      ingredientText.includes("lobster") ||
+      ingredientText.includes("clam") ||
+      ingredientText.includes("oyster") ||
+      ingredientText.includes("fish") ||
+      ingredientText.includes("salmon") ||
+      ingredientText.includes("tuna")
+    );
+  }
+
+  if (intolerance === "sesame") {
+    return (
+      ingredientText.includes("sesame") ||
+      ingredientText.includes("tahini")
+    );
+  }
+
+  return false;
+}
+
+function filterAllergensFromRecipes(recipes, allergies) {
+  const intolerances = normalizeAllergiesToIntolerances(allergies);
+
+  if (!intolerances.length) return recipes;
+
+  return recipes.filter((recipe) => {
+    return !intolerances.some((allergen) =>
+      recipeContainsAllergen(recipe, allergen)
+    );
+  });
+}
+
+function stripInternalRecipeFields(recipe) {
+  if (!recipe || typeof recipe !== "object") return recipe;
+
+  const {
+    extendedIngredients: _extendedIngredients,
+    glutenFree: _glutenFree,
+    dairyFree: _dairyFree,
+    ...safeRecipe
+  } = recipe;
+
+  return safeRecipe;
+}
+
 /**
  * Compute price and write it to the given doc. Used when the doc already exists (e.g. user recipes).
  */
@@ -223,9 +386,14 @@ export const getFilteredFeed = async (req, res) => {
         useMyCookwareOnly ? userCookware : null,
       );
       cachedExternalResults = Array.isArray(cached?.results) ? cached.results : [];
+      cachedExternalResults = filterAllergensFromRecipes(cachedExternalResults, allergies);
+      cachedExternalResults = cachedExternalResults.map(stripInternalRecipeFields);
+
       cachedMeta = cached?._meta ?? null;
       cachedExternalTotal =
-        typeof cached?.totalResults === "number" ? cached.totalResults : cachedExternalResults.length;
+        typeof cached?.totalResults === "number"
+          ? cached.totalResults
+          : cachedExternalResults.length;
     }
 
     const shouldCallLive =
@@ -251,13 +419,18 @@ export const getFilteredFeed = async (req, res) => {
       }
     }
 
-    const externalResults = [...cachedExternalResults, ...liveExternalResults];
-
+    const externalResults = [...cachedExternalResults, ...liveExternalResults].map(stripInternalRecipeFields);
     // Ordering: personal, cached external, live external (no global popularity merge)
-    const combined = [...personalResults, ...cachedExternalResults, ...liveExternalResults].map((r) => ({
-      ...r,
-      viewCount: Number(r.viewCount) || 0,
-    }));
+    const combined = [
+      ...personalResults,
+      ...cachedExternalResults,
+      ...liveExternalResults,
+    ]
+      .map(stripInternalRecipeFields)
+      .map((r) => ({
+        ...r,
+        viewCount: Number(r.viewCount) || 0,
+      }));
 
     const legacyExternalTotal =
       typeof cachedExternalTotal === "number"

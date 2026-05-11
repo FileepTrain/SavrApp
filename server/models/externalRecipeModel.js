@@ -230,6 +230,19 @@ async function searchCachedForFeed(
       rating,
       reviewsLength: reviewCount,
       viewCount: Number.isFinite(Number(data.viewCount)) ? Number(data.viewCount) : 0,
+
+      // Internal fields used by combinedRecipeController allergy filtering.
+      // These should be stripped before sending the final response to the app.
+      extendedIngredients: Array.isArray(data.extendedIngredients)
+        ? data.extendedIngredients
+        : [],
+      glutenFree:
+        typeof data.glutenFree === "boolean" ? data.glutenFree : null,
+      dairyFree:
+        typeof data.dairyFree === "boolean" ? data.dairyFree : null,
+
+      _cached: true,
+      _docId: data.id,
     };
   });
 
@@ -380,6 +393,17 @@ async function getLatestCached(limit = 20) {
         ? Number(data.trendingScore)
         : 0,
       equipment: data.equipment ?? [],
+
+      // Internal fields used by getExternalRecipeFeed allergy filtering.
+      // These are stripped before sending results back to the app.
+      extendedIngredients: Array.isArray(data.extendedIngredients)
+        ? data.extendedIngredients
+        : [],
+      glutenFree:
+        typeof data.glutenFree === "boolean" ? data.glutenFree : null,
+      dairyFree:
+        typeof data.dairyFree === "boolean" ? data.dairyFree : null,
+
       _cached: true,
       _docId: d.id,
     };

@@ -56,6 +56,118 @@ function equipmentNamesFromDoc(equipment) {
     .map((s) => String(s).toLowerCase().trim());
 }
 
+function recipeContainsAllergen(recipe, intolerance) {
+  const ingredientText = Array.isArray(recipe?.extendedIngredients)
+    ? recipe.extendedIngredients
+        .map((ing) =>
+          String(
+            ing?.name ??
+              ing?.original ??
+              ing?.originalName ??
+              ""
+          ).toLowerCase()
+        )
+        .join(" ")
+    : "";
+
+  if (!ingredientText) return false;
+
+  if (intolerance === "peanut") {
+    return (
+      ingredientText.includes("peanut") ||
+      ingredientText.includes("peanuts") ||
+      ingredientText.includes("peanut butter")
+    );
+  }
+
+  if (intolerance === "tree nut") {
+    return (
+      ingredientText.includes("almond") ||
+      ingredientText.includes("walnut") ||
+      ingredientText.includes("cashew") ||
+      ingredientText.includes("pecan") ||
+      ingredientText.includes("hazelnut") ||
+      ingredientText.includes("pistachio") ||
+      ingredientText.includes("macadamia")
+    );
+  }
+
+  if (intolerance === "dairy") {
+    return (
+      recipe?.dairyFree === false ||
+      ingredientText.includes("milk") ||
+      ingredientText.includes("cheese") ||
+      ingredientText.includes("butter") ||
+      ingredientText.includes("cream") ||
+      ingredientText.includes("yogurt") ||
+      ingredientText.includes("chocolate chips")
+    );
+  }
+
+  if (intolerance === "egg") {
+    return (
+      ingredientText.includes("egg") ||
+      ingredientText.includes("eggs")
+    );
+  }
+
+  if (
+    intolerance === "gluten" ||
+    intolerance === "wheat" ||
+    intolerance === "grain"
+  ) {
+    return (
+      recipe?.glutenFree === false ||
+      ingredientText.includes("wheat") ||
+      ingredientText.includes("flour") ||
+      ingredientText.includes("gluten")
+    );
+  }
+
+  if (intolerance === "soy") {
+    return (
+      ingredientText.includes("soy") ||
+      ingredientText.includes("soybean") ||
+      ingredientText.includes("tofu")
+    );
+  }
+
+  if (intolerance === "seafood" || intolerance === "shellfish") {
+    return (
+      ingredientText.includes("shrimp") ||
+      ingredientText.includes("crab") ||
+      ingredientText.includes("lobster") ||
+      ingredientText.includes("clam") ||
+      ingredientText.includes("oyster") ||
+      ingredientText.includes("fish") ||
+      ingredientText.includes("salmon") ||
+      ingredientText.includes("tuna")
+    );
+  }
+
+  if (intolerance === "sesame") {
+    return (
+      ingredientText.includes("sesame") ||
+      ingredientText.includes("tahini")
+    );
+  }
+
+  return false;
+}
+
+function removeInternalSearchFields(recipe) {
+  if (!recipe || typeof recipe !== "object") return recipe;
+
+  const {
+    extendedIngredients: _extendedIngredients,
+    glutenFree: _glutenFree,
+    dairyFree: _dairyFree,
+    ...safeRecipe
+  } = recipe;
+
+  return safeRecipe;
+}
+
 /**
  * Returns true if the recipe satisfies meal-plan auto filters (budget, cookware, diets, known allergy flags).
  * Recipes missing optional fields stay eligible where logic mirrors the external feed (e.g. unknown price).
@@ -77,12 +189,9 @@ function recipePassesMealPlanAutoFilters(recipe, parsed) {
   const intolerances = parsed.allergyIntolerances;
   if (intolerances && intolerances.size > 0) {
     for (const t of intolerances) {
-      if (t === "gluten" || t === "wheat" || t === "grain") {
-        if (recipe.glutenFree === false) return false;
-      } else if (t === "dairy") {
-        if (recipe.dairyFree === false) return false;
+      if (recipeContainsAllergen(recipe, t)) {
+        return false;
       }
-      // No reliable cached flags for egg, peanut, shellfish, etc.; do not exclude.
     }
   }
 
@@ -351,7 +460,6 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
 
   const EXTERNAL_SOURCE = "spoonacular";
 
-  // Always call Spoonacular complexSearch to get the canonical result set - result is divided into cached and new external recipes that need to be cached
   const url = new URL("https://api.spoonacular.com/recipes/complexSearch");
   url.searchParams.set("query", q);
   url.searchParams.set("number", String(number));
@@ -360,11 +468,17 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   url.searchParams.set("addRecipeNutrition", "true");
   url.searchParams.set("addRecipeInstructions", "true");
   url.searchParams.set("instructionsRequired", "true");
-  if (intolerances.length > 0) { //could have multiple at once
+
+  if (intolerances.length > 0) {
     url.searchParams.set("intolerances", intolerances.join(","));
   }
 
-  console.log("[Spoonacular] GET /recipes/complexSearch", { query: q, number, offset: safeOffset, intolerances: intolerances.join(",") || undefined,});
+  console.log("[Spoonacular] GET /recipes/complexSearch", {
+    query: q,
+    number,
+    offset: safeOffset,
+    intolerances: intolerances.join(",") || undefined,
+  });
 
   const resp = await fetch(url, {
     headers: { "x-api-key": process.env.SPOONACULAR_API_KEY },
@@ -379,7 +493,6 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   const apiResults = Array.isArray(data?.results) ? data.results : [];
   let totalResults = data?.totalResults ?? apiResults.length;
 
-  // Hydrate from Firestore, caching any recipes we haven't seen before
   let cachedCount = 0;
   let newlyCachedCount = 0;
 
@@ -389,35 +502,35 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
     const id = recipeData.id;
     if (id == null) continue;
 
-    // Check if the recipe is already cached in Firestore
     let doc = await ExternalRecipeModel.findByExternal(
       EXTERNAL_SOURCE,
-      String(id),
+      String(id)
     );
 
     let wasCached = !!doc;
 
-    // If the recipe is not cached, build the simplified payload and upsert it into Firestore
     if (!doc) {
       try {
         const simplified =
           await buildSimplifiedPayloadFromSpoonacular(recipeData);
+
         await ExternalRecipeModel.upsertFromExternal(
           EXTERNAL_SOURCE,
           id,
-          simplified,
+          simplified
         );
-        // Retrieve the recipe document that was just upserted into Firestore
+
         doc = await ExternalRecipeModel.findByExternal(
           EXTERNAL_SOURCE,
-          String(id),
+          String(id)
         );
+
         wasCached = false;
       } catch (err) {
         console.warn(
           "Failed to cache/price recipe from complexSearch (external search)",
           id,
-          err?.message || err,
+          err?.message || err
         );
       }
     }
@@ -428,11 +541,25 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
       newlyCachedCount += 1;
     }
 
-    // Add the cached / newly cached recipe to the resultsWithPrice array (include rating and viewCount for search screen)
-    const reviewCount = doc && Number.isFinite(Number(doc.reviewCount)) ? Number(doc.reviewCount) : 0;
-    const totalStars = doc && Number.isFinite(Number(doc.totalStars)) ? Number(doc.totalStars) : 0;
-    const rating = reviewCount > 0 ? Math.round((totalStars / reviewCount) * 10) / 10 : 0;
-    const viewCount = doc && Number.isFinite(Number(doc.viewCount)) ? Number(doc.viewCount) : 0;
+    const reviewCount =
+      doc && Number.isFinite(Number(doc.reviewCount))
+        ? Number(doc.reviewCount)
+        : 0;
+
+    const totalStars =
+      doc && Number.isFinite(Number(doc.totalStars))
+        ? Number(doc.totalStars)
+        : 0;
+
+    const rating =
+      reviewCount > 0
+        ? Math.round((totalStars / reviewCount) * 10) / 10
+        : 0;
+
+    const viewCount =
+      doc && Number.isFinite(Number(doc.viewCount))
+        ? Number(doc.viewCount)
+        : 0;
 
     if (doc) {
       resultsWithPrice.push({
@@ -444,6 +571,12 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
         rating,
         reviewsLength: reviewCount,
         viewCount,
+
+        // Filtering.
+        extendedIngredients: doc.extendedIngredients ?? [],
+        glutenFree: doc.glutenFree ?? null,
+        dairyFree: doc.dairyFree ?? null,
+
         _cached: wasCached,
       });
     } else {
@@ -456,6 +589,20 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
         rating: 0,
         reviewsLength: 0,
         viewCount: 0,
+
+        // Filtering.
+        extendedIngredients: Array.isArray(recipeData.extendedIngredients)
+          ? recipeData.extendedIngredients
+          : [],
+        glutenFree:
+          typeof recipeData.glutenFree === "boolean"
+            ? recipeData.glutenFree
+            : null,
+        dairyFree:
+          typeof recipeData.dairyFree === "boolean"
+            ? recipeData.dairyFree
+            : null,
+
         _cached: false,
       });
     }
@@ -463,9 +610,17 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
 
   let results = resultsWithPrice;
 
-  // Apply filters to the results
+  if (intolerances.length > 0) {
+    results = results.filter((recipe) => {
+      return !intolerances.some((allergen) =>
+        recipeContainsAllergen(recipe, allergen)
+      );
+    });
+  }
+
   let hasActiveFilters = false;
   const coreFilters = {};
+
   if (
     filters &&
     Number.isFinite(filters.budgetMin) &&
@@ -482,14 +637,14 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
     results = results.filter((r) => passesFilters(r, coreFilters));
   }
 
-  // Order by view count (most viewed first)
-  //Results in the same recipes being returned over and over, bad for recipe discovery/diversity
-  //results.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+  const filteredCount = results.length;
+
+  results = results.map(removeInternalSearchFields);
 
   return {
     results,
     totalResults,
-    filteredCount: results.length,
+    filteredCount,
     _meta: {
       cachedCount,
       externalCount: newlyCachedCount,
@@ -1018,30 +1173,60 @@ export const getExternalRecipeFeed = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
     const offset = Math.max(parseInt(req.query.offset ?? "0", 10), 0);
-    const budgetMin = Number.isFinite(Number(req.query.budgetMin)) ? Number(req.query.budgetMin) : 0;
-    const budgetMax = Number.isFinite(Number(req.query.budgetMax)) ? Number(req.query.budgetMax) : 100;
-    const cookwareExclude = typeof req.query.cookware === "string"
-      ? req.query.cookware.split(",").map((s) => s.trim()).filter(Boolean)
-      : [];
-    const useMyCookwareOnly = String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
-    const userCookwareRaw = typeof req.query.userCookware === "string" ? req.query.userCookware : "";
-    const userCookware = userCookwareRaw ? userCookwareRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
-    const userCookwareSet = useMyCookwareOnly && userCookware.length > 0
-      ? new Set(userCookware.map((c) => String(c).toLowerCase().trim()))
-      : null;
-    // When My cookware is on, only exclude cookware the user HAS (no double effect)
-    const effectiveExclude = userCookwareSet
-      ? cookwareExclude.filter((c) => userCookwareSet.has(String(c).toLowerCase().trim()))
-      : cookwareExclude;
 
-    const fetchLimit = budgetMin > 0 || budgetMax < 100 || effectiveExclude.length > 0 || userCookwareSet
-      ? Math.min(limit * 5, 100)
-      : limit;
-    let results = await ExternalRecipeModel.getLatestCached(fetchLimit);
+    const budgetMin = Number.isFinite(Number(req.query.budgetMin))
+      ? Number(req.query.budgetMin)
+      : 0;
+
+    const budgetMax = Number.isFinite(Number(req.query.budgetMax))
+      ? Number(req.query.budgetMax)
+      : 100;
+
+    const allergies =
+      typeof req.query.allergies === "string"
+        ? req.query.allergies
+        : Array.isArray(req.query.allergies)
+          ? req.query.allergies.join(",")
+          : "";
+
+    const intolerances = normalizeAllergiesToIntolerances(allergies);
+
+    const cookwareExclude =
+      typeof req.query.cookware === "string"
+        ? req.query.cookware
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+
+    const useMyCookwareOnly =
+      String(req.query.useMyCookwareOnly ?? "false").toLowerCase() === "true";
+
+    const userCookwareRaw =
+      typeof req.query.userCookware === "string" ? req.query.userCookware : "";
+
+    const userCookware = userCookwareRaw
+      ? userCookwareRaw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+    const userCookwareSet =
+      useMyCookwareOnly && userCookware.length > 0
+        ? new Set(userCookware.map((c) => String(c).toLowerCase().trim()))
+        : null;
+
+    const effectiveExclude = userCookwareSet
+      ? cookwareExclude.filter((c) =>
+          userCookwareSet.has(String(c).toLowerCase().trim())
+        )
+      : cookwareExclude;
 
     const hasNarrowingFilters =
       budgetMin > 0 ||
       budgetMax < 100 ||
+      intolerances.length > 0 ||
       effectiveExclude.length > 0 ||
       Boolean(userCookwareSet);
 
@@ -1051,32 +1236,59 @@ export const getExternalRecipeFeed = async (req, res) => {
 
     let pool = await ExternalRecipeModel.getLatestCached(poolSize);
     const rawLen = pool.length;
-    const viewCount = (r) => (r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0);
-    pool.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
+
+    const viewCount = (r) =>
+      r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0;
+
+    pool.sort(
+      (a, b) => viewCount(b) - viewCount(a) || Number(a.id) - Number(b.id)
+    );
+
     let filtered = pool;
+
     if (budgetMin > 0 || budgetMax < 100) {
       filtered = filtered.filter((r) => {
         const price = r.price;
+
         if (price == null || typeof price !== "number") return true;
+
         return price >= budgetMin && price <= budgetMax;
       });
     }
+
+    if (intolerances.length > 0) {
+      filtered = filtered.filter((recipe) => {
+        return !intolerances.some((allergen) =>
+          recipeContainsAllergen(recipe, allergen)
+        );
+      });
+    }
+
     if (effectiveExclude.length > 0) {
-      const excludeSet = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
+      const excludeSet = new Set(
+        effectiveExclude.map((c) => String(c).toLowerCase().trim())
+      );
+
       filtered = filtered.filter((r) => {
         const names = equipmentNamesFromDoc(r.equipment);
         return !names.some((n) => excludeSet.has(n));
       });
     }
+
     if (userCookwareSet) {
       filtered = filtered.filter((r) => {
         const names = equipmentNamesFromDoc(r.equipment);
+
         if (names.length === 0) return true;
+
         return names.every((n) => userCookwareSet.has(n));
       });
     }
 
-    const results = filtered.slice(offset, offset + limit);
+    const results = filtered
+      .slice(offset, offset + limit)
+      .map(removeInternalSearchFields);
+
     const hasMore =
       results.length === limit &&
       (filtered.length > offset + limit || rawLen === poolSize);
