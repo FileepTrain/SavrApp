@@ -73,7 +73,6 @@ export const register = async (req, res) => {
     batch.set(db.collection("users").doc(uid), {
       email,
       username,
-      onboarding: false, // legacy flag
       onboarded: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -150,7 +149,7 @@ export const login = async (req, res) => {
       return res.status(403).json({
         error: "Please verify your email before signing in.",
         code: "EMAIL_NOT_VERIFIED",
-      })
+      });
     }
 
     let userData = {};
@@ -563,11 +562,7 @@ export const getPreferences = async (req, res) => {
           break;
         case "onboarded":
           output.onboarded =
-            typeof d.onboarded === "boolean"
-              ? d.onboarded
-              : typeof d.onboarding === "boolean"
-                ? d.onboarding
-                : false;
+            typeof d.onboarded === "boolean" ? d.onboarded : false;
           break;
         default:
           break;
@@ -1284,9 +1279,7 @@ export const oauthLogin = async (req, res) => {
       isNewUser = true;
 
       const baseUsername =
-        displayName.trim() ||
-        email.split("@")[0] ||
-        `user_${uid.slice(0, 8)}`;
+        displayName.trim() || email.split("@")[0] || `user_${uid.slice(0, 8)}`;
 
       finalUsername = baseUsername;
       let suffix = 1;
@@ -1308,7 +1301,6 @@ export const oauthLogin = async (req, res) => {
       batch.set(userRef, {
         email,
         username: finalUsername,
-        onboarding: false,
         onboarded: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1330,9 +1322,7 @@ export const oauthLogin = async (req, res) => {
       uid,
       email,
       username: finalUsername,
-      onboarded: userDoc.exists
-        ? userDoc.data().onboarded
-        : false,
+      onboarded: userDoc.exists ? userDoc.data().onboarded : false,
       isNewUser,
       message: "OAuth login successful",
     });

@@ -8,6 +8,7 @@ import { useLocalSearchParams } from "expo-router";
 
 import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 export default function ReviewsPage() {
   const recipeColumnWidth = useRecipeWebColumnWidth();
@@ -116,7 +117,7 @@ export default function ReviewsPage() {
 
       {/* MAIN CONTENT */}
       <ScrollView
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
         contentContainerStyle={
           recipeColumnWidth != null
             ? {

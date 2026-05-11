@@ -7,6 +7,7 @@ import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 
 import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 type Nutrient = {
   name: string;
@@ -149,7 +150,7 @@ export default function NutritionPage() {
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       <ScrollView
         className={recipeColumnWidth != null ? "pt-6" : "px-6 pt-6"}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
         contentContainerStyle={
           recipeColumnWidth != null
             ? {

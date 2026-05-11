@@ -1,6 +1,7 @@
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { allergies, diets } from "@/utils/diet-preferences";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { Collapsible } from "@/components/ui/collapsible";
 
 interface DietaryPreferencesSectionProps {
@@ -28,7 +29,11 @@ export function DietaryPreferencesSection({
 
   return (
     <View className="flex-1">
-      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 16 }}>
+      <ScrollView
+        className="flex-1 px-4"
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
+        contentContainerStyle={{ paddingBottom: 16 }}
+      >
         <Collapsible title="Allergies">
           {allergies.map((item) => {
             const isSelected = selectedAllergies.includes(item);

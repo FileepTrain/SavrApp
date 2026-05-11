@@ -29,6 +29,7 @@ import {
 } from "react-native";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 function newClientCollectionId(): string {
   return `local_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -312,16 +313,12 @@ export default function CollectionsPage() {
 
   const openCollection = (c: CollectionRow) => {
     if (c.ownerUid) {
-      router.push({
-        pathname: "/account/collection/[collectionId]",
-        params: { collectionId: c.id, ownerUid: c.ownerUid },
-      });
+      router.push(
+        `/account/collection/${encodeURIComponent(c.id)}?ownerUid=${encodeURIComponent(c.ownerUid)}`,
+      );
       return;
     }
-    router.push({
-      pathname: "/account/collection/[collectionId]",
-      params: { collectionId: c.id },
-    });
+    router.push(`/account/collection/${encodeURIComponent(c.id)}`);
   };
 
   const renderMineItem = ({ item }: { item: MineGridRow }) => {
@@ -408,6 +405,7 @@ export default function CollectionsPage() {
         ) : tab === "mine" ? (
           <FlatList
             style={{ flex: 1 }}
+            showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
             data={mineGridData}
             keyExtractor={(r) => r.id}
             numColumns={2}
@@ -429,6 +427,7 @@ export default function CollectionsPage() {
         ) : (
           <FlatList
             style={{ flex: 1 }}
+            showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
             data={followed}
             keyExtractor={(r) => `${r.ownerUid ?? ""}_${r.id}`}
             numColumns={2}

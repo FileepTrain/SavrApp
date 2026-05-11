@@ -39,6 +39,7 @@ import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
 import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
 
@@ -1196,7 +1197,7 @@ export default function RecipeDetailsPage() {
       {isWebDesktop ? (
         <ScrollView
           className="flex-1"
-          showsVerticalScrollIndicator
+          showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
           contentContainerStyle={{
             alignItems: "center",
             paddingHorizontal: 24,
@@ -1366,7 +1367,7 @@ export default function RecipeDetailsPage() {
               paddingBottom: insets.bottom,
             }}
           >
-            <ScrollView showsVerticalScrollIndicator={false} className="px-6">
+            <ScrollView showsVerticalScrollIndicator={verticalScrollIndicatorVisible} className="px-6">
               <View className="gap-4 w-full">{renderRecipeDetailBody()}</View>
             </ScrollView>
           </View>
@@ -1463,7 +1464,7 @@ export default function RecipeDetailsPage() {
                       className="max-h-80"
                       nestedScrollEnabled
                       keyboardShouldPersistTaps="handled"
-                      showsVerticalScrollIndicator
+                      showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
                     >
                       {saveCollections.length === 0 ? (
                         <Text className="text-muted-foreground text-sm py-2">

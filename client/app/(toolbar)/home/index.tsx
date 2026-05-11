@@ -1,6 +1,12 @@
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Platform, View, Text } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  View,
+  Text,
+} from "react-native";
 import { router } from "expo-router";
 
 import { RecipeCard } from "@/components/recipe-card";
@@ -10,7 +16,8 @@ import Input from "@/components/ui/input";
 import { useHomeFilter } from "@/contexts/home-filter-context";
 import { loadUserCookware } from "@/utils/cookware";
 
-import { SERVER_URL } from '@/utils/server-url';
+import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 type ExternalRecipe = {
   id: number;
@@ -21,6 +28,7 @@ type ExternalRecipe = {
 
 // Display Home Screen
 const H_PADDING = 48; // matches ThemedSafeView px-6 (24+24)
+const PAGE_SIZE = 20;
 
 export default function HomeScreen() {
   const { appliedFilters, openFilterModal } = useHomeFilter();
@@ -28,6 +36,19 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [recipes, setRecipes] = useState<ExternalRecipe[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  const recipesRef = useRef<ExternalRecipe[]>([]);
+  const hasMoreRef = useRef(true);
+  const loadingMoreRef = useRef(false);
+
+  useEffect(() => {
+    recipesRef.current = recipes;
+  }, [recipes]);
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
 
   const gridInner = Math.max(0, contentWidth - H_PADDING);
   const numColumns =
@@ -42,7 +63,6 @@ export default function HomeScreen() {
     const q = searchQuery.trim();
     if (!q) return;
 
-    // Pass filters along to the search page (you’ll read these on search screen later)
     const params = new URLSearchParams({
       q,
       budgetMin: String(appliedFilters.budgetMin),
@@ -56,48 +76,102 @@ export default function HomeScreen() {
     router.push(`/(toolbar)/home/search?${params.toString()}`);
   };
 
-  // Fetch feed from server (with current filters so backend can filter when supported)
-  const fetchFeed = async () => {
-    setLoading(true);
-    try {
-      const userCookwareList = appliedFilters.useMyCookwareOnly
-        ? Array.from(await loadUserCookware())
-        : [];
-      const params = new URLSearchParams({
-        limit: "20",
-        budgetMin: String(appliedFilters.budgetMin),
-        budgetMax: String(appliedFilters.budgetMax),
-        allergies: appliedFilters.allergies.join(","),
-        foodTypes: appliedFilters.foodTypes.join(","),
-        cookware: appliedFilters.cookware.join(","),
-        useMyCookwareOnly: String(appliedFilters.useMyCookwareOnly),
-      });
-      if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
-        params.set("userCookware", userCookwareList.join(","));
+  const fetchFeedPage = useCallback(
+    async (reset: boolean) => {
+      if (!reset) {
+        if (
+          loadingMoreRef.current ||
+          !hasMoreRef.current ||
+          recipesRef.current.length === 0
+        ) {
+          return;
+        }
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setHasMore(true);
+        hasMoreRef.current = true;
       }
-      const res = await fetch(`${SERVER_URL}/api/external-recipes/feed?${params}`);
-      const raw = await res.text();
 
-      let data: any;
+      const offset = reset ? 0 : recipesRef.current.length;
+
       try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error(`HOME FEED returned non-JSON (status ${res.status})`);
-      }
+        const userCookwareList = appliedFilters.useMyCookwareOnly
+          ? Array.from(await loadUserCookware())
+          : [];
+        const params = new URLSearchParams({
+          limit: String(PAGE_SIZE),
+          offset: String(offset),
+          budgetMin: String(appliedFilters.budgetMin),
+          budgetMax: String(appliedFilters.budgetMax),
+          allergies: appliedFilters.allergies.join(","),
+          foodTypes: appliedFilters.foodTypes.join(","),
+          cookware: appliedFilters.cookware.join(","),
+          useMyCookwareOnly: String(appliedFilters.useMyCookwareOnly),
+        });
+        if (appliedFilters.useMyCookwareOnly && userCookwareList.length > 0) {
+          params.set("userCookware", userCookwareList.join(","));
+        }
+        const res = await fetch(
+          `${SERVER_URL}/api/external-recipes/feed?${params}`,
+        );
+        const raw = await res.text();
 
-      if (!res.ok) throw new Error(data.error || "Failed to fetch feed");
-      setRecipes(Array.isArray(data.results) ? data.results : []);
-    } catch (e) {
-      console.error("Home feed fetch error:", e);
-      setRecipes([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+        let data: {
+          results?: ExternalRecipe[];
+          hasMore?: boolean;
+          error?: string;
+        };
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          throw new Error(`HOME FEED returned non-JSON (status ${res.status})`);
+        }
+
+        if (!res.ok) throw new Error(data.error || "Failed to fetch feed");
+
+        const next = Array.isArray(data.results) ? data.results : [];
+        const more = Boolean(data.hasMore);
+        setHasMore(more);
+        hasMoreRef.current = more;
+
+        if (reset) {
+          setRecipes(next);
+        } else {
+          setRecipes((prev) => {
+            const seen = new Set(prev.map((r) => r.id));
+            const merged = [...prev];
+            for (const r of next) {
+              if (!seen.has(r.id)) {
+                seen.add(r.id);
+                merged.push(r);
+              }
+            }
+            return merged;
+          });
+        }
+      } catch (e) {
+        console.error("Home feed fetch error:", e);
+        if (reset) setRecipes([]);
+        setHasMore(false);
+        hasMoreRef.current = false;
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        loadingMoreRef.current = false;
+      }
+    },
+    [appliedFilters],
+  );
 
   useEffect(() => {
-    fetchFeed();
-  }, [appliedFilters]);
+    void fetchFeedPage(true);
+  }, [appliedFilters, fetchFeedPage]);
+
+  const handleLoadMore = useCallback(() => {
+    void fetchFeedPage(false);
+  }, [fetchFeedPage]);
 
   // Keep header stable
   const Header = useMemo(() => {
@@ -133,15 +207,18 @@ export default function HomeScreen() {
     return <View className="mb-4">{row}</View>;
   }, [searchQuery, appliedFilters, isWebDesktop]);
 
+  const showFullScreenLoader = loading && recipes.length === 0;
+
   return (
     <ThemedSafeView className="flex-1">
-      {loading ? (
+      {showFullScreenLoader ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="red" />
         </View>
       ) : (
         <FlatList
           key={`home-feed-${numColumns}`}
+          showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
           data={recipes}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
@@ -155,8 +232,10 @@ export default function HomeScreen() {
               prominent={isWebDesktop}
             />
           )}
-          onRefresh={fetchFeed}
-          refreshing={loading}
+          onRefresh={() => void fetchFeedPage(true)}
+          refreshing={loading && recipes.length > 0}
+          onEndReached={hasMore ? handleLoadMore : undefined}
+          onEndReachedThreshold={0.55}
           numColumns={numColumns}
           columnWrapperStyle={
             numColumns > 1
@@ -172,11 +251,20 @@ export default function HomeScreen() {
             rowGap: 16,
           }}
           ListEmptyComponent={
-            <Text className="text-center text-foreground opacity-60 mt-6">
-              No cached recipes yet.
-            </Text>
+            !loading ? (
+              <Text className="text-center text-foreground opacity-60 mt-6">
+                No cached recipes yet.
+              </Text>
+            ) : null
           }
           ListHeaderComponent={Header}
+          ListFooterComponent={
+            loadingMore ? (
+              <View className="py-4">
+                <ActivityIndicator color="red" />
+              </View>
+            ) : null
+          }
         />
       )}
     </ThemedSafeView>

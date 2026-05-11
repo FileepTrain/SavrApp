@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { ALL_COOKWARE_SORTED } from "@/utils/cookware";
 import Input from "@/components/ui/input";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 interface MyCookwareSectionProps {
   value: string[];
@@ -52,7 +53,7 @@ export function MyCookwareSection({ value, onChange, isLoading = false }: MyCook
           <Text className="text-[16px] text-muted-foreground">Loading...</Text>
         </View>
       ) : (
-        <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={false}>
+        <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={verticalScrollIndicatorVisible}>
           <View className="gap-2 pb-4">
             {filteredCookware.map((item) => {
               const isSelected = value.includes(item);

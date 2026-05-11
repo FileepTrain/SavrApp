@@ -142,7 +142,6 @@ export async function ensureUserFirestoreFromAuth(db, opts) {
     const patch = {
       email: emailStr,
       username: usernameBase,
-      onboarding: false,
       onboarded: treatMissingDocAsReturningUser,
       favoriteIds: [],
       cookware: [],
@@ -164,9 +163,8 @@ export async function ensureUserFirestoreFromAuth(db, opts) {
   const d = userSnap.data() || {};
   const repairs = buildRepairs(d, { email, displayName, forceFullRepair });
 
-  if (typeof d.onboarded !== "boolean" && typeof d.onboarding !== "boolean") {
+  if (typeof d.onboarded !== "boolean") {
     repairs.onboarded = treatMissingDocAsReturningUser;
-    repairs.onboarding = false;
   }
 
   let finalUsername =

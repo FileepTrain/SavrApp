@@ -13,6 +13,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useGlobalSearchParams, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { buildProfileShareWebUrl, openNativeShare } from "@/utils/profile-share";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { prepareProfilePhotoForUpload } from "@/utils/prepare-profile-photo-upload";
 import {
   ActivityIndicator,
@@ -476,47 +477,63 @@ export default function CreatorProfilePage() {
 
   const pickAndUploadPhoto = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        setError("Photo library access is required.");
-        return;
+      if (Platform.OS !== "web") {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          setError("Photo library access is required.");
+          return;
+        }
       }
       // allowsEditing breaks many Android content:// sources (e.g. Google Photos / Downloads).
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        quality: 0.9,
-        selectionLimit: 1,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-
       setUploadingPhoto(true);
       const idToken = await AsyncStorage.getItem("idToken");
       if (!idToken) return;
 
-      const asset = result.assets[0];
-      let uploadUri: string;
-      let uploadName: string;
-      let uploadType: string;
-      try {
-        const prepared = await prepareProfilePhotoForUpload(asset);
-        uploadUri = prepared.uri;
-        uploadName = prepared.name;
-        uploadType = prepared.type;
-      } catch (prepErr) {
-        const msg =
-          prepErr instanceof Error ? prepErr.message : "Could not read that photo.";
-        setError(msg);
-        Alert.alert("Photo", msg);
-        return;
-      }
-
       const form = new FormData();
-      form.append("image", {
-        uri: uploadUri,
-        name: uploadName,
-        type: uploadType,
-      } as unknown as Blob);
+      if (Platform.OS === "web") {
+        const pickedFile = await new Promise<File | null>((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "image/*";
+          input.multiple = false;
+          input.onchange = () => {
+            const file = input.files?.[0] ?? null;
+            resolve(file);
+          };
+          input.click();
+        });
+        if (!pickedFile) return;
+        form.append("image", pickedFile, pickedFile.name || `profile_${Date.now()}.jpg`);
+      } else {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          allowsEditing: false,
+          quality: 0.9,
+          selectionLimit: 1,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        const asset = result.assets[0];
+        let uploadUri: string;
+        let uploadName: string;
+        let uploadType: string;
+        try {
+          const prepared = await prepareProfilePhotoForUpload(asset);
+          uploadUri = prepared.uri;
+          uploadName = prepared.name;
+          uploadType = prepared.type;
+        } catch (prepErr) {
+          const msg =
+            prepErr instanceof Error ? prepErr.message : "Could not read that photo.";
+          setError(msg);
+          Alert.alert("Photo", msg);
+          return;
+        }
+        form.append("image", {
+          uri: uploadUri,
+          name: uploadName,
+          type: uploadType,
+        } as unknown as Blob);
+      }
 
       const res = await fetch(`${SERVER_URL}/api/auth/profile-photo`, {
         method: "POST",
@@ -671,6 +688,7 @@ export default function CreatorProfilePage() {
   const recipeList = (
     <FlatList
       data={listForTab()}
+      showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
       keyExtractor={(item) => item.id}
       key={`${activeTab}-list`}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
@@ -689,6 +707,7 @@ export default function CreatorProfilePage() {
   const boardsOrPlansScroll = (
     <ScrollView
       className="flex-1"
+      showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
       contentContainerStyle={{ paddingBottom: 24 }}
       keyboardShouldPersistTaps="handled"
     >
@@ -710,16 +729,12 @@ export default function CreatorProfilePage() {
                       name={c.name}
                       recipeCount={c.recipeCount}
                       covers={profileCollectionCovers[c.id]}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/account/collection/[collectionId]",
-                          params: {
-                            collectionId: c.id,
-                            ownerUid: uid,
-                            fromProfile: "1",
-                          },
-                        })
-                      }
+                      onPress={() => {
+                        if (!uid) return;
+                        router.push(
+                          `/account/collection/${encodeURIComponent(c.id)}?ownerUid=${encodeURIComponent(uid)}&fromProfile=1`,
+                        );
+                      }}
                       showMenuButton={!viewingOwnProfile}
                       onMenuPress={() => setCollectionMenuId(c.id)}
                     />

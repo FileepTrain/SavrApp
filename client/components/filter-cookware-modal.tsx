@@ -1,6 +1,7 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useThemePalette } from "@/components/theme-provider";
 import { ALL_COOKWARE_SORTED } from "@/utils/cookware";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import React, { useEffect, useState } from "react";
 import {
   Modal,
@@ -150,7 +151,7 @@ export function FilterCookwareModal({
             </Pressable>
 
             {/* List with X for selected (exclude these recipes) - match Add Cookware row style */}
-            <ScrollView className="px-4 flex-1" style={{ flex: 1 }} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
+            <ScrollView className="px-4 flex-1" style={{ flex: 1 }} showsVerticalScrollIndicator={verticalScrollIndicatorVisible} keyboardShouldPersistTaps="handled">
               {filteredList.length === 0 ? (
                 <View className="py-6 px-2">
                   <Text className="text-center text-muted-foreground">

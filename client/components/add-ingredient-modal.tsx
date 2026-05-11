@@ -16,6 +16,7 @@ import {
 } from "react-native";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 export type ExtendedIngredient = {
   id: number;
@@ -359,6 +360,7 @@ export function AddIngredientModal({
                       ) : (
                         <FlatList
                           data={results}
+                          showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
                           keyExtractor={(item) => String(item.id)}
                           keyboardShouldPersistTaps="handled"
                           style={{ maxHeight: 260 }}
@@ -487,6 +489,7 @@ export function AddIngredientModal({
 
                       <FlatList
                         data={unitOptions}
+                        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
                         keyExtractor={(u) => u}
                         style={{ maxHeight: 320 }}
                         keyboardShouldPersistTaps="handled"

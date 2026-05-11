@@ -95,8 +95,10 @@ async function _getStoreIdForRecipe(zip = "90713") {
  * Optional query params: budgetMin, budgetMax, limit, q (search query)
  * Returns:
  * - personalResults: user recipes matching filters/search
- * - externalResults: external recipes (Spoonacular) in the same simplified shape
- * - results: combined list (personal first, then external) for backward compatibility
+ * - cachedExternalResults: external_recipes in Firestore (no live API)
+ * - liveExternalResults: live Spoonacular complexSearch only
+ * - externalResults: cached + live (backward compatibility)
+ * - results: combined list (personal, then cached, then live) for backward compatibility
  */
 export const getFilteredFeed = async (req, res) => {
   try {
@@ -114,19 +116,29 @@ export const getFilteredFeed = async (req, res) => {
       : 100;
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 200);
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-    const externalOnly =
+    const externalOnlyLegacy =
       String(req.query.externalOnly ?? "false").toLowerCase() === "true";
+    const cachedExternalOnly =
+      String(req.query.cachedExternalOnly ?? "false").toLowerCase() === "true";
+    const liveExternalOnly =
+      String(req.query.liveExternalOnly ?? "false").toLowerCase() === "true";
     const personalOnly =
       String(req.query.personalOnly ?? "false").toLowerCase() === "true";
 
     const personalOffset = Number.isFinite(Number(req.query.personalOffset))
       ? Number(req.query.personalOffset)
       : 0;
-    const externalOffset = Number.isFinite(Number(req.query.externalOffset))
+    const rawExternalOffset = Number.isFinite(Number(req.query.externalOffset))
       ? Number(req.query.externalOffset)
       : Number.isFinite(Number(req.query.offset))
         ? Number(req.query.offset)
         : 0;
+    const cachedExternalOffset = Number.isFinite(Number(req.query.cachedExternalOffset))
+      ? Number(req.query.cachedExternalOffset)
+      : rawExternalOffset;
+    const liveExternalOffset = Number.isFinite(Number(req.query.liveExternalOffset))
+      ? Number(req.query.liveExternalOffset)
+      : 0;
 
     const cookwareExclude = typeof req.query.cookware === "string"
       ? req.query.cookware.split(",").map((s) => s.trim()).filter(Boolean)
@@ -141,14 +153,17 @@ export const getFilteredFeed = async (req, res) => {
           ? req.query.allergies.map((s) => String(s).trim()).filter(Boolean)
           : [];
 
-    const filters = { budgetMin, budgetMax, limit, q, cookware: cookwareExclude, useMyCookwareOnly, userCookware, allergies }
+    const filters = { budgetMin, budgetMax, limit, q, cookware: cookwareExclude, useMyCookwareOnly, userCookware, allergies };
+
+    const skipPersonal =
+      externalOnlyLegacy || cachedExternalOnly || liveExternalOnly;
 
     let personalResults = [];
     let remaining = limit;
     let personalRequested = 0;
     let personalExhausted = false;
 
-    if (!externalOnly && remaining > 0) {
+    if (!skipPersonal && remaining > 0) {
       personalRequested = remaining;
       const recipes = await getAllRecipes({
         ...filters,
@@ -182,68 +197,99 @@ export const getFilteredFeed = async (req, res) => {
       remaining = Math.max(remaining - personalResults.length, 0);
     }
 
-    // External results from cached external_recipes collection (no Spoonacular API call)
-    let externalResults = [];
-    let externalMeta = null;
-    let externalTotalResults = null;
-    if (!personalOnly && (q || externalOnly)) {
-      const EXTERNAL_SOURCE = "spoonacular";
+    const EXTERNAL_SOURCE = "spoonacular";
+    let cachedExternalResults = [];
+    let cachedExternalTotal = null;
+    let cachedMeta = null;
+    let liveExternalResults = [];
+    let liveExternalTotal = null;
+    let liveMeta = null;
+
+    const wantsCached =
+      !personalOnly &&
+      !liveExternalOnly &&
+      q &&
+      (cachedExternalOnly || externalOnlyLegacy || (!cachedExternalOnly && !liveExternalOnly));
+
+    if (wantsCached) {
       const cached = await ExternalRecipeModel.searchCachedForFeed(
         EXTERNAL_SOURCE,
         q,
         limit,
-        externalOffset,
+        cachedExternalOffset,
         budgetMin,
         budgetMax,
         cookwareExclude,
         useMyCookwareOnly ? userCookware : null,
       );
-      externalResults = Array.isArray(cached?.results) ? cached.results : [];
-      externalMeta = cached?._meta ?? null;
-      externalTotalResults =
-        typeof cached?.totalResults === "number" ? cached.totalResults : externalResults.length;
+      cachedExternalResults = Array.isArray(cached?.results) ? cached.results : [];
+      cachedMeta = cached?._meta ?? null;
+      cachedExternalTotal =
+        typeof cached?.totalResults === "number" ? cached.totalResults : cachedExternalResults.length;
+    }
 
-      // Fallback to live Spoonacular search when cache has no matches.
-      if (externalResults.length === 0 && q) {
-        const live = await searchExternalRecipes({
-          filters,
-          limit,
-          offset: externalOffset,
-        });
+    const shouldCallLive =
+      !personalOnly &&
+      !cachedExternalOnly &&
+      q &&
+      (liveExternalOnly ||
+        externalOnlyLegacy ||
+        (!cachedExternalOnly && !liveExternalOnly));
 
-        externalResults = Array.isArray(live?.results) ? live.results : [];
-        externalMeta = {
-          ...(externalMeta || {}),
-          ...(live?._meta || {}),
-          source: "spoonacular-live-fallback",
-        };
-        externalTotalResults =
-          typeof live?.totalResults === "number" ? live.totalResults : externalResults.length;
+    if (shouldCallLive) {
+      const live = await searchExternalRecipes({
+        filters,
+        limit,
+        offset: liveExternalOnly ? liveExternalOffset : rawExternalOffset,
+      });
+      liveExternalResults = Array.isArray(live?.results) ? live.results : [];
+      liveMeta = live?._meta ?? null;
+      liveExternalTotal =
+        typeof live?.totalResults === "number" ? live.totalResults : liveExternalResults.length;
+      if (liveExternalResults.length > 0) {
+        liveMeta = { ...(liveMeta || {}), source: "spoonacular-live" };
       }
     }
 
-    // Merge and sort by view count (most viewed first); ensure every item has viewCount for sort
-    const combined = [...personalResults, ...externalResults].map((r) => ({
+    const externalResults = [...cachedExternalResults, ...liveExternalResults];
+
+    // Ordering: personal, cached external, live external (no global popularity merge)
+    const combined = [...personalResults, ...cachedExternalResults, ...liveExternalResults].map((r) => ({
       ...r,
       viewCount: Number(r.viewCount) || 0,
     }));
-    combined.sort((a, b) => b.viewCount - a.viewCount);
+
+    const legacyExternalTotal =
+      typeof cachedExternalTotal === "number"
+        ? cachedExternalTotal
+        : typeof liveExternalTotal === "number"
+          ? liveExternalTotal
+          : externalResults.length;
 
     return res.json({
       success: true,
       results: combined,
       personalResults,
+      cachedExternalResults,
+      liveExternalResults,
       externalResults,
       totalCount: combined.length,
-      externalMeta,
+      externalMeta: cachedMeta,
+      liveExternalMeta: liveMeta,
       meta: {
         limit,
         personalOffset,
-        externalOffset,
+        externalOffset: rawExternalOffset,
+        cachedExternalOffset,
+        liveExternalOffset,
         personalReturned: personalResults.length,
+        cachedExternalReturned: cachedExternalResults.length,
+        liveExternalReturned: liveExternalResults.length,
         externalReturned: externalResults.length,
-        personalExhausted: externalOnly ? true : personalExhausted,
-        externalTotalResults,
+        personalExhausted: skipPersonal ? true : personalExhausted,
+        cachedExternalTotal,
+        liveExternalTotal,
+        externalTotalResults: legacyExternalTotal,
       },
     });
   } catch (error) {

@@ -96,11 +96,9 @@ async function incrementViewCount(externalSource, externalId) {
 // Update Trending for Firebase
 async function updateTrendingStats(externalSource, externalId, averageRating, trendingScore) {
   if (!externalSource || !externalId) return;
-
   const db = getDb();
   const docId = makeDocId(externalSource, externalId);
   const docRef = db.collection(COLL).doc(docId);
-
   await docRef.set(
     {
       averageRating,

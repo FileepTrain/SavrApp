@@ -20,6 +20,9 @@ interface RecipeCardProps {
   tileWidth?: number;
   /** Taller card + larger image for wide web grids (use with `tileWidth`). */
   prominent?: boolean;
+  /** Horizontal variant only: thumbnail size in px (defaults 128×96). */
+  horizontalThumbnailWidth?: number;
+  horizontalThumbnailHeight?: number;
   onPress?: () => void; // if provided uses Pressable; else Link to details
   onLongPress?: () => void;
 }
@@ -35,6 +38,8 @@ export const RecipeCard = ({
   imageUrl = null,
   tileWidth,
   prominent = false,
+  horizontalThumbnailWidth,
+  horizontalThumbnailHeight,
   onPress,
   onLongPress,
 }: RecipeCardProps) => {
@@ -76,7 +81,7 @@ export const RecipeCard = ({
 
     cardContent = (
       <View
-        className={`bg-background rounded-2xl overflow-hidden flex-col drop-shadow-xl ${tileWidth == null ? "w-48" : ""} ${!desktopGridProminent && prominent ? "h-72" : ""} ${!desktopGridProminent && !prominent ? "h-56" : ""}`}
+        className={`bg-background rounded-2xl overflow-hidden flex-col drop-shadow-xl ${tileWidth == null ? "w-48" : ""} ${!desktopGridProminent && prominent ? "h-72" : ""} ${!desktopGridProminent && !prominent ? "min-h-56" : ""}`}
         style={
           desktopGridProminent && tileWidth != null && cardHeightPx != null
             ? { width: tileWidth, height: cardHeightPx }
@@ -132,26 +137,36 @@ export const RecipeCard = ({
       </View>
     );
   } else {
-    // Horizontal variant
+    // Horizontal variant (compact defaults; optional larger thumbs e.g. desktop search)
+    const thumbW = horizontalThumbnailWidth ?? 128;
+    const thumbH = horizontalThumbnailHeight ?? 96;
+    const placeholderIcon = Math.min(44, Math.round(Math.min(thumbW, thumbH) * 0.28));
+
     cardContent = (
-      <View className="bg-background flex-row items-center overflow-hidden h-24 w-full gap-5 rounded-xl drop-shadow-xl">
-        <View className="h-24 w-32 shrink-0 overflow-hidden rounded-xl rounded-r-none bg-muted-background">
+      <View
+        className="bg-background flex-row items-start overflow-hidden w-full gap-5 rounded-xl drop-shadow-xl"
+        style={{ minHeight: thumbH }}
+      >
+        <View
+          className="shrink-0 overflow-hidden rounded-xl rounded-r-none bg-muted-background"
+          style={{ width: thumbW, height: thumbH }}
+        >
           {hasImage ? (
             <Image
               source={{ uri: imageUrl! }}
               className="h-full w-full"
-              resizeMode="contain"
+              resizeMode="cover"
             />
           ) : (
-            noImagePlaceholder(28)
+            noImagePlaceholder(placeholderIcon)
           )}
         </View>
-        <View className="flex-1 justify-center">
+        <View className="flex-1 justify-start py-1 min-h-0">
           <View>
-            <Text className="text-red-primary font-medium" numberOfLines={1}>
+            <Text className="text-red-primary font-medium text-base" numberOfLines={2}>
               {title}
             </Text>
-            <Text className="text-muted-foreground text-sm">
+            <Text className="text-muted-foreground text-sm mt-0.5">
               {calories} calories
             </Text>
           </View>

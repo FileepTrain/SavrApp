@@ -17,6 +17,7 @@ import {
 } from "react-native";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 type NutrientRow = {
   name: string;
@@ -261,7 +262,7 @@ export default function MealPlanNutrientPreviewPage() {
       <ScrollView
         className="flex-1 pt-6"
         contentContainerStyle={{ paddingTop: 24, paddingBottom: 32 }}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
       >
         <AccountWebColumn>
         {error ? (

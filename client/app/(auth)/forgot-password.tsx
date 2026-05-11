@@ -8,6 +8,7 @@ import { Alert, Image, ScrollView, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/firebase/firebase";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 const ForgotPasswordPage = () => {
   const [email, setEmail] = useState("");
@@ -40,7 +41,10 @@ const ForgotPasswordPage = () => {
   return (
     <ThemedSafeView className="flex-1 bg-background">
         <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView className="w-full px-4">
+      <ScrollView
+        className="w-full px-4"
+        showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
+      >
         <Image
           source={images.logo}
           resizeMode="contain"

@@ -17,6 +17,7 @@ import { View, Text, ActivityIndicator, FlatList } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 function singleQueryParam(v: string | string[] | undefined): string | undefined {
   if (typeof v === "string" && v.trim()) return v.trim();
@@ -260,6 +261,7 @@ export default function FavoritesPage() {
           :
           <FlatList
             style={{ flex: 1 }}
+            showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
             data={favorites}
             keyExtractor={(item) => item.id}
             ListEmptyComponent={

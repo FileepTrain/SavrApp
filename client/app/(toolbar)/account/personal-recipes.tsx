@@ -14,6 +14,7 @@ import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { useNetwork } from "@/contexts/network-context";
 import { usePersonalRecipes } from "@/contexts/personal-recipes-context";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 export default function PersonalRecipesPage() {
   const { recipes: personalRecipes, loading, error, refetch } = usePersonalRecipes();
@@ -69,6 +70,7 @@ export default function PersonalRecipesPage() {
         ) : (
           <FlatList
             style={{ flex: 1 }}
+            showsVerticalScrollIndicator={verticalScrollIndicatorVisible}
             data={personalRecipes ?? []}
             keyExtractor={(item) => String(item.id)}
             refreshing={refreshing}

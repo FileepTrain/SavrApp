@@ -28,6 +28,7 @@ import { CACHE_KEYS, readCache, writeCache } from "@/utils/offline-cache";
 import { enqueueMutation } from "@/utils/mutation-queue";
 import { SERVER_URL } from "@/utils/server-url";
 import { getFirebaseAuth } from "@/firebase/firebase";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 type PantryItem = {
   id: string;
@@ -260,7 +261,6 @@ export default function PantryPage() {
       } catch {
         throw new Error(`Failed to parse update response. Status: ${res.status}`);
       }
-
       if (!res.ok) {
         throw new Error(data?.error || "Failed to update pantry item");
       }
@@ -345,10 +345,8 @@ export default function PantryPage() {
         });
 
         const updated = pantryItems.filter((x) => x.id !== id);
-
         setPantryItems(updated);
         await writeCache(CACHE_KEYS.PANTRY, updated);
-
         return;
       }
 
@@ -362,7 +360,6 @@ export default function PantryPage() {
       });
 
       const raw = await res.text();
-
       let data: any = null;
 
       try {

@@ -483,7 +483,8 @@ export const searchExternalRecipes = async ({ filters, limit, offset }) => {
   }
 
   // Order by view count (most viewed first)
-  results.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
+  //Results in the same recipes being returned over and over, bad for recipe discovery/diversity
+  //results.sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0));
 
   return {
     results,
@@ -506,9 +507,15 @@ function toDishTypeSet(value) {
   );
 }
 
-/** Weights for auto meal plan pantry fit (tweak-friendly). */
-const PANTRY_SCORE_WEIGHT_MATCH_RATIO = 0.8;
-const PANTRY_SCORE_WEIGHT_MISSING = 0.2;
+/** Weights for auto meal plan pantry fit (tweak-friendly).
+ *  If I had more time I would have liked to make a weighted list for ingredients,
+ *  ex. missing chicken docks more points than missing spices. But I would need more time
+ *  and trying to weigh every single ingredient would be too much.
+ *  For now we use this
+ * **/
+const PANTRY_SCORE_WEIGHT_MATCH_RATIO = 0.7; // the higher the more matching ingredients matter
+const PANTRY_SCORE_WEIGHT_MISSING = 0.4; // the higher the more recipes with fewer missing ingredients matter
+
 
 function normalizePantryNamesFromQuery(req) {
   const raw = req.query?.pantry;
@@ -637,10 +644,11 @@ function pickRecipeForSlot(
     return pickBestByPantryScore(pool, pantryPick.namesLower);
   }
 
-  //keep top 10, those recipes usually fit range. If pool is too big you get weird picks
-  const TOP_N = 10;
+  //Keep top num, those recipes usually fit range. If pool is too big you get weird picks, too small and you get same recipes
+  //Still not satisfied but it will do for now
+  const TOP_N = 15;
   const trimmedPool = pool.slice(0, TOP_N);
-  //randomly choose from top ten
+  //randomly choose from top contenders
   const randomIndex = Math.floor(Math.random() * trimmedPool.length);
   return trimmedPool[randomIndex] ?? null;
 }
@@ -953,7 +961,6 @@ export const getExternalRecipeDetails = async (req, res) => {
       EXTERNAL_SOURCE,
       id,
     );
-
     if (!recipeFromDb) {
       return res.status(404).json({
         error:
@@ -1010,6 +1017,7 @@ export const getExternalRecipeDetails = async (req, res) => {
 export const getExternalRecipeFeed = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 50);
+    const offset = Math.max(parseInt(req.query.offset ?? "0", 10), 0);
     const budgetMin = Number.isFinite(Number(req.query.budgetMin)) ? Number(req.query.budgetMin) : 0;
     const budgetMax = Number.isFinite(Number(req.query.budgetMax)) ? Number(req.query.budgetMax) : 100;
     const cookwareExclude = typeof req.query.cookware === "string"
@@ -1031,8 +1039,23 @@ export const getExternalRecipeFeed = async (req, res) => {
       : limit;
     let results = await ExternalRecipeModel.getLatestCached(fetchLimit);
 
+    const hasNarrowingFilters =
+      budgetMin > 0 ||
+      budgetMax < 100 ||
+      effectiveExclude.length > 0 ||
+      Boolean(userCookwareSet);
+
+    const poolSize = hasNarrowingFilters
+      ? Math.min(Math.max((offset + limit) * 5, limit), 500)
+      : Math.min(offset + limit, 500);
+
+    let pool = await ExternalRecipeModel.getLatestCached(poolSize);
+    const rawLen = pool.length;
+    const viewCount = (r) => (r && Number.isFinite(Number(r.viewCount)) ? Number(r.viewCount) : 0);
+    pool.sort((a, b) => viewCount(b) - viewCount(a) || (Number(a.id) - Number(b.id)));
+    let filtered = pool;
     if (budgetMin > 0 || budgetMax < 100) {
-      results = results.filter((r) => {
+      filtered = filtered.filter((r) => {
         const price = r.price;
         if (price == null || typeof price !== "number") return true;
         return price >= budgetMin && price <= budgetMax;
@@ -1040,20 +1063,25 @@ export const getExternalRecipeFeed = async (req, res) => {
     }
     if (effectiveExclude.length > 0) {
       const excludeSet = new Set(effectiveExclude.map((c) => String(c).toLowerCase().trim()));
-      results = results.filter((r) => {
+      filtered = filtered.filter((r) => {
         const names = equipmentNamesFromDoc(r.equipment);
         return !names.some((n) => excludeSet.has(n));
       });
     }
     if (userCookwareSet) {
-      results = results.filter((r) => {
+      filtered = filtered.filter((r) => {
         const names = equipmentNamesFromDoc(r.equipment);
         if (names.length === 0) return true;
         return names.every((n) => userCookwareSet.has(n));
       });
     }
-    results = results.slice(0, limit);
-    return res.json({ success: true, results });
+
+    const results = filtered.slice(offset, offset + limit);
+    const hasMore =
+      results.length === limit &&
+      (filtered.length > offset + limit || rawLen === poolSize);
+
+    return res.json({ success: true, results, hasMore });
   } catch (error) {
     console.error("Error getting external recipe feed:", error);
     return res.status(500).json({

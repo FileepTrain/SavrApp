@@ -10,6 +10,7 @@ import {
   loadRecipeViewHistory,
   type RecipeViewHistoryEntry,
 } from "@/utils/recipe-view-history";
+import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -55,7 +56,7 @@ export default function RecipeHistoryPage() {
           </View>
         ) : (
           // Create a list of recipe cards for each item in the history
-          <ScrollView className="flex-1 pt-2" showsVerticalScrollIndicator={false}>
+          <ScrollView className="flex-1 pt-2" showsVerticalScrollIndicator={verticalScrollIndicatorVisible}>
             <View className="gap-3 pb-4">
               {items.map((item) => (
                 <RecipeCard
