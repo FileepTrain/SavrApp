@@ -4,10 +4,8 @@ import { useMealPlans } from "@/contexts/meal-plans-context";
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? "http://192.168.1.105:3000";
-
-type MealValue = string | string[] | null | undefined;
+import { SERVER_URL } from "@/utils/server-url";
+type MealValue = string | string[] | any[] | null | undefined;
 
 type MealPlan = {
   id?: string;
@@ -30,10 +28,11 @@ type RecipeDetails = {
   }[];
 };
 
-// Functions to calculate dates and meal
 function toDateSafe(value?: string | null) {
   if (!value) return null;
+
   const d = new Date(value);
+
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -54,17 +53,52 @@ function formatDateRange(start?: string | null, end?: string | null) {
   const e = toDateSafe(end);
 
   if (!s || !e) return "No date range";
+
   return `${s.toDateString()} - ${e.toDateString()}`;
 }
 
 function normalizeMealSlot(value: MealValue): string[] {
   if (!value) return [];
-  if (Array.isArray(value)) {
-    return value
-      .map((v) => String(v).trim())
-      .filter((v) => v.length > 0);
+
+  let parsedValue: any = value;
+
+  /*
+    Your Firestore stores meal slots like this:
+    "[{\"id\":\"646903\",\"baseServings\":1,\"targetServings\":1}]"
+
+    So we need to JSON.parse the string first, then extract the recipe id.
+  */
+  if (typeof value === "string") {
+    try {
+      parsedValue = JSON.parse(value);
+    } catch {
+      return [value.trim()].filter((v) => v.length > 0);
+    }
   }
-  return [String(value).trim()].filter((v) => v.length > 0);
+
+  if (!Array.isArray(parsedValue)) {
+    return [];
+  }
+
+  return parsedValue
+    .map((meal) => {
+      if (typeof meal === "string") {
+        return meal.trim();
+      }
+
+      if (meal && typeof meal === "object") {
+        return String(
+          meal.id ??
+            meal.recipeId ??
+            meal.externalId ??
+            meal.spoonacularId ??
+            ""
+        ).trim();
+      }
+
+      return "";
+    })
+    .filter((id) => id.length > 0);
 }
 
 function getNutrientAmount(
@@ -80,7 +114,6 @@ function getNutrientAmount(
   return found?.amount ?? 0;
 }
 
-// Dashboard Page
 export default function DashboardPage() {
   const { mealPlans, loading, error } = useMealPlans() as {
     mealPlans?: MealPlan[];
@@ -99,6 +132,7 @@ export default function DashboardPage() {
   });
 
   const [loginStreak, setLoginStreak] = useState<number | null>(null);
+  const [mealsLoading, setMealsLoading] = useState(false);
 
   useEffect(() => {
     const loadLoginStreak = async () => {
@@ -113,8 +147,6 @@ export default function DashboardPage() {
     loadLoginStreak();
   }, []);
 
-  const [mealsLoading, setMealsLoading] = useState(false);
-
   const now = useMemo(() => new Date(), []);
 
   const selectedPlan = useMemo(() => {
@@ -126,19 +158,11 @@ export default function DashboardPage() {
       return aStart - bStart;
     });
 
-    const upcoming =
-      sorted.find((plan) => {
-        const start = toDateSafe(plan.start_date);
-        if (!start) return false;
-        return start > now;
-      }) ?? null;
-
-    if (upcoming) return upcoming;
-
     const active =
       sorted.find((plan) => {
         const start = toDateSafe(plan.start_date);
         const end = toDateSafe(plan.end_date);
+
         if (!start || !end) return false;
 
         const startDay = startOfDay(start);
@@ -147,17 +171,30 @@ export default function DashboardPage() {
         return now >= startDay && now <= endDay;
       }) ?? null;
 
-    return active;
+    if (active) return active;
+
+    const upcoming =
+      sorted.find((plan) => {
+        const start = toDateSafe(plan.start_date);
+
+        if (!start) return false;
+
+        return start > now;
+      }) ?? null;
+
+    return upcoming;
   }, [mealPlans, now]);
 
   const breakfastIds = useMemo(
     () => normalizeMealSlot(selectedPlan?.breakfast),
     [selectedPlan?.breakfast]
   );
+
   const lunchIds = useMemo(
     () => normalizeMealSlot(selectedPlan?.lunch),
     [selectedPlan?.lunch]
   );
+
   const dinnerIds = useMemo(
     () => normalizeMealSlot(selectedPlan?.dinner),
     [selectedPlan?.dinner]
@@ -194,19 +231,26 @@ export default function DashboardPage() {
       }
 
       setMealsLoading(true);
-      // Fetch recipe details for each meal slot
+
       try {
-        const fetchRecipe = async (id: string | null): Promise<RecipeDetails | null> => {
+        const fetchRecipe = async (
+          id: string | null
+        ): Promise<RecipeDetails | null> => {
           if (!id) return null;
 
           const res = await fetch(
             `${SERVER_URL}/api/external-recipes/${id}/details?includeNutrition=true`
           );
+
           const data = await res.json();
 
-          if (!res.ok) return null;
+          if (!res.ok) {
+            console.log("Failed to fetch recipe details for id:", id, data);
+            return null;
+          }
 
           const recipe = data?.recipe;
+
           if (!recipe) return null;
 
           let calories: number | null = null;
@@ -215,8 +259,10 @@ export default function DashboardPage() {
             calories = recipe.calories;
           } else if (Array.isArray(recipe?.nutrition?.nutrients)) {
             const cal = recipe.nutrition.nutrients.find(
-              (n: any) => String(n?.name || "").toLowerCase() === "calories"
+              (n: any) =>
+                String(n?.name || "").toLowerCase() === "calories"
             );
+
             if (cal?.amount != null) {
               calories = Math.round(Number(cal.amount));
             }
@@ -248,6 +294,7 @@ export default function DashboardPage() {
         }
       } catch (err) {
         console.error("Failed to fetch meal details:", err);
+
         if (!cancelled) {
           setMealDetails({
             breakfast: null,
@@ -284,7 +331,6 @@ export default function DashboardPage() {
       mealDetails.dinner,
     ];
 
-    // Return calculate total nutrients for each meal
     return {
       protein: meals.reduce((sum, m) => sum + getNutrientAmount(m?.nutrients, "Protein"), 0),
       carbs: meals.reduce((sum, m) => sum + getNutrientAmount(m?.nutrients, "Carbohydrates"), 0),
@@ -298,6 +344,7 @@ export default function DashboardPage() {
 
     const start = toDateSafe(selectedPlan.start_date);
     const end = toDateSafe(selectedPlan.end_date);
+
     if (!start || !end) return 0;
 
     const msPerDay = 1000 * 60 * 60 * 24;
@@ -326,7 +373,6 @@ export default function DashboardPage() {
     return totalCalories * summaryDays;
   }, [totalCalories, summaryDays]);
 
-  // Calculate meal plan streak
   const mealPlanStreak = useMemo(() => {
     if (!mealPlans || mealPlans.length === 0) return 0;
 
@@ -335,6 +381,7 @@ export default function DashboardPage() {
     for (const plan of mealPlans) {
       const start = toDateSafe(plan.start_date);
       const end = toDateSafe(plan.end_date);
+
       if (!start || !end) continue;
 
       let cursor = startOfDay(start);
@@ -342,6 +389,7 @@ export default function DashboardPage() {
 
       while (cursor <= last) {
         coveredDays.add(cursor.toISOString().slice(0, 10));
+
         const next = new Date(cursor);
         next.setDate(next.getDate() + 1);
         cursor = next;
@@ -353,6 +401,7 @@ export default function DashboardPage() {
 
     while (coveredDays.has(cursor.toISOString().slice(0, 10))) {
       streak += 1;
+
       const prev = new Date(cursor);
       prev.setDate(prev.getDate() - 1);
       cursor = prev;
@@ -394,7 +443,7 @@ export default function DashboardPage() {
                     Avg / Day
                   </Text>
                   <Text className="text-foreground text-xl font-semibold">
-                    {mealsLoading ? "--" : `${totalCalories}`}
+                    {mealsLoading ? "--" : `${totalCalories} kcal`}
                   </Text>
                 </View>
               </View>
@@ -402,30 +451,37 @@ export default function DashboardPage() {
               <View className="flex-row justify-between">
                 <Text className="text-foreground font-medium">Protein</Text>
                 <Text className="text-muted-foreground">
-                  {mealsLoading ? "--" : `${Math.round(weeklyNutrients.protein)} g`}
+                  {mealsLoading
+                    ? "--"
+                    : `${Math.round(weeklyNutrients.protein)} g`}
                 </Text>
               </View>
 
               <View className="flex-row justify-between">
                 <Text className="text-foreground font-medium">Carbs</Text>
                 <Text className="text-muted-foreground">
-                  {mealsLoading ? "--" : `${Math.round(weeklyNutrients.carbs)} g`}
+                  {mealsLoading
+                    ? "--"
+                    : `${Math.round(weeklyNutrients.carbs)} g`}
                 </Text>
               </View>
 
               <View className="flex-row justify-between">
                 <Text className="text-foreground font-medium">Fat</Text>
                 <Text className="text-muted-foreground">
-                  {mealsLoading ? "--" : `${Math.round(weeklyNutrients.fat)} g`}
+                  {mealsLoading
+                    ? "--"
+                    : `${Math.round(weeklyNutrients.fat)} g`}
                 </Text>
               </View>
 
               <View className="flex-row justify-between">
                 <Text className="text-foreground font-medium">Fiber</Text>
                 <Text className="text-muted-foreground">
-                  {mealsLoading ? "--" : `${Math.round(weeklyNutrients.fiber)} g`}
+                  {mealsLoading
+                    ? "--"
+                    : `${Math.round(weeklyNutrients.fiber)} g`}
                 </Text>
-              </View>
               </View>
             </View>
           </View>
@@ -576,8 +632,6 @@ export default function DashboardPage() {
             </Text>
 
             <View className="rounded-xl shadow-sm bg-background overflow-hidden">
-
-              {/* Login Streak */}
               <View className="px-4 py-4 border-b border-muted-background flex-row items-center justify-between">
                 <View className="flex-row items-center gap-3">
                   <View className="w-10 h-10 rounded-xl bg-muted-background items-center justify-center">
@@ -603,7 +657,6 @@ export default function DashboardPage() {
                 </Text>
               </View>
 
-              {/* Meal Plan Streak */}
               <View className="px-4 py-4 border-b border-muted-background flex-row items-center justify-between">
                 <View className="flex-row items-center gap-3">
                   <View className="w-10 h-10 rounded-xl bg-muted-background items-center justify-center">
@@ -629,7 +682,6 @@ export default function DashboardPage() {
                 </Text>
               </View>
 
-              {/* Nutritional Goal */}
               <View className="px-4 py-4 flex-row items-center justify-between">
                 <View className="flex-row items-center gap-3">
                   <View className="w-10 h-10 rounded-xl bg-muted-background items-center justify-center">
@@ -650,13 +702,11 @@ export default function DashboardPage() {
                   </View>
                 </View>
 
-                <Text className="text-foreground font-semibold">
-                  --
-                </Text>
+                <Text className="text-foreground font-semibold">--</Text>
               </View>
-
             </View>
           </View>
+        </View>
       </ScrollView>
     </ThemedSafeView>
   );

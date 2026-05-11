@@ -1132,12 +1132,26 @@ export default function RecipeDetailsPage() {
             <TouchableOpacity
               key={item.id}
               className="flex-row items-center bg-white rounded-xl p-3 shadow"
-              onPress={() =>
+              onPress={() => {
+                const similarRecipeId =
+                  item.id ??
+                  (item as any).recipeId ??
+                  (item as any).externalId ??
+                  (item as any).spoonacularId;
+
+                if (!similarRecipeId) {
+                  console.log("Missing similar recipe id:", item);
+                  Alert.alert("Error", "Could not open this recipe.");
+                  return;
+                }
+
                 router.push({
-                  pathname: "/recipe/[recipeId]",
-                  params: { recipeId: String(item.id) },
-                })
-              }
+                  pathname: "/(toolbar)/recipe/[recipeId]",
+                  params: {
+                    recipeId: String(similarRecipeId).replace("spoonacular_", ""),
+                  },
+                });
+              }}
             >
               {item.image ? (
                 <Image

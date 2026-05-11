@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Pressable,
   Text,
   View,
-  Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -15,9 +16,9 @@ import {
   accountPrimaryCtaTextClassName,
 } from "@/components/account/account-subpage-body";
 import { AccountWebColumn } from "@/components/account/account-web-column";
-import { AddIngredientModal } from "@/components/add-ingredient-modal";
 import { router, useLocalSearchParams } from "expo-router";
-import { AddPantryItemModal } from "@/components/add-pantry-item-modal";import { ConfirmScannedItemModal } from "@/components/scanned-item-modal.tsx";
+import { AddPantryItemModal } from "@/components/add-pantry-item-modal";
+import { ConfirmScannedItemModal } from "@/components/scanned-item-modal.tsx";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import Button from "@/components/ui/button";
 import { Ingredient } from "@/types/ingredient";
@@ -25,9 +26,8 @@ import { SwipeablePantryItemCard } from "@/components/pantry-card";
 import { useNetwork } from "@/contexts/network-context";
 import { CACHE_KEYS, readCache, writeCache } from "@/utils/offline-cache";
 import { enqueueMutation } from "@/utils/mutation-queue";
-import { Pressable } from "react-native";
-
 import { SERVER_URL } from "@/utils/server-url";
+import { getFirebaseAuth } from "@/firebase/firebase";
 
 type PantryItem = {
   id: string;
@@ -44,6 +44,25 @@ type ScannedPantryItem = {
   expirationDate?: string | null;
 };
 
+async function getFreshIdToken() {
+  const auth = getFirebaseAuth();
+  const user = auth.currentUser;
+
+  if (user) {
+    const freshToken = await user.getIdToken(true);
+    await AsyncStorage.setItem("idToken", freshToken);
+    return freshToken;
+  }
+
+  const storedToken = await AsyncStorage.getItem("idToken");
+
+  if (!storedToken) {
+    throw new Error("No logged-in user or saved token found.");
+  }
+
+  return storedToken;
+}
+
 export default function PantryPage() {
   const params = useLocalSearchParams();
 
@@ -55,38 +74,32 @@ export default function PantryPage() {
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+
+  const { isOnline, registerReconnectCallback, unregisterReconnectCallback } =
+    useNetwork();
+
+  const isOnlineRef = useRef(isOnline);
+
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
+
   const getParamString = (value: string | string[] | undefined) => {
     if (Array.isArray(value)) return value[0];
     return value;
   };
 
-  const { isOnline, registerReconnectCallback, unregisterReconnectCallback } = useNetwork();
-
-  // Ref keeps isOnline current inside stable useCallback closures, avoiding stale
-  // closure captures when the reconnect callback fires before React re-renders.
-  const isOnlineRef = useRef(isOnline);
-  useEffect(() => {
-    isOnlineRef.current = isOnline;
-  }, [isOnline]);
-
-  // Stable fetchPantry: reads isOnline from ref at call time.
-  // Serves cache immediately when offline to avoid a pending network timeout.
   const fetchPantry = useCallback(async () => {
     try {
       setLoading(true);
 
       if (!isOnlineRef.current) {
-        // No network: serve whatever is in the local cache.
         const cached = await readCache<PantryItem[]>(CACHE_KEYS.PANTRY);
         setPantryItems(cached ?? []);
-        return;
+        return cached ?? [];
       }
 
-      const idToken = await AsyncStorage.getItem("idToken");
-      if (!idToken) {
-        setPantryItems([]);
-        return;
-      }
+      const idToken = await getFreshIdToken();
 
       const res = await fetch(`${SERVER_URL}/api/pantry`, {
         method: "GET",
@@ -97,31 +110,41 @@ export default function PantryPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to fetch pantry");
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to fetch pantry");
+      }
 
       const items: PantryItem[] = Array.isArray(data.items) ? data.items : [];
 
-      // Cache the latest list so it is available on subsequent offline visits.
       await writeCache(CACHE_KEYS.PANTRY, items);
       setPantryItems(items);
+
+      return items;
     } catch (err) {
       console.error("Error fetching pantry:", err);
-      // On failure, fall back to cache rather than showing nothing.
+
       const cached = await readCache<PantryItem[]>(CACHE_KEYS.PANTRY);
-      if (cached) setPantryItems(cached);
+
+      if (cached) {
+        setPantryItems(cached);
+        return cached;
+      }
+
+      setPantryItems([]);
+      return [];
     } finally {
       setLoading(false);
     }
-  }, []); // Stable -- reads isOnline via ref, not closure
+  }, []);
 
-  // Load pantry once on mount. The reconnect callback below handles subsequent refreshes.
   useEffect(() => {
     fetchPantry();
   }, [fetchPantry]);
 
-  // Re-fetch after connectivity is restored and the mutation queue has been synced.
   useEffect(() => {
     registerReconnectCallback("pantry", fetchPantry);
+
     return () => unregisterReconnectCallback("pantry");
   }, [fetchPantry, registerReconnectCallback, unregisterReconnectCallback]);
 
@@ -129,35 +152,44 @@ export default function PantryPage() {
     const scannedName = getParamString(params.scannedName);
     const scannedQuantityParam = getParamString(params.scannedQuantity);
     const scannedUnit = getParamString(params.scannedUnit) || "each";
+    const scannedExpirationDate = getParamString(params.scannedExpirationDate);
 
     if (!scannedName || scannedName.trim() === "") return;
 
     const parsedQuantity = Number(scannedQuantityParam ?? 1);
 
-    const nextScannedItem = {
+    const nextScannedItem: ScannedPantryItem = {
       name: scannedName,
       quantity:
         Number.isFinite(parsedQuantity) && parsedQuantity > 0
           ? parsedQuantity
           : 1,
       unit: scannedUnit,
+      expirationDate: scannedExpirationDate ?? null,
     };
 
     console.log("PANTRY RECEIVED SCANNED ITEM:", nextScannedItem);
 
     setScannedItem(nextScannedItem);
     setIsScanConfirmOpen(true);
-  }, [params.scannedName, params.scannedQuantity, params.scannedUnit]);
+  }, [
+    params.scannedName,
+    params.scannedQuantity,
+    params.scannedUnit,
+    params.scannedExpirationDate,
+  ]);
 
   const handleSubmitNewItem = async (item: Ingredient) => {
-    // Adding a new pantry item requires the server; block when offline.
     if (!isOnlineRef.current) {
-      Alert.alert("Offline", "Adding pantry items requires an internet connection.");
+      Alert.alert(
+        "Offline",
+        "Adding pantry items requires an internet connection."
+      );
       return;
     }
+
     try {
-      const idToken = await AsyncStorage.getItem("idToken");
-      if (!idToken) return;
+      const idToken = await getFreshIdToken();
 
       const payload = {
         name: item.name,
@@ -189,18 +221,20 @@ export default function PantryPage() {
     }
   };
 
-
-  /* Handles the submission of an edited pantry item */
   const handleSubmitEditedItem = async (item: Ingredient) => {
-    // Editing requires the ingredient API for validation; block when offline.
     if (!isOnlineRef.current) {
-      Alert.alert("Offline", "Editing pantry items requires an internet connection.");
+      Alert.alert(
+        "Offline",
+        "Editing pantry items requires an internet connection."
+      );
       return;
     }
+
     try {
       if (!editingItem) return;
-      const idToken = await AsyncStorage.getItem("idToken");
-      if (!idToken) return;
+
+      const idToken = await getFreshIdToken();
+
       const payload = {
         name: item.name,
         quantity: item.quantity ?? 1,
@@ -216,31 +250,36 @@ export default function PantryPage() {
         },
         body: JSON.stringify(payload),
       });
+
       const raw = await res.text();
+
       let data: any = null;
+
       try {
         data = raw ? JSON.parse(raw) : null;
       } catch {
         throw new Error(`Failed to parse update response. Status: ${res.status}`);
       }
+
       if (!res.ok) {
         throw new Error(data?.error || "Failed to update pantry item");
       }
-      setPantryItems((prev) =>
-        prev.map((p) =>
-          p.id === editingItem.id
-            ? {
-                ...p,
-                name: payload.name,
-                quantity: payload.quantity,
-                unit: payload.unit,
-                expirationDate: payload.expirationDate,
 
-
-              }
-            : p
-        )
+      const updatedItems = pantryItems.map((p) =>
+        p.id === editingItem.id
+          ? {
+              ...p,
+              name: payload.name,
+              quantity: payload.quantity,
+              unit: payload.unit,
+              expirationDate: payload.expirationDate,
+            }
+          : p
       );
+
+      setPantryItems(updatedItems);
+      await writeCache(CACHE_KEYS.PANTRY, updatedItems);
+
       setIsAddOpen(false);
       setEditingItem(null);
     } catch (err) {
@@ -250,16 +289,22 @@ export default function PantryPage() {
   };
 
   const handleSubmitScannedItem = async (item: ScannedPantryItem) => {
+    if (!isOnlineRef.current) {
+      Alert.alert(
+        "Offline",
+        "Adding scanned pantry items requires an internet connection."
+      );
+      return;
+    }
+
     try {
-      const idToken = await AsyncStorage.getItem("idToken");
-      if (!idToken) return;
+      const idToken = await getFreshIdToken();
 
       const payload = {
         name: item.name,
         quantity: item.quantity ?? 1,
         unit: item.unit ?? "each",
         expirationDate: item.expirationDate ?? null,
-
       };
 
       const res = await fetch(`${SERVER_URL}/api/pantry`, {
@@ -294,16 +339,20 @@ export default function PantryPage() {
       setDeletingId(id);
 
       if (!isOnlineRef.current) {
-        // Queue the delete and apply it to the local state immediately.
-        await enqueueMutation({ type: "DELETE_PANTRY_ITEM", payload: { id } });
+        await enqueueMutation({
+          type: "DELETE_PANTRY_ITEM",
+          payload: { id },
+        });
+
         const updated = pantryItems.filter((x) => x.id !== id);
+
         setPantryItems(updated);
         await writeCache(CACHE_KEYS.PANTRY, updated);
+
         return;
       }
 
-      const idToken = await AsyncStorage.getItem("idToken");
-      if (!idToken) return;
+      const idToken = await getFreshIdToken();
 
       const res = await fetch(`${SERVER_URL}/api/pantry/${id}`, {
         method: "DELETE",
@@ -313,12 +362,13 @@ export default function PantryPage() {
       });
 
       const raw = await res.text();
+
       let data: any = null;
 
       try {
         data = raw ? JSON.parse(raw) : null;
       } catch {
-        // not JSON
+        // Response was not JSON.
       }
 
       if (!res.ok) {
@@ -327,7 +377,10 @@ export default function PantryPage() {
         );
       }
 
-      setPantryItems((prev) => prev.filter((x) => x.id !== id));
+      const updated = pantryItems.filter((x) => x.id !== id);
+
+      setPantryItems(updated);
+      await writeCache(CACHE_KEYS.PANTRY, updated);
     } catch (err) {
       console.error("Error deleting pantry item:", err);
       Alert.alert("Error", "Failed to delete pantry item");
@@ -356,139 +409,150 @@ export default function PantryPage() {
     <ThemedSafeView className="flex-1 pt-safe-or-20">
       <AccountWebColumn className="flex-1 min-h-0">
         <AccountSubpageBody>
-        <View className="gap-4 flex-1">
-        <View className={accountCardShellClassName}>
-          <Button
-            variant="primary"
-            icon={{
-              name: "plus-circle-outline",
-              position: "left",
-              size: 20,
-              color: "--color-red-primary",
-            }}
-            className="h-[77px] rounded-none"
-            textClassName={accountPrimaryCtaTextClassName}
-            // Block opening the create modal when offline and explain why.
-            onPress={() => {
-              if (!isOnlineRef.current) {
-                Alert.alert("Offline", "Adding pantry items requires an internet connection.");
-                return;
-              }
-              setEditingItem(null);
-              setIsAddOpen(true);
-            }}
-          >
-            Add Pantry Item
-          </Button>
-        </View>
+          <View className="gap-4 flex-1">
+            <View className={accountCardShellClassName}>
+              <Button
+                variant="primary"
+                icon={{
+                  name: "plus-circle-outline",
+                  position: "left",
+                  size: 20,
+                  color: "--color-red-primary",
+                }}
+                className="h-[77px] rounded-none"
+                textClassName={accountPrimaryCtaTextClassName}
+                onPress={() => {
+                  if (!isOnlineRef.current) {
+                    Alert.alert(
+                      "Offline",
+                      "Adding pantry items requires an internet connection."
+                    );
+                    return;
+                  }
 
-        {loading ? (
-          <ActivityIndicator size="large" color="red" />
-        ) : (
-          <FlatList
-            style={{ flex: 1 }}
-            data={pantryItems}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingBottom: 120 }}
-            ListEmptyComponent={
-              <Text className={`${accountEmptyStateClassName} mt-6`}>
-                No pantry items yet.
-              </Text>
-            }
-        /* Creates swipeable pantry item cards */
-            renderItem={({ item }) => (
-              <SwipeablePantryItemCard
-                item={item}
-                deleting={deletingId === item.id}
-                onEdit={startEdit}
-                onDelete={confirmDelete}
+                  setEditingItem(null);
+                  setIsAddOpen(true);
+                }}
+              >
+                Add Pantry Item
+              </Button>
+            </View>
+
+            {loading ? (
+              <ActivityIndicator size="large" color="red" />
+            ) : (
+              <FlatList
+                style={{ flex: 1 }}
+                data={pantryItems}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={{ paddingBottom: 120 }}
+                ListEmptyComponent={
+                  <Text className={`${accountEmptyStateClassName} mt-6`}>
+                    No pantry items yet.
+                  </Text>
+                }
+                renderItem={({ item }) => (
+                  <SwipeablePantryItemCard
+                    item={item}
+                    deleting={deletingId === item.id}
+                    onEdit={startEdit}
+                    onDelete={confirmDelete}
+                  />
+                )}
               />
             )}
-          />
-        )}
 
-        <AddPantryItemModal
-          visible={isAddOpen}
-          onClose={() => {
-            setIsAddOpen(false);
-            setEditingItem(null);
-          }}
-          onSubmit={editingItem ? handleSubmitEditedItem : handleSubmitNewItem}
-          title={editingItem ? "Edit Pantry Item" : "Add Pantry Item"}
-          nameLabel="Item Name"
-          namePlaceholder="e.g., Milk"
-          initialItem={
-            editingItem
-              ? {
-                  id: null,
-                  name: editingItem.name,
-                  amount: editingItem.quantity,
-                  unit: editingItem.unit,
-                  image: null,
-                }
-              : null
-          }
-        />
-
-        {scannedItem && (
-          <ConfirmScannedItemModal
-            key={`${scannedItem.name}-${scannedItem.quantity}-${scannedItem.unit}`}
-            visible={isScanConfirmOpen}
-            onClose={() => {
-              setIsScanConfirmOpen(false);
-              setScannedItem(null);
-              router.replace("/(toolbar)/account/pantry");
-            }}
-            initialData={scannedItem}
-            onSubmit={handleSubmitScannedItem}
-          />
-        )}
-
-        {isActionMenuOpen && (
-          <View className="absolute bottom-24 right-6 gap-3">
-            <Button
-              className="px-5 py-4 rounded-2xl"
-              textClassName="font-bold text-red-primary"
-              onPress={() => {
-                setIsActionMenuOpen(false);
+            <AddPantryItemModal
+              visible={isAddOpen}
+              onClose={() => {
+                setIsAddOpen(false);
                 setEditingItem(null);
-                setIsAddOpen(true);
               }}
-            >
-              Add Pantry Item
-            </Button>
+              onSubmit={editingItem ? handleSubmitEditedItem : handleSubmitNewItem}
+              title={editingItem ? "Edit Pantry Item" : "Add Pantry Item"}
+              nameLabel="Item Name"
+              namePlaceholder="e.g., Milk"
+              initialItem={
+                editingItem
+                  ? {
+                      id: null,
+                      name: editingItem.name,
+                      amount: editingItem.quantity,
+                      unit: editingItem.unit,
+                      image: null,
+                    }
+                  : null
+              }
+            />
 
-            <Button
-              className="px-5 py-4 rounded-2xl"
-              textClassName="font-bold text-red-primary"
-              onPress={() => {
-                setIsActionMenuOpen(false);
-                router.push("/barcode-scanner");
-              }}
-            >
-              Scan Barcode
-            </Button>
+            {scannedItem && (
+              <ConfirmScannedItemModal
+                key={`${scannedItem.name}-${scannedItem.quantity}-${scannedItem.unit}`}
+                visible={isScanConfirmOpen}
+                onClose={() => {
+                  setIsScanConfirmOpen(false);
+                  setScannedItem(null);
+                  router.replace("/(toolbar)/account/pantry");
+                }}
+                initialData={scannedItem}
+                onSubmit={handleSubmitScannedItem}
+              />
+            )}
 
-            <Button
-              className="px-5 py-4 rounded-2xl"
-              textClassName="font-bold text-red-primary"
-              onPress={() => {
-                setIsActionMenuOpen(false);
-                router.push("/(toolbar)/account/scan-history");
-              }}
+            {isActionMenuOpen && (
+              <View className="absolute bottom-24 right-6 gap-3">
+                <Button
+                  className="px-5 py-4 rounded-2xl"
+                  textClassName="font-bold text-red-primary"
+                  onPress={() => {
+                    setIsActionMenuOpen(false);
+
+                    if (!isOnlineRef.current) {
+                      Alert.alert(
+                        "Offline",
+                        "Adding pantry items requires an internet connection."
+                      );
+                      return;
+                    }
+
+                    setEditingItem(null);
+                    setIsAddOpen(true);
+                  }}
+                >
+                  Add Pantry Item
+                </Button>
+
+                <Button
+                  className="px-5 py-4 rounded-2xl"
+                  textClassName="font-bold text-red-primary"
+                  onPress={() => {
+                    setIsActionMenuOpen(false);
+                    router.push("/barcode-scanner");
+                  }}
+                >
+                  Scan Barcode
+                </Button>
+
+                <Button
+                  className="px-5 py-4 rounded-2xl"
+                  textClassName="font-bold text-red-primary"
+                  onPress={() => {
+                    setIsActionMenuOpen(false);
+                    router.push("/(toolbar)/account/scan-history");
+                  }}
+                >
+                  View Scan History
+                </Button>
+              </View>
+            )}
+
+            <Pressable
+              onPress={() => setIsActionMenuOpen((prev) => !prev)}
+              className="absolute bottom-8 right-0 mr-4 w-16 h-16 rounded-full items-center justify-center bg-red-500"
             >
-              View Scan History
-            </Button>
+              <Text className="text-3xl font-bold text-white">+</Text>
+            </Pressable>
           </View>
-        )}
-
-        <Pressable
-          onPress={() => setIsActionMenuOpen((prev) => !prev)}
-          className="absolute bottom-8 right-0 mr-4 w-16 h-16 rounded-full items-center justify-center bg-red-500"
-        >
-          <Text className="text-3xl font-bold text-white">+</Text>
-        </Pressable>
-      </View>
         </AccountSubpageBody>
       </AccountWebColumn>
     </ThemedSafeView>

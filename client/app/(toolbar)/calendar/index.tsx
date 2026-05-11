@@ -16,6 +16,7 @@ import { generateICS } from "@/services/calendarExport";
 import { Alert } from "react-native";
 import { SERVER_URL } from "@/utils/server-url";
 import { localDateKeysInclusive, planCoversCalendarDateLocal } from "@/utils/meal-plan-habit-days";
+import { CalendarDashboardSection } from "@/components/calendar-dashboard";
 import { DEFAULT_MEAL_SLOT_COLORS } from "@/utils/meal-plan-slot-colors";
 
 const dateOnlyFromISO = (iso: string): string => {
@@ -533,54 +534,58 @@ export default function CalendarPage() {
                   </Button>
                 </View>
               ) : (
-                <FlatList
-                  data={selectedDayEntries}
-                  keyExtractor={(item) => String(item.planId)}
-                  scrollEnabled={false}
-                  ListEmptyComponent={
-                    <View className="flex-1 items-center justify-center">
-                      <Text className="opacity-60">No meal plans for this day.</Text>
-                    </View>
-                  }
-                  renderItem={({ item }) => (
-                    <View className="mb-3 w-full">
-                      <SwipeableMealPlanCard
-                        id={item.planId}
-                        startDateLabel={toLocalDate(selectedDate).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                        endDateLabel={toLocalDate(selectedDate).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                        breakfastId={selectedDaySlotStored(item.breakfastId)}
-                        lunchId={selectedDaySlotStored(item.lunchId)}
-                        dinnerId={selectedDaySlotStored(item.dinnerId)}
-                        mealDotColors={{
-                          breakfast: item.breakfastId ? item.slotColors.breakfast : undefined,
-                          lunch: item.lunchId ? item.slotColors.lunch : undefined,
-                          dinner: item.dinnerId ? item.slotColors.dinner : undefined,
-                        }}
-                        recipeReturnTo="/calendar"
-                        readOnly={false}
-                        onMealPlanDeleted={refetch}
-                        onViewFullPlanPress={() => {
-                          if (!calendarOwnerUid) return;
-                          router.push({
-                            pathname: "/profile/[userId]",
-                            params: {
-                              userId: calendarOwnerUid,
-                              tab: "plans",
-                              mealPlanId: item.planId,
-                              returnTo: "/calendar",
-                            },
-                          });
-                        }}
-                      />
-                    </View>
-                  )}
-                />
+                <>
+                  <FlatList
+                    data={selectedDayEntries}
+                    keyExtractor={(item) => String(item.planId)}
+                    scrollEnabled={false}
+                    ListEmptyComponent={
+                      <View className="flex-1 items-center justify-center">
+                        <Text className="opacity-60">No meal plans for this day.</Text>
+                      </View>
+                    }
+                    renderItem={({ item }) => (
+                      <View className="mb-3 w-full">
+                        <SwipeableMealPlanCard
+                          id={item.planId}
+                          startDateLabel={toLocalDate(selectedDate).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                          endDateLabel={toLocalDate(selectedDate).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                          breakfastId={selectedDaySlotStored(item.breakfastId)}
+                          lunchId={selectedDaySlotStored(item.lunchId)}
+                          dinnerId={selectedDaySlotStored(item.dinnerId)}
+                          mealDotColors={{
+                            breakfast: item.breakfastId ? item.slotColors.breakfast : undefined,
+                            lunch: item.lunchId ? item.slotColors.lunch : undefined,
+                            dinner: item.dinnerId ? item.slotColors.dinner : undefined,
+                          }}
+                          recipeReturnTo="/calendar"
+                          readOnly={false}
+                          onMealPlanDeleted={refetch}
+                          onViewFullPlanPress={() => {
+                            if (!calendarOwnerUid) return;
+                            router.push({
+                              pathname: "/profile/[userId]",
+                              params: {
+                                userId: calendarOwnerUid,
+                                tab: "plans",
+                                mealPlanId: item.planId,
+                                returnTo: "/calendar",
+                              },
+                            });
+                          }}
+                        />
+                      </View>
+                    )}
+                  />
+
+                  <CalendarDashboardSection />
+                </>
               )
             }
           </View>
