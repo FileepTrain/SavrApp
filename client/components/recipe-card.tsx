@@ -81,7 +81,7 @@ export const RecipeCard = ({
 
     cardContent = (
       <View
-        className={`bg-background rounded-2xl overflow-hidden flex-col drop-shadow-xl ${tileWidth == null ? "w-48" : ""} ${!desktopGridProminent && prominent ? "h-72" : ""} ${!desktopGridProminent && !prominent ? "h-56" : ""}`}
+        className={`bg-background rounded-2xl overflow-hidden flex-col drop-shadow-xl ${tileWidth == null ? "w-48" : ""} ${!desktopGridProminent && prominent ? "h-72" : ""} ${!desktopGridProminent && !prominent ? "min-h-56" : ""}`}
         style={
           desktopGridProminent && tileWidth != null && cardHeightPx != null
             ? { width: tileWidth, height: cardHeightPx }
@@ -144,7 +144,7 @@ export const RecipeCard = ({
 
     cardContent = (
       <View
-        className="bg-background flex-row items-center overflow-hidden w-full gap-5 rounded-xl drop-shadow-xl"
+        className="bg-background flex-row items-start overflow-hidden w-full gap-5 rounded-xl drop-shadow-xl"
         style={{ minHeight: thumbH }}
       >
         <View
@@ -161,7 +161,7 @@ export const RecipeCard = ({
             noImagePlaceholder(placeholderIcon)
           )}
         </View>
-        <View className="flex-1 justify-center py-1 min-h-0">
+        <View className="flex-1 justify-start py-1 min-h-0">
           <View>
             <Text className="text-red-primary font-medium text-base" numberOfLines={2}>
               {title}

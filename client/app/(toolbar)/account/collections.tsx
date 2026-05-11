@@ -313,16 +313,12 @@ export default function CollectionsPage() {
 
   const openCollection = (c: CollectionRow) => {
     if (c.ownerUid) {
-      router.push({
-        pathname: "/account/collection/[collectionId]",
-        params: { collectionId: c.id, ownerUid: c.ownerUid },
-      });
+      router.push(
+        `/account/collection/${encodeURIComponent(c.id)}?ownerUid=${encodeURIComponent(c.ownerUid)}`,
+      );
       return;
     }
-    router.push({
-      pathname: "/account/collection/[collectionId]",
-      params: { collectionId: c.id },
-    });
+    router.push(`/account/collection/${encodeURIComponent(c.id)}`);
   };
 
   const renderMineItem = ({ item }: { item: MineGridRow }) => {

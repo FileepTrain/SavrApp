@@ -729,16 +729,12 @@ export default function CreatorProfilePage() {
                       name={c.name}
                       recipeCount={c.recipeCount}
                       covers={profileCollectionCovers[c.id]}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/account/collection/[collectionId]",
-                          params: {
-                            collectionId: c.id,
-                            ownerUid: uid,
-                            fromProfile: "1",
-                          },
-                        })
-                      }
+                      onPress={() => {
+                        if (!uid) return;
+                        router.push(
+                          `/account/collection/${encodeURIComponent(c.id)}?ownerUid=${encodeURIComponent(uid)}&fromProfile=1`,
+                        );
+                      }}
                       showMenuButton={!viewingOwnProfile}
                       onMenuPress={() => setCollectionMenuId(c.id)}
                     />
