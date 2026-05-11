@@ -81,13 +81,6 @@ export default function AccountPage() {
         {/* Menu */}
         <View className="mt-6 mx-4 rounded-xl shadow-sm overflow-hidden">
           <AccountMenuItem
-            title="Dashboard"
-            subtitle="Nutrition, meal plans, and streaks"
-            iconName="view-dashboard-outline"
-            onPress={() => router.push("/account/dashboard")}
-          />
-
-          <AccountMenuItem
             title="My Pantry"
             subtitle="Manage your ingredients"
             iconName="food-apple-outline"
