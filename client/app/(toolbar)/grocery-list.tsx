@@ -34,6 +34,10 @@ export default function GroceryListPage() {
   const [loading, setLoading] = useState(false);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [manualZipDraft, setManualZipDraft] = useState("");
+  const [zipcode, setZipcode] = useState<string | null>(null);
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [storeName, setStoreName] = useState("Kroger");
 
   function closeLocationModal() {
     setIsLocationModalOpen(false);
@@ -42,7 +46,11 @@ export default function GroceryListPage() {
 
   function handleConfirmManualZip() {
     const zipcode = manualZipDraft.trim();
-    console.log("zipcode:", zipcode);
+    console.log("Using manual zipcode:", zipcode);
+    setZipcode(zipcode);
+    setLatitude(null);
+    setLongitude(null);
+    fetchStoreName(zipcode, null, null);
     closeLocationModal();
   }
 
@@ -80,11 +88,55 @@ export default function GroceryListPage() {
       const { latitude, longitude } = location.coords;
       const [address] = await Location.reverseGeocodeAsync({ latitude, longitude });
       const zipcode = address?.postalCode ?? ''; //if no zip returns empty string
+      console.log("Using device location");
       console.log("Latitude:", latitude);
       console.log("Longitude:", longitude);
       console.log("zipcode:", zipcode)
+      setLatitude(latitude);
+      setLongitude(longitude);
+      fetchStoreName(zipcode, null, null);
+
+      if (zipcode) {
+        setZipcode(zipcode);
+      }
     } catch (error) {
       console.log("Error getting location:", error);
+    }
+  }
+
+  async function fetchStoreName(
+    zip?: string | null,
+    lat?: number | null,
+    lng?: number | null
+  ) {
+    try {
+      let query = "";
+
+      if (zip) {
+        query = `zip=${zip}`;
+      } else if (lat && lng) {
+        query = `lat=${lat}&lng=${lng}`;
+      } else {
+        setStoreName("Kroger");
+        return;
+      }
+
+      const res = await fetch(
+        `${SERVER_URL}/api/kroger/quick-location?${query}`
+      );
+
+      const data = await res.json();
+
+      if (data?.name) {
+        console.log("Resolved store:", data.name);
+        setStoreName(data.name);
+      } else {
+        setStoreName("Kroger");
+      }
+
+    } catch (err) {
+      console.log("Failed to fetch store name:", err);
+      setStoreName("Kroger");
     }
   }
 
@@ -142,6 +194,9 @@ export default function GroceryListPage() {
           name: item.name,
           amount: item.amount,
           unit: item.unit,
+          zipcode,
+          latitude,
+          longitude,
         }),
       });
       const data = await res.json();
@@ -217,11 +272,13 @@ export default function GroceryListPage() {
         <View className="bg-background rounded-xl shadow-lg p-4 flex-1">
           {/* Store Header */}
           <View className="bg-muted-background rounded-xl p-3 mb-3 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-2">
+            <View className="flex-row items-center flex-1 mr-3">
               <IconSymbol name="cart-outline" size={22} color="--color-foreground" />
-              <Text className="text-lg font-bold text-foreground">
-                Kroger
-              </Text>
+              <View className="flex-1 overflow-hidden ml-2">
+                <Text numberOfLines={1} ellipsizeMode="tail" className="text-base font-bold text-foreground">
+                  {storeName}
+                </Text>
+              </View>
             </View>
 
             <Text className="text-lg font-semibold text-foreground">
