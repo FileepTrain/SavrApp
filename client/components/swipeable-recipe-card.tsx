@@ -3,6 +3,7 @@ import { View, Text, Pressable, Alert, ActivityIndicator } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router } from "expo-router";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import type { RecipeToolbarContextTab } from "@/utils/navigate-to-recipe-detail";
 import { RecipeCard } from "./recipe-card";
 import { usePersonalRecipes } from "@/contexts/personal-recipes-context";
 
@@ -13,6 +14,7 @@ interface SwipeableRecipeCardProps {
   rating?: number;
   reviewsLength?: number;
   image?: string | null;
+  toolbarCtx?: RecipeToolbarContextTab;
 }
 
 /* Swipe to show only remove */
@@ -37,6 +39,7 @@ export function SwipeableRecipeCard({
   rating = 0,
   reviewsLength = 0,
   image,
+  toolbarCtx,
 }: SwipeableRecipeCardProps) {
   const { deleteRecipe } = usePersonalRecipes();
   const [loading, setLoading] = useState(false);
@@ -88,7 +91,7 @@ export function SwipeableRecipeCard({
       overshootRight={false}
       friction={2}
     >
-      <RecipeCard id={id} title={title} calories={calories} rating={rating} reviewsLength={reviewsLength} variant="horizontal" imageUrl={image} />
+      <RecipeCard id={id} title={title} calories={calories} rating={rating} reviewsLength={reviewsLength} variant="horizontal" imageUrl={image} toolbarCtx={toolbarCtx} />
     </ReanimatedSwipeable>
   );
 }

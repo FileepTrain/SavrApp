@@ -7,16 +7,17 @@ import { AccountWebColumn } from "@/components/account/account-web-column";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { useNetwork } from "@/contexts/network-context";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 import { CACHE_KEYS, CachedRecipeEntry, readCache, recipeDetailKey, writeCache } from "@/utils/offline-cache";
-import { CommonActions } from "@react-navigation/native";
-import { useNavigation } from "@react-navigation/native";
+import { navigateToRecipeDetail } from "@/utils/navigate-to-recipe-detail";
+import { SERVER_URL } from "@/utils/server-url";
+import { CommonActions, useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, ActivityIndicator, FlatList } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 
-import { SERVER_URL } from "@/utils/server-url";
 import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
 function singleQueryParam(v: string | string[] | undefined): string | undefined {
@@ -79,6 +80,7 @@ async function cacheFavoriteRecipeDetail(r: any): Promise<void> {
 export default function FavoritesPage() {
   const router = useRouter();
   const navigation = useNavigation();
+  const backInTabHistory = useToolbarHistoryBack();
   const { mode, mealPlanId, mealPlanDate } = useLocalSearchParams<{
     mode?: string;
     mealPlanId?: string;
@@ -118,7 +120,9 @@ export default function FavoritesPage() {
         );
       }, 0);
     } else {
-      router.back();
+      if (!backInTabHistory()) {
+        router.back();
+      }
     }
   };
   const [favoritesById, setFavoritesById] = useState<Map<string, any>>(() => new Map());
@@ -283,7 +287,7 @@ export default function FavoritesPage() {
                     if (isSelectionMode) {
                       handleSelectRecipe(item);
                     } else {
-                      router.push(`/recipe/${item.id}`);
+                      navigateToRecipeDetail(router, String(item.id), { toolbarCtx: "account" });
                     }
                   }}
                 />

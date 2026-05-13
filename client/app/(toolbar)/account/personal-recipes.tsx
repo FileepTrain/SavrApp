@@ -95,6 +95,7 @@ export default function PersonalRecipesPage() {
                   rating={item.rating ?? 0}
                   reviewsLength={Array.isArray(item.reviews) ? item.reviews.length : 0}
                   image={item.image ?? null}
+                  toolbarCtx="account"
                 />
               </View>
             )}

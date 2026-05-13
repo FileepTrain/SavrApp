@@ -2,7 +2,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
 import { useRecipeWebColumnWidth } from "@/hooks/use-recipe-web-column-width";
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
-import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
+import { useToolbarHistoryBack, useToolbarHistoryHasBack } from "@/contexts/toolbar-history-context";
 import type { NativeStackHeaderProps } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
 import { Platform, Text, TouchableOpacity, View } from "react-native";
@@ -28,8 +28,9 @@ export type ToolbarSubstackScreenHeaderProps = NativeStackHeaderProps & {
 function hasMeaningfulBackTarget(
   navigation: NativeStackHeaderProps["navigation"],
   onPressBack: ToolbarSubstackScreenHeaderProps["onPressBack"],
+  toolbarCanBack: boolean,
 ): boolean {
-  return typeof onPressBack === "function" || navigation.canGoBack();
+  return typeof onPressBack === "function" || toolbarCanBack || navigation.canGoBack();
 }
 
 /**
@@ -44,6 +45,7 @@ export function ToolbarSubstackScreenHeader({
 }: ToolbarSubstackScreenHeaderProps) {
   const { isWebDesktop } = useWebDesktopLayout();
   const backInTabHistory = useToolbarHistoryBack();
+  const toolbarCanBack = useToolbarHistoryHasBack();
   const accountColumnMax = useAccountWebColumnWidth();
   const recipeColumnMax = useRecipeWebColumnWidth();
   const maxColumn = columnVariant === "recipe" ? recipeColumnMax : accountColumnMax;
@@ -62,7 +64,7 @@ export function ToolbarSubstackScreenHeader({
 
   // Keep Android/iOS visuals identical to pre-desktop commit.
   if (Platform.OS !== "web") {
-    const showBack = hasMeaningfulBackTarget(navigation, onPressBack);
+    const showBack = hasMeaningfulBackTarget(navigation, onPressBack, toolbarCanBack);
     return (
       <SafeAreaView className="px-4 pt-7 flex-row items-center min-h-[52px]">
         {showBack ? (
@@ -106,7 +108,7 @@ export function ToolbarSubstackScreenHeader({
           className="flex-row items-center min-h-[52px]"
           style={{ paddingHorizontal: innerHorizontalPad }}
         >
-          {hasMeaningfulBackTarget(navigation, onPressBack) ? (
+          {hasMeaningfulBackTarget(navigation, onPressBack, toolbarCanBack) ? (
             <TouchableOpacity onPress={handleBack} className="mr-3">
               <IconSymbol name="chevron-left" size={30} color="--color-foreground" />
             </TouchableOpacity>

@@ -38,6 +38,7 @@ import { useThemePalette } from "@/components/theme-provider";
 import { useAccountWebColumnWidth } from "@/hooks/use-account-web-column-width";
 import { useWebDesktopLayout } from "@/hooks/use-web-desktop-layout";
 import { SERVER_URL } from "@/utils/server-url";
+import { navigateToRecipeDetail } from "@/utils/navigate-to-recipe-detail";
 import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 
 type TabId = "recipes" | "favorites" | "boards" | "plans";
@@ -237,6 +238,12 @@ export default function CreatorProfilePage() {
 
   const load = useCallback(async () => {
     if (!uid) return;
+    setRecipes([]);
+    setFavorites(null);
+    setCollections(null);
+    setMealPlans(null);
+    setUsername("");
+    setProfilePhotoUrl(null);
     try {
       setLoading(true);
       setError(null);
@@ -313,10 +320,7 @@ export default function CreatorProfilePage() {
   const initial = (username || "?").trim().slice(0, 1).toUpperCase() || "?";
 
   const openRecipe = (recipeId: string) => {
-    router.push({
-      pathname: "/recipe/[recipeId]",
-      params: { recipeId },
-    });
+    navigateToRecipeDetail(router, recipeId, { toolbarCtx: "account" });
   };
 
   const shareProfilePlansLink = useCallback(() => {

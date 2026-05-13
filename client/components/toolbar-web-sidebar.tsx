@@ -1,8 +1,9 @@
 import { useThemePalette } from "@/components/theme-provider";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { logToolbarNavFlow, useToolbarPrimaryTabDoublePress } from "@/contexts/toolbar-history-context";
 import { WEB_TOOLBAR_SIDEBAR_WIDTH } from "@/hooks/use-web-desktop-layout";
 import type { Href } from "expo-router";
-import { Link, useSegments } from "expo-router";
+import { Link, useGlobalSearchParams, useRouter, useSegments } from "expo-router";
 import React from "react";
 import { Image, Pressable, Text, View } from "react-native";
 
@@ -35,14 +36,26 @@ const NAV_ITEMS: {
   },
 ];
 
-function activeTabFromSegments(segments: string[]): TabKey {
+function singleToolbarCtxParam(v: string | string[] | undefined): string | undefined {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (Array.isArray(v) && v[0] != null && String(v[0]).trim()) return String(v[0]).trim();
+  return undefined;
+}
+
+function activeTabFromSegments(
+  segments: string[],
+  recipeToolbarCtx: string | undefined,
+): TabKey {
   const tabSegment =
     segments[0] === "(toolbar)" ? segments[1] : segments[0];
   if (tabSegment === "calendar") return "calendar";
   if (tabSegment === "grocery-list") return "grocery-list";
   if (tabSegment === "account") return "account";
-  // Detail stacks live next to tab routes; map to the closest primary tab for highlight.
-  if (tabSegment === "recipe") return "home";
+  if (tabSegment === "recipe") {
+    const t = recipeToolbarCtx;
+    if (t === "account" || t === "calendar" || t === "grocery-list") return t;
+    return "home";
+  }
   if (tabSegment === "profile") return "account";
   // `home`, `home/search`, etc.
   return "home";
@@ -51,7 +64,13 @@ function activeTabFromSegments(segments: string[]): TabKey {
 export function ToolbarWebSidebar() {
   const theme = useThemePalette();
   const segments = useSegments();
-  const activeTab = activeTabFromSegments(segments as string[]);
+  const globalParams = useGlobalSearchParams();
+  const router = useRouter();
+  const { handlePrimaryTabDoublePress } = useToolbarPrimaryTabDoublePress();
+  const recipeToolbarCtx = singleToolbarCtxParam(
+    globalParams.toolbarCtx as string | string[] | undefined,
+  );
+  const activeTab = activeTabFromSegments(segments as string[], recipeToolbarCtx);
 
   return (
     <View
@@ -86,19 +105,41 @@ export function ToolbarWebSidebar() {
           ? theme["--color-red-primary"]
           : theme["--color-muted-foreground"];
         return (
-          <Link key={item.tab} href={item.href} asChild>
-            <Pressable
-              className={`flex-row items-center gap-3 rounded-xl px-3 py-3 ${active ? "bg-muted-background" : ""}`}
+          <Pressable
+            key={item.tab}
+            className={`flex-row items-center gap-3 rounded-xl px-3 py-3 ${active ? "bg-muted-background" : ""}`}
+            onPress={() => {
+              logToolbarNavFlow({
+                kind: "web_sidebar",
+                phase: "press",
+                tab: item.tab,
+                active,
+                href: String(item.href),
+              });
+              handlePrimaryTabDoublePress(item.tab, active, () => {
+                logToolbarNavFlow({
+                  kind: "web_sidebar",
+                  phase: "defaultOnPress",
+                  action: "router.push",
+                  href: String(item.href),
+                });
+                router.push(item.href);
+              });
+              logToolbarNavFlow({
+                kind: "web_sidebar",
+                phase: "after_handlePrimaryTabDoublePress",
+                tab: item.tab,
+              });
+            }}
+          >
+            <IconSymbol name={item.icon} size={26} color={color} />
+            <Text
+              className={`text-base font-medium ${active ? "text-foreground" : "text-muted-foreground"}`}
+              numberOfLines={1}
             >
-              <IconSymbol name={item.icon} size={26} color={color} />
-              <Text
-                className={`text-base font-medium ${active ? "text-foreground" : "text-muted-foreground"}`}
-                numberOfLines={1}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          </Link>
+              {item.label}
+            </Text>
+          </Pressable>
         );
       })}
     </View>

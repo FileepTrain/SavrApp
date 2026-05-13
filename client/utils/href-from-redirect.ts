@@ -1,4 +1,5 @@
 import type { Href } from "expo-router";
+import { recipeDetailHref } from "@/utils/navigate-to-recipe-detail";
 
 function singleParam(v: string | string[] | undefined): string | undefined {
   if (v == null) return undefined;
@@ -72,8 +73,7 @@ export function hrefFromRedirectTo(target: string): Href {
 
   const recipeMatch = /^\/recipe\/([^/?#]+)$/.exec(pathPart);
   if (recipeMatch) {
-    const recipeId = decodeURIComponent(recipeMatch[1]);
-    return { pathname: "/recipe/[recipeId]", params: { recipeId } };
+    return recipeDetailHref(decodeURIComponent(recipeMatch[1]));
   }
 
   return target as Href;

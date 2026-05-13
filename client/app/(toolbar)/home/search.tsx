@@ -20,7 +20,8 @@ import {
 } from "react-native";
 import { RecipeCard } from "@/components/recipe-card";
 import type { Filters } from "@/components/ui/filter_pop_up";
-import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
+import { useMealPlanSelection, type Recipe } from "@/contexts/meal-plan-selection-context";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 import { SERVER_URL as API_BASE } from "@/utils/server-url";
 import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 
@@ -34,6 +35,18 @@ type SearchResult = {
   reviewsLength?: number;
   viewCount?: number;
 };
+
+function searchResultToMealPlanRecipe(recipe: SearchResult): Recipe {
+  const reviewCount = recipe.reviewsLength ?? 0;
+  return {
+    id: String(recipe.id),
+    title: recipe.title,
+    image: recipe.image,
+    calories: recipe.calories ?? undefined,
+    rating: recipe.rating,
+    reviews: reviewCount > 0 ? Array.from({ length: reviewCount }, () => ({})) : [],
+  };
+}
 
 function singleQueryParam(v: string | string[] | undefined): string | undefined {
   if (typeof v === "string" && v.trim()) return v.trim();
@@ -158,6 +171,7 @@ type SearchListRow = { kind: "recipe-row"; key: string; recipes: SearchResult[] 
 
 export default function HomeSearchScreen() {
   const navigation = useNavigation();
+  const backInTabHistory = useToolbarHistoryBack();
   const { isWebDesktop } = useWebDesktopLayout();
   const desktopColumnMax = useAccountWebColumnWidth();
   const isDesktopWeb = Platform.OS === "web" && isWebDesktop;
@@ -171,8 +185,8 @@ export default function HomeSearchScreen() {
   const isSelectionMode = mode === "select";
   const { isOnline } = useNetwork();
 
-  const handleSelectRecipe = (recipe: { id: string; [key: string]: unknown }) => {
-    setPendingSelectedRecipe(recipe);
+  const handleSelectRecipe = (recipe: SearchResult) => {
+    setPendingSelectedRecipe(searchResultToMealPlanRecipe(recipe));
     const returnPlanId = singleQueryParam(mealPlanId);
     const returnDate = singleQueryParam(mealPlanDate);
     if (returnPlanId || returnDate) {
@@ -192,7 +206,9 @@ export default function HomeSearchScreen() {
         );
       }, 0);
     } else {
-      router.back();
+      if (!backInTabHistory()) {
+        router.back();
+      }
     }
   };
 
@@ -609,7 +625,8 @@ export default function HomeSearchScreen() {
         calories: recipe.calories ?? undefined,
         rating: recipe.rating ?? 0,
         reviewsLength: recipe.reviewsLength ?? 0,
-        onPress: isSelectionMode ? () => handleSelectRecipe({ id }) : undefined,
+        onPress: isSelectionMode ? () => handleSelectRecipe(recipe) : undefined,
+        toolbarCtx: "home" as const,
       };
     };
 

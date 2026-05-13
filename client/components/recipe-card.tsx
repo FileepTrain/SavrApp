@@ -1,8 +1,9 @@
 import { View, Text, Image, Pressable } from "react-native";
 import { Link } from "expo-router";
 import React from "react";
-import RecipeRating from "./recipe/recipe-rating";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { recipeDetailHref, type RecipeToolbarContextTab } from "@/utils/navigate-to-recipe-detail";
+import RecipeRating from "./recipe/recipe-rating";
 
 
 type CardVariant = "horizontal" | "default";
@@ -25,6 +26,8 @@ interface RecipeCardProps {
   horizontalThumbnailHeight?: number;
   onPress?: () => void; // if provided uses Pressable; else Link to details
   onLongPress?: () => void;
+  /** Which primary tab owns this open (toolbar stack + bottom bar highlight for `/recipe/…`). */
+  toolbarCtx?: RecipeToolbarContextTab;
 }
 
 // Recipe Card default information
@@ -42,6 +45,7 @@ export const RecipeCard = ({
   horizontalThumbnailHeight,
   onPress,
   onLongPress,
+  toolbarCtx,
 }: RecipeCardProps) => {
   const hasImage = typeof imageUrl === "string" && imageUrl.trim().length > 0;
 
@@ -186,10 +190,7 @@ export const RecipeCard = ({
       {cardContent}
     </Pressable>
   ) : (
-    <Link
-      href={{ pathname: "/recipe/[recipeId]", params: { recipeId: id } }}
-      asChild
-    >
+    <Link href={recipeDetailHref(id, toolbarCtx ? { toolbarCtx } : undefined)} asChild>
       <Pressable {...longPressProps}>{cardContent}</Pressable>
     </Link>
   );

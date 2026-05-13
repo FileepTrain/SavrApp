@@ -17,6 +17,7 @@ import {
   type ExtendedIngredient,
   usePersonalRecipes,
 } from "@/contexts/personal-recipes-context";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 
 import { SERVER_URL } from "@/utils/server-url";
 import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
@@ -24,6 +25,7 @@ import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 export default function EditRecipePage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
   const { updateRecipe } = usePersonalRecipes();
+  const backInTabHistory = useToolbarHistoryBack();
   const [recipeImage, setRecipeImage] = useState<string | null>(null);
   const [recipeTitle, setRecipeTitle] = useState<string>("");
   const [recipeSummary, setRecipeSummary] = useState<string>("");
@@ -38,13 +40,24 @@ export default function EditRecipePage() {
   const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
-    const fetchRecipe = async () => {
-      if (!recipeId) return;
+    const raw = Array.isArray(recipeId) ? recipeId[0] : recipeId;
+    if (!raw) return;
 
+    setRecipeTitle("");
+    setRecipeSummary("");
+    setRecipePrepTime("");
+    setRecipeCookTime("");
+    setRecipeServings("");
+    setRecipeInstructions("");
+    setRecipeIngredients([]);
+    setRecipeImage(null);
+    setInitialImageUrl(null);
+
+    const fetchRecipe = async () => {
       try {
         setFetching(true);
         const idToken = await AsyncStorage.getItem("idToken");
-        const response = await fetch(`${SERVER_URL}/api/recipes/${recipeId}`, {
+        const response = await fetch(`${SERVER_URL}/api/recipes/${encodeURIComponent(String(raw))}`, {
           headers: {
             Authorization: `Bearer ${idToken}`,
             "Content-Type": "application/json",
@@ -80,7 +93,12 @@ export default function EditRecipePage() {
         }
       } catch (err: any) {
         Alert.alert("Error", err.message, [
-          { text: "OK", onPress: () => router.back() },
+          {
+            text: "OK",
+            onPress: () => {
+              if (!backInTabHistory()) router.back();
+            },
+          },
         ]);
       } finally {
         setFetching(false);
@@ -133,7 +151,9 @@ export default function EditRecipePage() {
             ? { imageUri: recipeImage }
             : undefined;
       await updateRecipe(recipeId!, recipe.data, imageOptions);
-      router.back();
+      if (!backInTabHistory()) {
+        router.back();
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to update recipe";
       if (message === "Session expired") {

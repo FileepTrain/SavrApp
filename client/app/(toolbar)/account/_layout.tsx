@@ -102,7 +102,14 @@ export default function AccountStackLayout() {
         />
         <Stack.Screen
           name="collection/[collectionId]"
-          options={{ title: "Collection" }}
+          options={{
+            title: "Collection",
+            getId: ({ params }) => {
+              const c = (params as { collectionId?: string | string[] })?.collectionId;
+              const id = Array.isArray(c) ? c[0] : c;
+              return id != null && String(id) !== "" ? String(id) : undefined;
+            },
+          }}
         />
         <Stack.Screen
           name="create-recipe"
@@ -110,7 +117,14 @@ export default function AccountStackLayout() {
         />
         <Stack.Screen
           name="edit-recipe/[recipeId]"
-          options={{ title: "Edit Recipe" }}
+          options={{
+            title: "Edit Recipe",
+            getId: ({ params }) => {
+              const r = (params as { recipeId?: string | string[] })?.recipeId;
+              const id = Array.isArray(r) ? r[0] : r;
+              return id != null && String(id) !== "" ? String(id) : undefined;
+            },
+          }}
         />
         {/* Settings */}
         <Stack.Screen

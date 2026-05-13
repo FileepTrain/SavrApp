@@ -14,7 +14,16 @@ export default function RecipeLayout() {
     >
       <Stack.Screen
         name="[recipeId]"
-        options={{ headerShown: false, title: "Recipe Details" }}
+        options={{
+          headerShown: false,
+          title: "Recipe Details",
+          // New id = new screen instance so a hidden tab cannot briefly show the previous recipe.
+          getId: ({ params }) => {
+            const r = (params as { recipeId?: string | string[] })?.recipeId;
+            const raw = Array.isArray(r) ? r[0] : r;
+            return raw != null && String(raw) !== "" ? String(raw) : undefined;
+          },
+        }}
       />
       <Stack.Screen
         name="nutrition"

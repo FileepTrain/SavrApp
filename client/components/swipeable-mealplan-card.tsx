@@ -17,6 +17,7 @@ import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeabl
 import { useMealPlans } from "@/contexts/meal-plans-context";
 import { palettes } from "@/theme";
 import { buildProfileShareWebUrl, openNativeShare } from "@/utils/profile-share";
+import { navigateToRecipeDetail, type RecipeToolbarContextTab } from "@/utils/navigate-to-recipe-detail";
 import { type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
 import { parseMealSlotStored } from "@/utils/meal-plan-slot";
 
@@ -53,6 +54,8 @@ export interface SwipeableMealPlanCardProps {
   onViewFullPlanPress?: () => void;
   /** Optional route used when opening a recipe from this card. */
   recipeReturnTo?: string;
+  /** Primary tab that should own recipe opens from this card (defaults to calendar). */
+  recipeToolbarCtx?: RecipeToolbarContextTab;
 }
 
 function parseRecipeIds(input?: string | null): string[] {
@@ -174,6 +177,7 @@ export function SwipeableMealPlanCard({
   mealDotColors,
   onViewFullPlanPress,
   recipeReturnTo,
+  recipeToolbarCtx = "calendar",
 }: SwipeableMealPlanCardProps) {
   const { deleteMealPlan } = useMealPlans();
   const colors = useProfilePalette();
@@ -289,12 +293,12 @@ export function SwipeableMealPlanCard({
         onRecipePress(recipeId);
         return;
       }
-      router.push({
-        pathname: "/recipe/[recipeId]",
-        params: recipeReturnTo ? { recipeId, returnTo: recipeReturnTo } : { recipeId },
+      navigateToRecipeDetail(router, recipeId, {
+        ...(recipeReturnTo ? { returnTo: recipeReturnTo } : {}),
+        toolbarCtx: recipeToolbarCtx,
       });
     },
-    [onRecipePress, recipeReturnTo],
+    [onRecipePress, recipeReturnTo, recipeToolbarCtx],
   );
 
   const runDeleteMealPlan = useCallback(

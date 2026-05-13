@@ -68,6 +68,7 @@ export default function RecipeHistoryPage() {
                   reviewsLength={item.reviewsLength}
                   variant="horizontal"
                   imageUrl={item.imageUrl}
+                  toolbarCtx="account"
                 />
               ))}
             </View>

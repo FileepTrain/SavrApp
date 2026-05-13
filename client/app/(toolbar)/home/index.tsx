@@ -230,6 +230,7 @@ export default function HomeScreen() {
               imageUrl={item.image ?? undefined}
               tileWidth={tileWidth}
               prominent={isWebDesktop}
+              toolbarCtx="home"
             />
           )}
           onRefresh={() => void fetchFeedPage(true)}

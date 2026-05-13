@@ -9,6 +9,8 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
+
 import { SERVER_URL } from "@/utils/server-url";
 
 export default function ChangePasswordPage() {
@@ -16,6 +18,7 @@ export default function ChangePasswordPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const backInTabHistory = useToolbarHistoryBack();
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmNewPassword) {
@@ -58,7 +61,12 @@ export default function ChangePasswordPage() {
       }
 
       Alert.alert("Success", "Your password has been updated.", [
-        { text: "OK", onPress: () => router.back() },
+        {
+          text: "OK",
+          onPress: () => {
+            if (!backInTabHistory()) router.back();
+          },
+        },
       ]);
     } catch (err: any) {
       Alert.alert("Error", err.message);

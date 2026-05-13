@@ -6,9 +6,10 @@ import { useMealPlanSelection } from "@/contexts/meal-plan-selection-context";
 import { useMealPlanFilter } from "@/contexts/meal-plan-filter-context";
 import { useMealPlans } from "@/contexts/meal-plans-context";
 import { useNetwork } from "@/contexts/network-context";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 import { CACHE_KEYS, type CachedRecipeEntry, readCache, recipeDetailKey } from "@/utils/offline-cache";
 import Slider from "@react-native-community/slider";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { createElement, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View, Modal, ScrollView, Switch, Platform } from "react-native";
@@ -26,6 +27,7 @@ import 'react-native-gesture-handler';
 import ColorPicker, { HueSlider, Panel1, Swatches, Preview } from "reanimated-color-picker";
 
 import { SERVER_URL } from "@/utils/server-url";
+import { navigateToRecipeDetail } from "@/utils/navigate-to-recipe-detail";
 import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
 import {
   DEFAULT_MEAL_SLOT_COLORS,
@@ -215,6 +217,7 @@ function singleQueryParam(v: string | string[] | undefined): string | undefined 
 
 export default function MealPlanPage() {
   const theme = useThemePalette();
+  const navigation = useNavigation();
   const routeParams = useLocalSearchParams<{ date?: string; mealPlanId?: string }>();
 
   const mealPlanIdParam = useMemo(() => {
@@ -270,6 +273,7 @@ export default function MealPlanPage() {
   const { pendingSelectedRecipe, setPendingSelectedRecipe } = useMealPlanSelection();
   const { refetch: refetchMealPlans, createMealPlan, updateMealPlan } = useMealPlans();
   const { isOnline } = useNetwork();
+  const backInTabHistory = useToolbarHistoryBack();
 
   // Load existing plan only when `mealPlanId` changes
   useEffect(() => {
@@ -527,11 +531,25 @@ export default function MealPlanPage() {
       } else {
         await createMealPlan(body);
       }
+      await refetchMealPlans();
       Alert.alert(
         "Saved",
         mealPlanIdParam ? "Your meal plan has been updated." : "Your meal plan has been saved.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              if (!backInTabHistory()) {
+                if (navigation.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace("/calendar");
+                }
+              }
+            },
+          },
+        ],
       );
-      await refetchMealPlans();
     } catch (err) {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to save meal plan.");
     } finally {
@@ -550,6 +568,8 @@ export default function MealPlanPage() {
     refetchMealPlans,
     createMealPlan,
     updateMealPlan,
+    backInTabHistory,
+    navigation,
   ]);
 
   useFocusEffect(
@@ -785,7 +805,7 @@ export default function MealPlanPage() {
           rating={recipe.rating}
           reviewsLength={recipe.reviews?.length || 0}
           image={recipe.image ?? undefined}
-          onPress={() => router.push(`/recipe/${recipe.id}`)}
+          onPress={() => navigateToRecipeDetail(router, String(recipe.id), { toolbarCtx: "calendar" })}
           onActionPress={() => {
             handleDelete(recipe.id, mealslot);
           }}

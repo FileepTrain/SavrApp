@@ -8,6 +8,7 @@ import { useThemePalette } from "@/components/theme-provider";
 import { ThemedSafeView } from "@/components/themed-safe-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useNetwork } from "@/contexts/network-context";
+import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
 import { fetchRecipeForList } from "@/utils/fetch-recipe-for-list";
 import {
   CACHE_KEYS,
@@ -115,6 +116,7 @@ export default function CollectionDetailPage() {
   const { isOnline } = useNetwork();
   const navigation = useNavigation();
   const router = useRouter();
+  const backInTabHistory = useToolbarHistoryBack();
   const { collectionId, ownerUid: ownerUidParam } = useLocalSearchParams<{
     collectionId: string;
     ownerUid?: string;
@@ -143,6 +145,9 @@ export default function CollectionDetailPage() {
 
   const load = useCallback(async () => {
     if (!id) return;
+    setTitle("");
+    setRecipeIds([]);
+    setRecipes([]);
     try {
       setLoading(true);
       const idToken = await AsyncStorage.getItem("idToken");
@@ -497,6 +502,9 @@ export default function CollectionDetailPage() {
               await enqueueMutation({ type: "DELETE_COLLECTION", payload: { collectionId: id } });
               await removeMineCollectionFromListCache(id);
               await clearCache(collectionDetailKey("me", id));
+              if (backInTabHistory()) {
+                return;
+              }
               if (navigation.canGoBack()) {
                 navigation.goBack();
               } else {
@@ -509,6 +517,9 @@ export default function CollectionDetailPage() {
               headers: { Authorization: `Bearer ${idToken}` },
             });
             if (res.ok) {
+              if (backInTabHistory()) {
+                return;
+              }
               if (navigation.canGoBack()) {
                 navigation.goBack();
               } else {

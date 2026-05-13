@@ -37,6 +37,7 @@ import { useThemePalette } from "@/components/theme-provider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildRecipeShareWebUrl, openNativeShare } from "@/utils/profile-share";
 import { useToolbarHistoryBack } from "@/contexts/toolbar-history-context";
+import { navigateToRecipeDetail, type RecipeToolbarContextTab } from "@/utils/navigate-to-recipe-detail";
 
 import { SERVER_URL } from "@/utils/server-url";
 import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
@@ -176,7 +177,11 @@ export default function RecipeDetailsPage() {
   const router = useRouter();
   const navigation = useNavigation();
   const backInTabHistory = useToolbarHistoryBack();
-  const { recipeId, returnTo } = useLocalSearchParams<{ recipeId: string; returnTo?: string }>();
+  const { recipeId, returnTo, toolbarCtx: toolbarCtxParam } = useLocalSearchParams<{
+    recipeId: string;
+    returnTo?: string;
+    toolbarCtx?: string;
+  }>();
   const { isOnline } = useNetwork();
   const { isWebDesktop } = useWebDesktopLayout();
   const recipeDesktopColumnWidth = useRecipeWebColumnWidth();
@@ -191,6 +196,14 @@ export default function RecipeDetailsPage() {
     const raw = Array.isArray(returnTo) ? returnTo[0] : returnTo;
     return typeof raw === "string" && raw.startsWith("/") ? raw : null;
   }, [returnTo]);
+
+  const recipeToolbarCtxForNav = useMemo((): RecipeToolbarContextTab | undefined => {
+    const raw = Array.isArray(toolbarCtxParam) ? toolbarCtxParam[0] : toolbarCtxParam;
+    if (raw === "home" || raw === "account" || raw === "calendar" || raw === "grocery-list") {
+      return raw;
+    }
+    return undefined;
+  }, [toolbarCtxParam]);
 
   const [loading, setLoading] = useState(true);
   const [notCached, setNotCached] = useState(false);
@@ -573,11 +586,28 @@ export default function RecipeDetailsPage() {
   };
 
   useEffect(() => {
-    const fetchRecipe = async () => {
-      if (!id) return;
-      setLoading(true);
-      setNotCached(false);
+    if (!id) {
+      setLoading(false);
+      setRecipe(null);
+      setIngredients([]);
+      return;
+    }
 
+    setLoading(true);
+    setRecipe(null);
+    setIngredients([]);
+    setSimilarRecipes([]);
+    setSimilarLoading(false);
+    setNotCached(false);
+    setSaveModalOpen(false);
+    setNotesModalOpen(false);
+    setNoteText("");
+    setSubstitutions([]);
+    setSaveActionId(null);
+    setCreateCollectionStep(false);
+    setNewCollectionName("");
+
+    const fetchRecipe = async () => {
       try {
         setRecipeAuthor(null);
         setRecipeOwnerId(null);
@@ -879,7 +909,14 @@ export default function RecipeDetailsPage() {
       <View className="flex-1 bg-app-background items-center justify-center px-8 gap-4">
         {!isWebDesktop ? (
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => {
+              if (backInTabHistory()) return;
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+                return;
+              }
+              router.replace("/home");
+            }}
             className="absolute left-4 top-20 w-10 h-10 bg-background rounded-full shadow items-center justify-center opacity-90"
           >
             <IconSymbol name="chevron-left" size={24} color="--color-red-primary" />
@@ -1146,12 +1183,14 @@ export default function RecipeDetailsPage() {
                   return;
                 }
 
-                router.push({
-                  pathname: "/(toolbar)/recipe/[recipeId]",
-                  params: {
-                    recipeId: String(similarRecipeId).replace("spoonacular_", ""),
+                navigateToRecipeDetail(
+                  router,
+                  String(similarRecipeId).replace("spoonacular_", ""),
+                  {
+                    ...(recipeToolbarCtxForNav ? { toolbarCtx: recipeToolbarCtxForNav } : {}),
+                    replace: true,
                   },
-                });
+                );
               }}
             >
               {item.image ? (
@@ -1320,7 +1359,7 @@ export default function RecipeDetailsPage() {
                     return;
                   }
                   if (navigation.canGoBack()) {
-                    router.back();
+                    navigation.goBack();
                     return;
                   }
                   if (returnToPath) {

@@ -12,7 +12,18 @@ export default function ProfileLayout() {
         header: (props) => <ToolbarSubstackScreenHeader {...props} />,
       }}
     >
-      <Stack.Screen name="[userId]" options={{ headerShown: false, title: "Profile" }} />
+      <Stack.Screen
+        name="[userId]"
+        options={{
+          headerShown: false,
+          title: "Profile",
+          getId: ({ params }) => {
+            const u = (params as { userId?: string | string[] })?.userId;
+            const id = Array.isArray(u) ? u[0] : u;
+            return id != null && String(id) !== "" ? String(id) : undefined;
+          },
+        }}
+      />
       <Stack.Screen name="collection-preview" options={{ title: "Collection" }} />
     </Stack>
   );

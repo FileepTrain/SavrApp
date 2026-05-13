@@ -1,5 +1,6 @@
 import { RecipeCard } from "@/components/recipe-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { navigateToRecipeDetail } from "@/utils/navigate-to-recipe-detail";
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { verticalScrollIndicatorVisible } from "@/utils/scroll-indicators";
@@ -75,12 +76,7 @@ export function CollectionRecipesGrid({
                 rating={r.rating}
                 reviewsLength={reviewsLength}
                 imageUrl={r.image ?? undefined}
-                onPress={() =>
-                  router.push({
-                    pathname: "/recipe/[recipeId]",
-                    params: { recipeId: rid },
-                  })
-                }
+                onPress={() => navigateToRecipeDetail(router, rid, { toolbarCtx: "account" })}
               />
               {showRecipeMenuButton && onRecipeMenuPress ? (
                 <TouchableOpacity
