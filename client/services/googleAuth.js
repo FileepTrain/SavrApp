@@ -13,7 +13,7 @@ export const GoogleSignIn = async () => {
     await GoogleSignin.hasPlayServices();
 
     const userInfo = await GoogleSignin.signIn();
-    const idToken = userInfo.data?.idToken;
+    const idToken = userInfo.idToken || userInfo.data?.idToken;
     console.log("ID TOKEN:", userInfo.idToken);
     console.log("FULL USER:", userInfo);
     if (!idToken) {
